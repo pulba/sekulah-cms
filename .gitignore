@@ -27,11 +27,9 @@ pnpm-debug.log*
 *.pem
 *.key
 
-# local storage & user uploads (PPDB applicant docs & media)
+# local storage (private PPDB applicant documents - PII protected)
 storage/*
 !storage/.gitkeep
-public/uploads/*
-!public/uploads/.gitkeep
 
 # scratch, local notes & agent cache
 scratch/
