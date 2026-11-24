@@ -1,5 +1,4 @@
 import type { APIRoute } from 'astro';
-import 'dotenv/config';
 import {
   exchangeGoogleCodeForTokens,
   signInWithGoogleIdToken,

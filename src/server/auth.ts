@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import { eq, and, gt, sql } from 'drizzle-orm';
 import { db, users, sessions, loginAttempts } from '../db';
 

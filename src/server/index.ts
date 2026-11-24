@@ -63,13 +63,20 @@ app.use('*', cors());
 app.use('*', async (c, next) => {
   const method = c.req.method;
   if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+    // Exempt: logout tidak membawa data sensitif, cukup hapus cookie
+    const path = new URL(c.req.url).pathname;
+    if (path === '/auth/logout') return next();
+
     const origin = c.req.header('origin');
     const host = c.req.header('host');
     if (origin && host) {
       try {
         const originUrl = new URL(origin);
         const isLocal = originUrl.hostname === 'localhost' || originUrl.hostname === '127.0.0.1';
-        if (originUrl.host !== host && !isLocal) {
+        // Cloudflare Workers: strip port from host before comparing
+        const hostStripped = host.split(':')[0];
+        const originStripped = originUrl.hostname;
+        if (originStripped !== hostStripped && !isLocal) {
           return c.json({ success: false, error: 'Akses ditolak: Permintaan lintas domain (CSRF) terdeteksi' }, 403);
         }
       } catch {
@@ -189,6 +196,7 @@ app.post('/auth/login', async (c) => {
 });
 
 app.post('/auth/logout', async (c) => {
+  const isProd = c.req.url.startsWith('https://');
   const cmsCookie = getCookie(c, 'cms_session');
   if (cmsCookie) {
     const payload = await verifySessionToken(cmsCookie).catch(() => null);
@@ -223,8 +231,9 @@ app.post('/auth/logout', async (c) => {
     await revokeSession(cookie).catch(() => null);
   }
 
-  deleteCookie(c, 'auth_session', { path: '/' });
-  deleteCookie(c, 'cms_session', { path: '/' });
+  const cookieOpts = { path: '/', secure: isProd, httpOnly: true, sameSite: 'Lax' as const };
+  deleteCookie(c, 'auth_session', cookieOpts);
+  deleteCookie(c, 'cms_session', cookieOpts);
   return c.json({ success: true, message: 'Berhasil keluar' });
 });
 
@@ -4701,7 +4710,9 @@ app.delete('/admin/partners/:id', async (c) => {
 // 4. PUSTAKA MEDIA & STORAGE R2/LOKAL (Kluster C1)
 // ==========================================
 import path from 'path';
-import { uploadFile, processAndUploadMedia, deleteStorageFiles } from './r2';
+// r2/sharp are Node.js-only — loaded lazily at runtime inside each handler (not at module init)
+// This prevents Cloudflare Workers from crashing on startup due to incompatible native modules
+const loadR2 = () => import('./r2');
 
 // 4.1. DAFTAR BERKAS MEDIA DENGAN FILTER & STATS
 app.get('/admin/media', async (c) => {
@@ -4822,6 +4833,7 @@ app.post('/admin/media/upload', async (c) => {
       return c.json({ success: false, error: 'Ukuran file melebihi batas 15 MB' }, 400);
     }
 
+    const { processAndUploadMedia } = await loadR2();
     const processed = await processAndUploadMedia(fileBuffer, fileName, mimeType);
 
     const cleanTitle = title.trim() || path.basename(fileName, path.extname(fileName));
@@ -4889,6 +4901,7 @@ app.post('/admin/media/:id/replace', async (c) => {
     const fileName = (file as File).name || existing.originalName;
     const mimeType = (file as File).type || existing.fileType || 'application/octet-stream';
 
+    const { processAndUploadMedia, deleteStorageFiles } = await loadR2();
     const processed = await processAndUploadMedia(fileBuffer, fileName, mimeType);
 
     // Hapus berkas fisik lama jika berbeda
@@ -5088,6 +5101,7 @@ app.delete('/admin/media/:id', async (c) => {
       keysToDelete.push(medKey);
     }
 
+    const { deleteStorageFiles } = await loadR2();
     await deleteStorageFiles(keysToDelete);
     await db.delete(media).where(eq(media.id, id));
 
@@ -5133,7 +5147,8 @@ app.post('/admin/upload', async (c) => {
       return c.json({ success: false, error: 'Ukuran file melebihi batas 15 MB' }, 400);
     }
 
-    const processed = await processAndUploadMedia(fileBuffer, fileName, mimeType);
+    const { processAndUploadMedia: processMedia } = await loadR2();
+    const processed = await processMedia(fileBuffer, fileName, mimeType);
 
     // Otomatis simpan ke tabel media
     const cleanTitle = path.basename(fileName, path.extname(fileName));

@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import { SignJWT, jwtVerify, importPKCS8, decodeJwt } from 'jose';
 
 export interface SessionPayload {
