@@ -1,7 +1,20 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { promises as fs } from 'fs';
 import path from 'path';
-import sharp from 'sharp';
+
+// sharp is a Node.js native module — not available in Cloudflare Workers runtime.
+// We lazy-import it only when needed and fall back gracefully if unavailable.
+let sharpModule: typeof import('sharp') | null = null;
+async function loadSharp() {
+  if (!sharpModule) {
+    try {
+      sharpModule = (await import('sharp')).default as unknown as typeof import('sharp');
+    } catch {
+      sharpModule = null;
+    }
+  }
+  return sharpModule;
+}
 
 const accountId = process.env.R2_ACCOUNT_ID;
 const accessKeyId = process.env.R2_ACCESS_KEY_ID;
@@ -112,7 +125,9 @@ export async function processAndUploadMedia(
 
   if (isRasterImage) {
     try {
-      const imageInstance = sharp(fileBuffer);
+      const sharpFn = await loadSharp();
+      if (!sharpFn) throw new Error('sharp not available');
+      const imageInstance = sharpFn(fileBuffer);
       const metadata = await imageInstance.metadata();
       width = metadata.width || null;
       height = metadata.height || null;
@@ -125,8 +140,8 @@ export async function processAndUploadMedia(
       // First pass: resize to max width if needed, then WebP at quality 82
       const needsResize = (width || 0) > MAX_WIDTH;
       const baseSharp = () => needsResize
-        ? sharp(fileBuffer).resize({ width: MAX_WIDTH, withoutEnlargement: true })
-        : sharp(fileBuffer);
+        ? sharpFn(fileBuffer).resize({ width: MAX_WIDTH, withoutEnlargement: true })
+        : sharpFn(fileBuffer);
 
       // Adaptive quality loop: 82 → 70 → 58 → 46 → 34
       const qualitySteps = [82, 70, 58, 46, 34];
@@ -139,7 +154,7 @@ export async function processAndUploadMedia(
 
       // If still over 100KB after lowest quality, do more aggressive resize
       if (compressedBuffer.byteLength > TARGET_SIZE) {
-        compressedBuffer = await sharp(fileBuffer)
+        compressedBuffer = await sharpFn(fileBuffer)
           .resize({ width: 1280, withoutEnlargement: true })
           .webp({ quality: 40 })
           .toBuffer();
@@ -147,14 +162,14 @@ export async function processAndUploadMedia(
 
       // Last resort: 1024px at quality 35 for extremely detailed images
       if (compressedBuffer.byteLength > TARGET_SIZE) {
-        compressedBuffer = await sharp(fileBuffer)
+        compressedBuffer = await sharpFn(fileBuffer)
           .resize({ width: 1024, withoutEnlargement: true })
           .webp({ quality: 35 })
           .toBuffer();
       }
 
       // Read final dimensions after compression
-      const finalMeta = await sharp(compressedBuffer).metadata();
+      const finalMeta = await sharpFn(compressedBuffer).metadata();
       width = finalMeta.width || width;
       height = finalMeta.height || height;
 
@@ -165,7 +180,7 @@ export async function processAndUploadMedia(
       originalUrl = await saveBuffer(compressedBuffer, storageKey, 'image/webp');
 
       // 2. Medium variant (max width 800px, WebP)
-      const mediumBuffer = await sharp(fileBuffer)
+      const mediumBuffer = await sharpFn(fileBuffer)
         .resize({ width: 800, withoutEnlargement: true })
         .webp({ quality: 78 })
         .toBuffer();
@@ -173,7 +188,7 @@ export async function processAndUploadMedia(
       mediumUrl = await saveBuffer(mediumBuffer, mediumKey, 'image/webp');
 
       // 3. Thumbnail variant (max 300×300px cover crop, WebP)
-      const thumbBuffer = await sharp(fileBuffer)
+      const thumbBuffer = await sharpFn(fileBuffer)
         .resize({ width: 300, height: 300, fit: 'cover', withoutEnlargement: true })
         .webp({ quality: 72 })
         .toBuffer();
