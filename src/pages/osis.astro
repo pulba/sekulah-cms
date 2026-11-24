@@ -1,0 +1,593 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import Breadcrumb from '../components/Breadcrumb.astro';
+import Icon from '../components/Icon.astro';
+import { db, settings } from '../db';
+
+export const prerender = false;
+
+// Ambil seluruh pengaturan dari basis data
+const allSettings = await db.select().from(settings);
+const settingMap = allSettings.reduce(
+  (acc, curr) => {
+    acc[curr.key] = curr.value;
+    return acc;
+  },
+  {} as Record<string, string>,
+);
+
+const schoolName = settingMap["school_name"] || "SMAN 1 Unggulan";
+const schoolType = (settingMap["school_type"] || settingMap["school_level"] || "SMA").toUpperCase();
+const isMadrasah = ["MA", "MTS", "MI"].includes(schoolType);
+
+// Nomenklatur Organisasi
+const defaultOrgType = isMadrasah ? "OSIM" : "OSIS";
+const orgTypeSetting = settingMap["student_org_type"] || "auto";
+const resolvedOrgType = orgTypeSetting === "auto" ? defaultOrgType : orgTypeSetting;
+
+const orgFullName = resolvedOrgType === "OSIM"
+  ? "Organisasi Santri / Siswa Intra Madrasah (OSIM)"
+  : "Organisasi Siswa Intra Sekolah (OSIS)";
+
+const rawOrgName = settingMap["student_org_name"] || `${resolvedOrgType} ${schoolName}`;
+const orgName = resolvedOrgType === "OSIM"
+  ? rawOrgName.replace(/^OSIS\b/i, "OSIM")
+  : resolvedOrgType === "OSIS"
+    ? rawOrgName.replace(/^OSIM\b/i, "OSIS")
+    : rawOrgName;
+
+const orgPeriod = settingMap["student_org_period"] || "2025/2026";
+const orgTagline = settingMap["student_org_tagline"] || "Bersinergi, Berkarakter, dan Berintegritas Memimpin Perubahan";
+const orgLogo = settingMap["student_org_logo"] || "";
+const orgBanner = settingMap["student_org_banner"] || "";
+const orgIsActive = settingMap["student_org_active"] !== "false";
+
+// Struktur Pengurus Inti & Pembina (dengan Foto)
+const advisorName = settingMap["student_org_advisor"] || "Drs. H. Mulyadi, M.Pd.";
+const rawAdvisorTitle = settingMap["student_org_advisor_title"] || `Pembina ${resolvedOrgType} & Waka Kesiswaan`;
+const advisorTitle = resolvedOrgType === "OSIM"
+  ? rawAdvisorTitle.replace(/\bOSIS\b/g, "OSIM")
+  : resolvedOrgType === "OSIS"
+    ? rawAdvisorTitle.replace(/\bOSIM\b/g, "OSIS")
+    : rawAdvisorTitle;
+const advisorPhoto = settingMap["student_org_advisor_photo"] || "";
+
+const leaderName = settingMap["student_org_leader"] || "Muhammad Zaki Pratama";
+const leaderPhoto = settingMap["student_org_leader_photo"] || "";
+
+const deputyLeaderName = settingMap["student_org_deputy"] || "Alya Khairunnisa";
+const deputyLeaderPhoto = settingMap["student_org_deputy_photo"] || "";
+
+const secretaryName = settingMap["student_org_secretary"] || "Nadia Rahmawati";
+const secretaryPhoto = settingMap["student_org_secretary_photo"] || "";
+
+const treasurerName = settingMap["student_org_treasurer"] || "Rizky Ramadhan";
+const treasurerPhoto = settingMap["student_org_treasurer_photo"] || "";
+
+// Visi & Misi
+const orgVision = settingMap["student_org_vision"] || "Mewujudkan wadah kesiswaan yang aspiratif, berakhlak mulia, berprestasi dalam sains dan teknologi, serta berjiwa kepemimpinan responsif di era global.";
+const orgMissionRaw = settingMap["student_org_mission"] || "1. Menumbuhkan ketakwaan dan keteladanan akhlak dalam setiap kegiatan kesiswaan.\n2. Mengakomodasi dan memperjuangkan aspirasi siswa secara demokratis dan transparan.\n3. Mengembangkan kreativitas, literasi riset digital, dan minat bakat keolahragaan maupun seni.\n4. Menjalin kemitraan positif antarsekolah dan organisasi kepemudaan daerah.";
+const missionList = orgMissionRaw.split("\n").map((m) => m.trim()).filter(Boolean);
+
+// Seksi Bidang (Sekbid) dengan Anggota per Sekbid
+const defaultDepartments = [
+  {
+    name: "Keagamaan dan Budi Pekerti",
+    lead: "Fathur Rahman",
+    members: ["Ahmad Fauzi (XI-1)", "Siti Aisyah (X-3)", "Bilal Ramadhan (XI-4)", "Nurul Hidayah (X-2)"],
+    proker: "Peringatan Hari Besar Keagamaan, Gerakan Infak Jum'at, Pembiasaan Doa & Kajian Harian"
+  },
+  {
+    name: "Kepemimpinan, Kedisiplinan & Bela Negara",
+    lead: "Dimas Anggara",
+    members: ["Rizky Pratama (XI-2)", "Nadia Safitri (X-1)", "Danu Wijaya (XI-5)"],
+    proker: "Latihan Dasar Kepemimpinan Siswa (LDKS), Pasukan Pengibar Bendera, Apel Disiplin Kampus"
+  },
+  {
+    name: "Akademik, Riset Ilmiah & Teknologi",
+    lead: "Zahra Salsabila",
+    members: ["Alif Hidayatullah (XI-3)", "Kayla Putri (X-5)", "Farhan Maulana (XI-1)"],
+    proker: "Klinik Olimpiade Sains & KIR, Pelatihan Literasi Media & Koding, Science Fair Tahunan"
+  },
+  {
+    name: "Apresiasi Seni Budaya & Olahraga",
+    lead: "Bagus Setiawan",
+    members: ["Dina Mariana (XI-4)", "Gilang Ramadhan (X-2)", "Rendi Saputra (XI-3)"],
+    proker: "Pekan Olahraga Antar Kelas (Classmeeting), Pensi Pentas Kreativitas Siswa, Liga Futsal & Basket"
+  },
+  {
+    name: "Hubungan Masyarakat & Publikasi Digital",
+    lead: "Tiara Anindya",
+    members: ["Salma Nabila (XI-2)", "Hendra Kusuma (X-4)", "Naufal Zaki (X-1)"],
+    proker: "Pengelolaan Media Sosial Resmi, Buletin Cetak/Digital Warta Siswa, Dokumentasi Multimedia Kegiatan"
+  }
+];
+
+let departmentsList: { name: string; lead: string; members: string[]; proker: string }[] = defaultDepartments;
+try {
+  if (settingMap["student_org_departments"]) {
+    const parsed = JSON.parse(settingMap["student_org_departments"]);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      departmentsList = parsed.map((dept: any) => {
+        let members: string[] = [];
+        if (Array.isArray(dept.members)) {
+          members = dept.members;
+        } else if (typeof dept.members === 'string') {
+          members = dept.members.split(',').map((s: string) => s.trim()).filter(Boolean);
+        }
+        return {
+          name: dept.name || "",
+          lead: dept.lead || "",
+          members,
+          proker: dept.proker || ""
+        };
+      });
+    }
+  }
+} catch {
+  departmentsList = defaultDepartments;
+}
+
+// Media Sosial & Kontak
+const orgInstagram = settingMap["student_org_instagram"] || "";
+const orgTiktok = settingMap["student_org_tiktok"] || "";
+const orgYoutube = settingMap["student_org_youtube"] || "";
+const orgEmail = settingMap["student_org_email"] || "";
+
+const heroBgImage =
+  orgBanner ||
+  settingMap["student_org_banner"] ||
+  settingMap["osis_hero_bg"] ||
+  settingMap["school_hero_image"] ||
+  "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=1920&q=80";
+---
+
+<Layout
+  title={`${orgName} Masa Bakti ${orgPeriod} — ${schoolName}`}
+  description={`Halaman resmi organisasi kesiswaan ${orgFullName} ${schoolName}. Visi, misi, struktur pengurus inti BPH berfoto, seksi bidang, dan program kerja unggulan.`}
+>
+  <Header currentPath="/osis" />
+
+  <main class="flex-1 bg-background">
+    <!-- Hero Section dengan Background Image ::before -->
+    <section
+      class="relative isolate overflow-hidden bg-surface py-10 sm:py-14 page-hero-section"
+      style={`--page-hero-bg: url('${heroBgImage}');`}
+    >
+      <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <!-- Breadcrumb Navigasi -->
+        <Breadcrumb
+          items={[
+            { label: 'Beranda', href: '/' },
+            { label: 'Kesiswaan' },
+            { label: resolvedOrgType },
+          ]}
+        />
+
+        <!-- 1. IDENTITAS ORGANISASI (HERO) -->
+        <div class="flex flex-col md:flex-row md:items-start justify-between gap-6">
+          <div class="flex-1 space-y-3 sm:space-y-4">
+            <!-- Badges & Mobile Logo Header -->
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                <span class="rounded-[4px] bg-primary text-white px-2.5 py-1 font-body text-xs font-semibold uppercase tracking-wider">
+                  Kesiswaan & Kepemimpinan
+                </span>
+                <span class="rounded-[4px] bg-surface px-2.5 py-1 font-mono text-xs font-semibold text-heading border border-border shadow-xs">
+                  Masa Bakti {orgPeriod}
+                </span>
+              </div>
+
+              <!-- Logo Mobile (Minimalis transparan tanpa box tebal) -->
+              {orgLogo && (
+                <div class="md:hidden shrink-0 h-10 w-10 opacity-60">
+                  <img
+                    src={orgLogo}
+                    alt={`Logo ${orgName}`}
+                    width="40"
+                    height="40"
+                    class="h-full w-full object-contain"
+                    onerror="this.style.display='none'"
+                  />
+                </div>
+              )}
+            </div>
+
+            <h1 class="font-display text-2xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-heading leading-tight pt-1">
+              {orgName}
+            </h1>
+
+            <p class="font-body text-sm sm:text-base font-medium text-body leading-relaxed max-w-2xl">
+              &ldquo;{orgTagline}&rdquo;
+            </p>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 pt-2 sm:pt-3 text-xs font-body max-w-lg">
+              <div class="flex items-center gap-2 rounded-[6px] border border-border bg-surface px-3 py-2 shadow-xs">
+                <Icon name="user" class="h-3.5 w-3.5 text-primary shrink-0" />
+                <span class="text-muted shrink-0 text-[11px] uppercase tracking-wider font-semibold">Ketua:</span>
+                <strong class="text-heading font-semibold truncate">{leaderName}</strong>
+              </div>
+
+              <div class="flex items-center gap-2 rounded-[6px] border border-border bg-surface px-3 py-2 shadow-xs">
+                <Icon name="academic" class="h-3.5 w-3.5 text-primary shrink-0" />
+                <span class="text-muted shrink-0 text-[11px] uppercase tracking-wider font-semibold">Pembina:</span>
+                <strong class="text-heading font-semibold truncate">{advisorName}</strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- Logo Desktop (Minimalis transparan tanpa box tebal) -->
+          {orgLogo && (
+            <div class="hidden md:flex shrink-0 items-center justify-end h-16 w-32 opacity-60 hover:opacity-90 transition-opacity">
+              <img
+                src={orgLogo}
+                alt={`Logo ${orgName}`}
+                width="128"
+                height="48"
+                class="max-h-12 max-w-full object-contain"
+                onerror="this.style.display='none'"
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+
+    <!-- Content Sections -->
+    <div class="mx-auto max-w-7xl px-3.5 sm:px-6 lg:px-8 py-8 sm:py-12 space-y-6 sm:space-y-10">
+
+      <!-- 2. VISI DAN MISI (SATU SECTION, DUA KOLOM DI DESKTOP) -->
+      <section class="rounded-[10px] border border-border bg-surface p-5 sm:p-7 shadow-xs space-y-5">
+        <div>
+          <span class="font-body text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-muted">
+            Landasan Organisasi
+          </span>
+          <h2 class="font-display text-lg sm:text-2xl font-bold tracking-tight text-heading mt-0.5">
+            Visi & Misi {resolvedOrgType}
+          </h2>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8 items-start">
+          <!-- Kolom Visi -->
+          <div class="space-y-2 lg:pr-6">
+            <h3 class="font-display text-sm sm:text-base font-bold text-heading">
+              Visi Organisasi
+            </h3>
+            <p class="font-body text-xs sm:text-sm text-body leading-relaxed">
+              {orgVision}
+            </p>
+          </div>
+
+          <!-- Kolom Misi -->
+          <div class="space-y-2.5 pt-4 lg:pt-0 lg:border-l border-border lg:pl-8">
+            <h3 class="font-display text-sm sm:text-base font-bold text-heading">
+              Misi Organisasi
+            </h3>
+            <ol class="space-y-2.5 font-body text-xs sm:text-sm text-body/90 leading-relaxed list-none pl-0">
+              {missionList.map((item, idx) => (
+                <li class="flex items-start gap-2.5 sm:gap-3">
+                  <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary-light border border-primary/20 font-mono text-[10px] font-bold text-primary mt-0.5">
+                    {idx + 1}
+                  </span>
+                  <span class="flex-1">{item.replace(/^\d+[\.\)]\s*/, '')}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. STRUKTUR KEPENGURUSAN (KETUA UMUM SEBAGAI PROFIL UTAMA & DAFTAR PENGURUS HARIAN) -->
+      <section class="space-y-4 sm:space-y-6">
+        <div>
+          <span class="font-body text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-muted">
+            Struktur Kepengurusan
+          </span>
+          <h2 class="font-display text-lg sm:text-2xl font-bold tracking-tight text-heading mt-0.5">
+            Badan Pengurus Harian & Pembina
+          </h2>
+          <p class="font-body text-xs text-muted mt-0.5">
+            Jajaran pimpinan inti masa bakti {orgPeriod} yang mengoordinasikan seluruh pergerakan kegiatan siswa.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-3.5 sm:gap-5">
+          <!-- KETUA UMUM: PROFIL UTAMA (lg:col-span-5) -->
+          <div class="lg:col-span-5 rounded-[10px] border border-border bg-surface p-5 sm:p-6 shadow-xs flex flex-col justify-between space-y-4">
+            <div class="flex items-start gap-3.5 sm:gap-4">
+              <div class="h-16 w-16 sm:h-20 sm:w-20 rounded-full border border-border bg-surface-subtle overflow-hidden shrink-0 shadow-xs">
+                {leaderPhoto ? (
+                  <img src={leaderPhoto} alt={leaderName} width="80" height="80" class="h-full w-full object-cover" />
+                ) : (
+                  <div class="h-full w-full flex items-center justify-center bg-primary-light text-primary font-display font-bold text-xl sm:text-2xl">
+                    {(leaderName || "K").trim().charAt(0).toUpperCase()}
+                  </div>
+                )}
+              </div>
+              <div class="space-y-1 min-w-0 flex-1">
+                <span class="inline-block rounded-[4px] bg-primary text-white px-2 py-0.5 font-body text-[10px] sm:text-[11px] font-semibold tracking-wide">
+                  Ketua Umum
+                </span>
+                <h3 class="font-display text-base sm:text-xl font-bold text-heading leading-snug">
+                  {leaderName}
+                </h3>
+                <p class="font-body text-xs text-muted leading-relaxed">
+                  Pimpinan tertinggi organisasi {resolvedOrgType} {schoolName}
+                </p>
+              </div>
+            </div>
+
+            <div class="pt-2 flex items-center justify-between text-xs text-muted">
+              <span>Masa Bakti: <strong class="text-heading font-medium">{orgPeriod}</strong></span>
+              <span>Status: <strong class="text-success-text font-medium">Aktif</strong></span>
+            </div>
+          </div>
+
+          <!-- WAKIL, SEKRETARIS, BENDAHARA: DAFTAR TERSTRUKTUR (lg:col-span-7) -->
+          <div class="lg:col-span-7 rounded-[10px] border border-border bg-surface divide-y divide-border shadow-xs overflow-hidden">
+            <!-- Wakil Ketua -->
+            <div class="p-3.5 sm:p-4 flex items-center gap-3 sm:gap-4 transition-colors hover:bg-surface-subtle">
+              <div class="h-11 w-11 sm:h-12 sm:w-12 rounded-full border border-border bg-surface-subtle overflow-hidden shrink-0 shadow-xs">
+                {deputyLeaderPhoto ? (
+                  <img src={deputyLeaderPhoto} alt={deputyLeaderName} width="48" height="48" class="h-full w-full object-cover" />
+                ) : (
+                  <div class="h-full w-full flex items-center justify-center bg-surface-subtle text-heading font-display font-bold text-sm sm:text-base">
+                    {(deputyLeaderName || "W").trim().charAt(0).toUpperCase()}
+                  </div>
+                )}
+              </div>
+              <div class="min-w-0 flex-1">
+                <span class="block font-body text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-muted leading-tight">
+                  Wakil Ketua Umum
+                </span>
+                <h4 class="font-display text-sm sm:text-base font-bold text-heading leading-tight mt-0.5">
+                  {deputyLeaderName}
+                </h4>
+                <p class="font-body text-[11px] sm:text-xs text-muted mt-0.5 leading-tight">
+                  Koordinator Lapangan & Pelaksanaan Program
+                </p>
+              </div>
+            </div>
+
+            <!-- Sekretaris Umum -->
+            <div class="p-3.5 sm:p-4 flex items-center gap-3 sm:gap-4 transition-colors hover:bg-surface-subtle">
+              <div class="h-11 w-11 sm:h-12 sm:w-12 rounded-full border border-border bg-surface-subtle overflow-hidden shrink-0 shadow-xs">
+                {secretaryPhoto ? (
+                  <img src={secretaryPhoto} alt={secretaryName} width="48" height="48" class="h-full w-full object-cover" />
+                ) : (
+                  <div class="h-full w-full flex items-center justify-center bg-surface-subtle text-heading font-display font-bold text-sm sm:text-base">
+                    {(secretaryName || "S").trim().charAt(0).toUpperCase()}
+                  </div>
+                )}
+              </div>
+              <div class="min-w-0 flex-1">
+                <span class="block font-body text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-muted leading-tight">
+                  Sekretaris Umum
+                </span>
+                <h4 class="font-display text-sm sm:text-base font-bold text-heading leading-tight mt-0.5">
+                  {secretaryName}
+                </h4>
+                <p class="font-body text-[11px] sm:text-xs text-muted mt-0.5 leading-tight">
+                  Administrasi, Tata Persuratan & Dokumentasi
+                </p>
+              </div>
+            </div>
+
+            <!-- Bendahara Umum -->
+            <div class="p-3.5 sm:p-4 flex items-center gap-3 sm:gap-4 transition-colors hover:bg-surface-subtle">
+              <div class="h-11 w-11 sm:h-12 sm:w-12 rounded-full border border-border bg-surface-subtle overflow-hidden shrink-0 shadow-xs">
+                {treasurerPhoto ? (
+                  <img src={treasurerPhoto} alt={treasurerName} width="48" height="48" class="h-full w-full object-cover" />
+                ) : (
+                  <div class="h-full w-full flex items-center justify-center bg-surface-subtle text-heading font-display font-bold text-sm sm:text-base">
+                    {(treasurerName || "B").trim().charAt(0).toUpperCase()}
+                  </div>
+                )}
+              </div>
+              <div class="min-w-0 flex-1">
+                <span class="block font-body text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-muted leading-tight">
+                  Bendahara Umum
+                </span>
+                <h4 class="font-display text-sm sm:text-base font-bold text-heading leading-tight mt-0.5">
+                  {treasurerName}
+                </h4>
+                <p class="font-body text-[11px] sm:text-xs text-muted mt-0.5 leading-tight">
+                  Pengelolaan Anggaran, Kas & Akuntabilitas Keuangan
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pembina Kesiswaan -->
+        <div class="rounded-[10px] border border-border bg-surface p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4 shadow-xs">
+          <div class="flex items-center gap-3">
+            <div class="h-11 w-11 sm:h-12 sm:w-12 rounded-full border border-border bg-surface-subtle overflow-hidden shrink-0 shadow-xs">
+              {advisorPhoto ? (
+                <img src={advisorPhoto} alt={advisorName} width="48" height="48" class="h-full w-full object-cover" />
+              ) : (
+                <div class="h-full w-full flex items-center justify-center bg-surface-subtle text-heading font-display font-bold text-sm sm:text-base">
+                  {(advisorName || "P").trim().charAt(0).toUpperCase()}
+                </div>
+              )}
+            </div>
+            <div>
+              <span class="block font-body text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-muted leading-tight">
+                {advisorTitle}
+              </span>
+              <h4 class="font-display text-sm sm:text-base font-bold text-heading leading-tight mt-0.5">
+                {advisorName}
+              </h4>
+            </div>
+          </div>
+          <span class="font-body text-[11px] sm:text-xs text-muted">
+            Pembimbingan & Supervisi Kebijakan Sekolah
+          </span>
+        </div>
+      </section>
+
+      <!-- 4. BIDANG DAN PROGRAM KERJA (EDITORIAL EXPANDABLE LIST TANPA TEKS TERPOTONG) -->
+      <section class="space-y-4 sm:space-y-6">
+        <div>
+          <span class="font-body text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-muted">
+            Departemen Pelaksana
+          </span>
+          <h2 class="font-display text-lg sm:text-2xl font-bold tracking-tight text-heading mt-0.5">
+            Seksi Bidang & Program Kerja
+          </h2>
+          <p class="font-body text-xs text-muted mt-0.5">
+            Daftar bidang organisasi, koordinator, jajaran anggota pelaksana, dan program kerja unggulan.
+          </p>
+        </div>
+
+        <div class="space-y-2.5 sm:space-y-3">
+          {departmentsList.map((dept, idx) => {
+            const memberCount = dept.members ? dept.members.length : 0;
+            return (
+              <details
+                name="student-org-departments"
+                class="group rounded-[10px] border border-border bg-surface overflow-hidden shadow-xs transition-all"
+                open={idx === 0}
+              >
+                <summary class="flex items-center justify-between p-3.5 sm:p-5 cursor-pointer list-none hover:bg-surface-subtle transition-colors">
+                  <div class="flex items-start sm:items-center gap-3 sm:gap-4 min-w-0 flex-1">
+                    <span class="font-mono text-xs font-bold text-primary shrink-0 bg-primary-light px-2 py-0.5 rounded-[4px] border border-primary/20 mt-0.5 sm:mt-0">
+                      {String(idx + 1).padStart(2, '0')}
+                    </span>
+                    <!-- Judul Bidang membungkus wajar, TIDAK terpotong elipsis di mobile -->
+                    <div class="min-w-0 flex-1 pr-2">
+                      <h3 class="font-display text-sm sm:text-base font-bold text-heading leading-snug">
+                        {dept.name}
+                      </h3>
+                      <p class="font-body text-[11px] sm:text-xs text-muted mt-0.5 leading-normal">
+                        Koordinator: <strong class="text-heading font-medium">{dept.lead || "Belum ditentukan"}</strong>
+                        {memberCount > 0 && <span> &bull; {memberCount} Anggota</span>}
+                      </p>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-2 shrink-0">
+                    <span class="hidden sm:inline font-body text-xs text-muted group-open:hidden">Lihat Detail</span>
+                    <Icon name="chevron-down" class="h-4 w-4 text-muted transition-transform duration-200 group-open:rotate-180" />
+                  </div>
+                </summary>
+
+                <div class="p-3.5 sm:p-5 bg-surface-subtle space-y-3.5 sm:space-y-4">
+                  <!-- Anggota Bidang -->
+                  {dept.members && dept.members.length > 0 && (
+                    <div class="space-y-2">
+                      <span class="block font-body text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-muted">
+                        Anggota Pelaksana ({dept.members.length} Orang):
+                      </span>
+                      <div class="flex flex-wrap items-center gap-1.5">
+                        {dept.members.map((m: string) => (
+                          <span class="rounded-[4px] bg-surface border border-border px-2 py-0.5 sm:px-2.5 sm:py-1 font-body text-[11px] sm:text-xs font-medium text-heading shadow-xs">
+                            {m}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <!-- Program Kerja -->
+                  <div class="space-y-1">
+                    <span class="block font-body text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-muted">
+                      Program Kerja Unggulan:
+                    </span>
+                    <p class="font-body text-xs sm:text-sm text-body/90 leading-relaxed">
+                      {dept.proker || "Program kerja koordinatif berkala."}
+                    </p>
+                  </div>
+                </div>
+              </details>
+            );
+          })}
+        </div>
+      </section>
+
+      <!-- Kanal Informasi & Sosial Media Resmi -->
+      {(orgInstagram || orgTiktok || orgYoutube || orgEmail) && (
+        <section class="rounded-[10px] border border-border bg-surface p-5 sm:p-7 space-y-4 shadow-xs">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h2 class="font-display text-base sm:text-xl font-bold text-heading">
+                Kanal Publikasi & Aspirasi Resmi {resolvedOrgType}
+              </h2>
+              <p class="font-body text-xs text-muted mt-0.5">
+                Ikuti perkembangan agenda kegiatan atau sampaikan aspirasi melalui kanal resmi kesiswaan.
+              </p>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2 sm:gap-3">
+              {orgInstagram && (
+                <a
+                  href={orgInstagram.startsWith("http") ? orgInstagram : `https://instagram.com/${orgInstagram.replace('@', '')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-flex h-10 items-center justify-center gap-2 rounded-[4px] border border-border bg-surface px-4 font-body text-xs font-semibold text-heading transition-all hover:bg-surface-subtle hover:border-border-hover hover:shadow-(--shadow-hover) shadow-xs"
+                >
+                  <Icon name="instagram" class="h-4 w-4 text-[#E4405F]" />
+                  <span>Instagram</span>
+                </a>
+              )}
+
+              {orgTiktok && (
+                <a
+                  href={orgTiktok.startsWith("http") ? orgTiktok : `https://tiktok.com/@${orgTiktok.replace('@', '')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-flex h-10 items-center justify-center gap-2 rounded-[4px] border border-border bg-surface px-4 font-body text-xs font-semibold text-heading transition-all hover:bg-surface-subtle hover:border-border-hover hover:shadow-(--shadow-hover) shadow-xs"
+                >
+                  <Icon name="tiktok" class="h-4 w-4" />
+                  <span>TikTok</span>
+                </a>
+              )}
+
+              {orgYoutube && (
+                <a
+                  href={orgYoutube.startsWith("http") ? orgYoutube : `https://youtube.com/${orgYoutube}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-flex h-10 items-center justify-center gap-2 rounded-[4px] border border-border bg-surface px-4 font-body text-xs font-semibold text-heading transition-all hover:bg-surface-subtle hover:border-border-hover hover:shadow-(--shadow-hover) shadow-xs"
+                >
+                  <Icon name="youtube" class="h-4 w-4 text-[#FF0000]" />
+                  <span>YouTube</span>
+                </a>
+              )}
+
+              {orgEmail && (
+                <a
+                  href={`mailto:${orgEmail}`}
+                  class="inline-flex h-10 items-center justify-center gap-2 rounded-[4px] bg-primary px-4 font-body text-xs font-semibold text-white transition-all hover:bg-primary-hover hover:shadow-(--shadow-hover) shadow-xs"
+                >
+                  <Icon name="mail" class="h-4 w-4" />
+                  <span>Kirim Email</span>
+                </a>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+    </div>
+  </main>
+
+  <Footer />
+
+  <script is:inline>
+    document.addEventListener("DOMContentLoaded", () => {
+      const detailsList = document.querySelectorAll("details[name='student-org-departments']");
+      detailsList.forEach((detail) => {
+        detail.addEventListener("toggle", () => {
+          if (detail.open) {
+            detailsList.forEach((other) => {
+              if (other !== detail && other.open) {
+                other.removeAttribute("open");
+              }
+            });
+          }
+        });
+      });
+    });
+  </script>
+</Layout>

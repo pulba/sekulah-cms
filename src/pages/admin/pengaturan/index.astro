@@ -1,0 +1,1809 @@
+---
+import AdminLayout from "../../../layouts/AdminLayout.astro";
+import MediaPickerModal from "../../../components/MediaPickerModal.astro";
+import Icon from "../../../components/Icon.astro";
+import { db, settings } from "../../../db";
+import {
+  THEME_PRESETS,
+  DEFAULT_THEME_PRESET,
+  DEFAULT_THEME_MODE,
+  resolveThemeConfig,
+} from "../../../utils/themeSystem";
+
+export const prerender = false;
+
+// Ambil semua pengaturan institusi dari basis data
+const allSettings = await db.select().from(settings);
+const settingMap = allSettings.reduce(
+  (acc, curr) => {
+    acc[curr.key] = curr.value;
+    return acc;
+  },
+  {} as Record<string, string>,
+);
+
+// 1. Identitas Visual
+const schoolName = settingMap["school_name"] || "SMAN 1 UNGGULAN";
+const npsn = settingMap["npsn"] || settingMap["school_npsn"] || "20101234";
+const logoUrl = settingMap["logo_url"] || "";
+const faviconUrl = settingMap["favicon_url"] || "/favicon.svg";
+const headerShowSchoolName = settingMap["header_show_school_name"] !== "false";
+const logoOrientation = settingMap["logo_orientation"] || "auto";
+const resolvedTheme = resolveThemeConfig(settingMap);
+const themePreset = resolvedTheme.presetId;
+const primaryColor = resolvedTheme.identity.primary;
+const secondaryColor = resolvedTheme.identity.secondary;
+const tertiaryColor = resolvedTheme.identity.tertiary;
+const themeMode = resolvedTheme.mode;
+
+// 2. Kontak & Saluran Komunikasi
+const phone = settingMap["phone"] || "(021) 555-0199";
+const email = settingMap["email"] || "info@sman1unggulan.sch.id";
+
+// 3. Media Sosial (Opsional)
+const socialWhatsapp = settingMap["social_whatsapp"] || "+62 812-3456-7890";
+const socialInstagram =
+  settingMap["social_instagram"] || "https://instagram.com/sman1unggulan";
+const socialYoutube =
+  settingMap["social_youtube"] || "https://youtube.com/@sman1unggulan";
+const socialFacebook =
+  settingMap["social_facebook"] || "https://facebook.com/sman1unggulan";
+const socialTwitter =
+  settingMap["social_twitter"] || "https://x.com/sman1unggulan";
+const socialTiktok = settingMap["social_tiktok"] || "";
+const contactBgImage = settingMap["contact_bg_image"] || "";
+---
+
+<AdminLayout
+  title="Pengaturan Sekolah"
+  activeNav="pengaturan"
+  settingsMap={settingMap}
+>
+  <div class="max-w-4xl mx-auto space-y-8 pb-24">
+    <!-- Header Halaman & Aksi Simpan -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-6">
+      <div>
+        <h1 class="font-display text-2xl font-bold tracking-tight text-heading">
+          Pengaturan Sekolah
+        </h1>
+        <p class="mt-1 font-body text-xs text-muted">
+          Kelola identitas visual website, logo, favicon, serta saluran kontak
+          dan media sosial resmi.
+        </p>
+      </div>
+
+      <div class="flex items-center gap-3 shrink-0">
+        <!-- Unsaved Changes Badge -->
+        <span
+          id="unsaved-badge"
+          class="hidden text-[11px] font-medium text-warning-text bg-warning-light border border-warning px-2.5 py-1 rounded-[4px] animate-pulse"
+        >
+          Perubahan belum disimpan
+        </span>
+
+        <button
+          type="button"
+          id="btn-header-save"
+          class="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-4 text-xs font-semibold text-white transition-all hover:bg-primary-hover shadow-xs cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed"
+        >
+          <Icon id="btn-save-icon" name="save" class="h-3.5 w-3.5 text-white" />
+          <svg
+            id="btn-save-spinner"
+            class="hidden h-3.5 w-3.5 animate-spin text-white"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+          >
+            <circle
+              class="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              stroke-width="4"
+            ></circle>
+            <path
+              class="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+            ></path>
+          </svg>
+          <Icon
+            id="btn-save-check"
+            name="check"
+            class="hidden h-3.5 w-3.5 text-white"
+          />
+          <span id="btn-header-label">Simpan Perubahan</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Alert Feedback Banner -->
+    <div
+      id="status-banner"
+      class="hidden rounded-lg p-3.5 text-xs font-medium"
+    ></div>
+
+    <form id="settings-form" class="space-y-8">
+      <!-- Hidden Values (Tanpa input teks URL teknis di UI) -->
+      <input type="hidden" id="logo_url" name="logo_url" value={logoUrl} />
+      <input
+        type="hidden"
+        id="favicon_url"
+        name="favicon_url"
+        value={faviconUrl}
+      />
+      <input
+        type="hidden"
+        id="header_show_school_name"
+        name="header_show_school_name"
+        value={headerShowSchoolName ? "true" : "false"}
+      />
+
+      <!-- SECTION 1: IDENTITAS WEBSITE                            -->
+
+      <section class="space-y-4">
+        <div class="rounded-lg border border-border bg-surface p-5 sm:p-6 space-y-6">
+          <!-- 1.1 LOGO SEKOLAH -->
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="block text-xs font-semibold text-heading">
+                  Logo Sekolah
+                </label>
+              </div>
+            </div>
+
+            <!-- Card Thumbnail & Controls -->
+            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div class="flex items-center gap-4">
+                <!-- Thumbnail Box -->
+                <div class="h-16 w-20 rounded-md bg-white flex items-center justify-center overflow-hidden shrink-0 shadow-2xs p-1">
+                  <img
+                    id="logo-preview-img"
+                    src={logoUrl || ""}
+                    alt="Logo Sekolah"
+                    class:list={[
+                      "max-h-full max-w-full object-contain",
+                      !logoUrl && "hidden",
+                    ]}
+                  />
+                  <div
+                    id="logo-preview-empty"
+                    class:list={[
+                      "flex flex-col items-center justify-center text-muted text-center",
+                      logoUrl && "hidden",
+                    ]}
+                  >
+                    <svg
+                      class="h-6 w-6 text-muted/60"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                        d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                      ></path>
+                    </svg>
+                    <span class="text-[9px] font-medium mt-0.5">Kosong</span>
+                  </div>
+                </div>
+
+                <!-- Info File -->
+                <div>
+                  <p
+                    id="logo-filename"
+                    class="text-xs font-semibold text-heading truncate max-w-[220px] sm:max-w-xs font-mono"
+                  >
+                    {logoUrl
+                      ? logoUrl.split("/").pop()
+                      : "Belum ada logo dipilih"}
+                  </p>
+                  <p class="text-[11px] text-muted mt-0.5">
+                    {logoUrl
+                      ? "Berkas terpasang untuk identitas sekolah"
+                      : "Pilih dari media library atau unggah berkas logo baru"}
+                  </p>
+                </div>
+              </div>
+
+              <!-- Tombol Aksi Logo -->
+              <div class="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  id="btn-pick-logo"
+                  class="h-8 px-3 rounded-md border border-border bg-surface text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
+                >
+                  <svg
+                    class="h-3.5 w-3.5 text-muted"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                    ></path>
+                  </svg>
+                  <span>Pilih dari Media</span>
+                </button>
+
+                <label
+                  for="upload-logo-file"
+                  class="h-8 px-3 rounded-md border border-border bg-surface text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
+                >
+                  <svg
+                    class="h-3.5 w-3.5 text-muted"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
+                    ></path>
+                  </svg>
+                  <span>Unggah Berkas</span>
+                </label>
+                <input
+                  type="file"
+                  id="upload-logo-file"
+                  accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                  class="hidden"
+                />
+
+                <button
+                  type="button"
+                  id="btn-remove-logo"
+                  class:list={[
+                    "h-8 px-2.5 rounded-md text-xs font-medium text-error hover:bg-error-light transition-colors cursor-pointer",
+                    !logoUrl && "hidden",
+                  ]}
+                >
+                  Hapus
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 1.2 TAMPILAN HEADER: SWITCH & ORIENTASI LOGO -->
+          <div class="pt-5 space-y-5">
+            <!-- Switch Tampilkan Nama Sekolah -->
+            <div class="flex items-center justify-between gap-4 bg-surface">
+              <div class="space-y-0.5">
+                <span class="block text-xs font-semibold text-heading">
+                  Tampilkan Nama Sekolah di Header
+                </span>
+              </div>
+
+              <!-- Switch Toggle -->
+              <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                <input
+                  type="checkbox"
+                  id="toggle-show-school-name"
+                  checked={headerShowSchoolName}
+                  class="sr-only peer"
+                />
+                <div class="w-11 h-6 bg-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+              </label>
+            </div>
+
+            <!-- Orientasi Logo -->
+            <div class="space-y-2">
+              <div class="flex items-center justify-between">
+                <div>
+                  <label class="block text-xs font-semibold text-heading">
+                    Orientasi Logo
+                  </label>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <!-- Auto -->
+                <label class="logo-orient-card p-3 rounded-lg border border-border bg-surface hover:border-primary/50 cursor-pointer flex items-start gap-2.5 transition-all">
+                  <input
+                    type="radio"
+                    name="logo_orientation"
+                    value="auto"
+                    checked={logoOrientation === "auto"}
+                    class="mt-0.5 text-primary cursor-pointer"
+                  />
+                  <div>
+                    <span class="font-semibold text-xs text-heading block">
+                      Otomatis
+                    </span>
+                    <span class="text-[11px] text-muted leading-tight">
+                      Mengikuti rasio asli logo secara fleksibel (Rekomendasi).
+                    </span>
+                  </div>
+                </label>
+
+                <!-- Square -->
+                <label class="logo-orient-card p-3 rounded-lg border border-border bg-surface hover:border-primary/50 cursor-pointer flex items-start gap-2.5 transition-all">
+                  <input
+                    type="radio"
+                    name="logo_orientation"
+                    value="square"
+                    checked={logoOrientation === "square"}
+                    class="mt-0.5 text-primary cursor-pointer"
+                  />
+                  <div>
+                    <span class="font-semibold text-xs text-heading block">
+                      Logo Persegi
+                    </span>
+                    <span class="text-[11px] text-muted leading-tight">
+                      Area proporsional 1:1, cocok untuk lambang perisai atau
+                      lingkaran.
+                    </span>
+                  </div>
+                </label>
+
+                <!-- Horizontal -->
+                <label class="logo-orient-card p-3 rounded-lg border border-border bg-surface hover:border-primary/50 cursor-pointer flex items-start gap-2.5 transition-all">
+                  <input
+                    type="radio"
+                    name="logo_orientation"
+                    value="horizontal"
+                    checked={logoOrientation === "horizontal"}
+                    class="mt-0.5 text-primary cursor-pointer"
+                  />
+                  <div>
+                    <span class="font-semibold text-xs text-heading block">
+                      Logo Horizontal
+                    </span>
+                    <span class="text-[11px] text-muted leading-tight">
+                      Area landscape memanjang untuk logo sekolah bertipe
+                      banner.
+                    </span>
+                  </div>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- 1.3 LIVE PREVIEW HEADER WEBSITE -->
+          <div class="border-t border-border/70 pt-5 space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-bold uppercase tracking-wider text-muted">
+                Preview Header Website (Langsung Berubah)
+              </span>
+              <span class="text-[11px] text-muted italic">
+                Simulasi tampilan header publik sebelum disimpan
+              </span>
+            </div>
+
+            <!-- Frame Header Mini Mockup -->
+            <div class="rounded-lg border border-border bg-surface-subtle p-3 shadow-xs">
+              <div
+                id="mock-header"
+                class="rounded-md border border-border bg-white px-4 py-3 flex items-center justify-between gap-4 transition-all"
+              >
+                <!-- Brand / Logo Area -->
+                <div class="flex items-center gap-2.5 shrink-0">
+                  <div
+                    id="mock-logo-wrapper"
+                    class="flex items-center justify-center shrink-0"
+                  >
+                    <img
+                      id="mock-logo-img"
+                      src={logoUrl || ""}
+                      alt={schoolName}
+                      class:list={[
+                        "object-contain rounded-[4px] transition-all",
+                        logoOrientation === "horizontal"
+                          ? "h-8 max-w-[150px] w-auto"
+                          : logoOrientation === "square"
+                            ? "h-8 w-8"
+                            : "h-8 max-w-[130px] w-auto",
+                        !logoUrl && "hidden",
+                      ]}
+                    />
+                    <div
+                      id="mock-logo-placeholder"
+                      class:list={[
+                        "flex h-8 w-8 items-center justify-center rounded-[6px] font-display font-bold text-white text-xs shrink-0",
+                        logoUrl && "hidden",
+                      ]}
+                      style={`background-color: ${primaryColor};`}
+                    >
+                      {schoolName.charAt(0) || "S"}
+                    </div>
+                  </div>
+
+                  <!-- Text Nama Sekolah (Bisa sembunyi/tampil) -->
+                  <div
+                    id="mock-school-name-block"
+                    class:list={[
+                      "flex flex-col transition-all",
+                      !headerShowSchoolName && "hidden",
+                    ]}
+                  >
+                    <span class="font-display text-xs font-bold uppercase tracking-tight text-heading leading-tight">
+                      {schoolName}
+                    </span>
+                    <span class="text-[9px] uppercase tracking-wider text-muted font-mono leading-tight">
+                      NPSN: {npsn}
+                    </span>
+                  </div>
+                </div>
+
+                <!-- Dummy Navigasi Header Mockup -->
+                <div class="hidden sm:flex items-center gap-3 text-[11px] font-medium text-muted">
+                  <span class="text-heading font-semibold">Beranda</span>
+                  <span>Profil</span>
+                  <span>Berita</span>
+                  <span>Kontak</span>
+                  <span
+                    id="mock-btn-ppdb"
+                    class="px-2.5 py-1 rounded text-white text-[10px] font-bold uppercase tracking-wider shadow-2xs"
+                    style={`background-color: ${primaryColor};`}
+                  >
+                    PPDB
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 1.4 FAVICON WEBSITE -->
+          <div class="border-t border-border/70 pt-5 space-y-3">
+            <div>
+              <label class="block text-xs font-semibold text-heading">
+                Favicon Website
+              </label>
+              <p class="text-[11px] text-muted">
+                Ikon tab browser dan bookmark peramban (format .ico, .svg, atau
+                .png).
+              </p>
+            </div>
+
+            <!-- Card Thumbnail Favicon -->
+            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-lg border border-border bg-surface-subtle">
+              <div class="flex items-center gap-4">
+                <div class="h-10 w-10 rounded-md border border-border bg-white flex items-center justify-center overflow-hidden shrink-0 shadow-2xs p-1">
+                  <img
+                    id="favicon-preview-img"
+                    src={faviconUrl}
+                    alt="Favicon"
+                    class="h-6 w-6 object-contain"
+                  />
+                </div>
+
+                <div>
+                  <p
+                    id="favicon-filename"
+                    class="text-xs font-semibold text-heading truncate max-w-[220px] sm:max-w-xs font-mono"
+                  >
+                    {faviconUrl.split("/").pop()}
+                  </p>
+                  <p class="text-[11px] text-muted mt-0.5">
+                    Ikon aktif pada tab peramban pengunjung
+                  </p>
+                </div>
+              </div>
+
+              <!-- Tombol Aksi Favicon -->
+              <div class="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  id="btn-pick-favicon"
+                  class="h-8 px-3 rounded-md border border-border bg-surface text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
+                >
+                  <svg
+                    class="h-3.5 w-3.5 text-muted"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                    ></path>
+                  </svg>
+                  <span>Pilih dari Media</span>
+                </button>
+
+                <label
+                  for="upload-favicon-file"
+                  class="h-8 px-3 rounded-md border border-border bg-surface text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer inline-flex items-center gap-1.5 shadow-2xs"
+                >
+                  <svg
+                    class="h-3.5 w-3.5 text-muted"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
+                    ></path>
+                  </svg>
+                  <span>Unggah Berkas</span>
+                </label>
+                <input
+                  type="file"
+                  id="upload-favicon-file"
+                  accept="image/png,image/x-icon,image/svg+xml"
+                  class="hidden"
+                />
+
+                <button
+                  type="button"
+                  id="btn-reset-favicon"
+                  class="h-8 px-2.5 rounded-md text-xs font-medium text-muted hover:text-heading transition-colors cursor-pointer"
+                >
+                  Reset Default
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 2: TAMPILAN & SISTEM WARNA (APPEARANCE)          -->
+
+      <section class="space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 pb-3">
+          <div>
+            <h2 class="font-display text-base font-semibold text-heading">
+              Tampilan &amp; Sistem Warna (Appearance)
+            </h2>
+            <p class="mt-0.5 text-xs text-muted">
+              Pilih preset tema atau atur 3 warna identitas sekolah. Sistem
+              otomatis menghasilkan variasi warna antarmuka Light &amp; Dark
+              Mode.
+            </p>
+          </div>
+          <button
+            type="button"
+            id="btn-reset-theme"
+            class="inline-flex h-8 items-center justify-center rounded-[6px] border border-border bg-surface px-3 font-body text-xs font-medium text-heading transition-colors hover:border-heading hover:bg-surface-subtle cursor-pointer shrink-0"
+          >
+            Reset Theme Default
+          </button>
+        </div>
+
+        <input
+          type="hidden"
+          id="theme_preset"
+          name="theme_preset"
+          value={themePreset}
+        />
+
+        <div class="rounded-lg border border-border bg-surface p-5 sm:p-6 space-y-6">
+          <!-- 2.1 Theme Preset -->
+          <div class="space-y-2.5">
+            <div class="flex items-center justify-between gap-2">
+              <span class="block text-xs font-semibold text-heading">
+                Theme Preset Siap Pakai
+              </span>
+              <span
+                id="active-preset-badge"
+                class="rounded-[4px] bg-surface-subtle border border-border px-2 py-0.5 font-mono text-[11px] font-medium text-muted"
+              >
+                {themePreset === "custom"
+                  ? "Custom Colors"
+                  : `Preset: ${themePreset}`}
+              </span>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              {THEME_PRESETS.map((preset) => {
+                const isSelected = themePreset === preset.id;
+                return (
+                  <button
+                    type="button"
+                    class={`btn-swatch-preset p-3 rounded-[8px] border text-left cursor-pointer transition-all flex items-center gap-3 group ${
+                      isSelected
+                        ? "border-primary bg-primary-light/60"
+                        : "border-border bg-surface hover:border-heading"
+                    }`}
+                    data-preset-id={preset.id}
+                    data-primary={preset.identity.primary}
+                    data-secondary={preset.identity.secondary}
+                    data-tertiary={preset.identity.tertiary}
+                  >
+                    <div class="flex items-center gap-1 shrink-0">
+                      <span
+                        class="h-5 w-5 rounded-[4px] border border-black/10 inline-block"
+                        style={`background-color: ${preset.identity.primary};`}
+                        title={`Primary: ${preset.identity.primary}`}
+                      ></span>
+                      <span
+                        class="h-5 w-5 rounded-[4px] border border-black/10 inline-block"
+                        style={`background-color: ${preset.identity.secondary};`}
+                        title={`Secondary: ${preset.identity.secondary}`}
+                      ></span>
+                      <span
+                        class="h-5 w-5 rounded-[4px] border border-black/10 inline-block"
+                        style={`background-color: ${preset.identity.tertiary};`}
+                        title={`Tertiary: ${preset.identity.tertiary}`}
+                      ></span>
+                    </div>
+                    <div class="min-w-0 flex-1">
+                      <span class="block text-xs font-semibold text-heading group-hover:text-primary transition-colors truncate">
+                        {preset.name}
+                      </span>
+                      <span class="block text-[11px] text-muted truncate">
+                        {preset.tagline}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <!-- 2.2 Tiga Identitas Warna Sekolah -->
+          <div class="pt-5 border-t border-border/70 space-y-3">
+            <div>
+              <span class="block text-xs font-semibold text-heading">
+                Identitas Warna Sekolah (Custom Color)
+              </span>
+              <p class="mt-0.5 text-[11px] text-muted">
+                Mengubah warna di bawah akan otomatis mengkalibrasi palet Light
+                &amp; Dark Mode serta menandai tema sebagai Custom.
+              </p>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <!-- Primary Color -->
+              <div class="space-y-1.5">
+                <label
+                  for="primary_color"
+                  class="block text-xs font-semibold text-heading"
+                >
+                  Primary Color
+                </label>
+                <div class="flex items-center gap-2">
+                  <input
+                    type="color"
+                    id="primary_color_picker"
+                    value={primaryColor}
+                    aria-label="Pilih Primary Color"
+                    class="h-9 w-9 rounded-[6px] border border-border bg-surface cursor-pointer p-0.5 shrink-0"
+                  />
+                  <input
+                    type="text"
+                    id="primary_color"
+                    name="primary_color"
+                    value={primaryColor}
+                    maxlength="7"
+                    placeholder="#064734"
+                    class="h-9 w-full rounded-[6px] border border-border bg-surface px-3 font-mono text-xs text-heading uppercase transition-colors"
+                  />
+                </div>
+                <p class="text-[11px] text-muted">
+                  Identitas utama: navbar, tombol utama, link aktif.
+                </p>
+              </div>
+
+              <!-- Secondary Color -->
+              <div class="space-y-1.5">
+                <label
+                  for="secondary_color"
+                  class="block text-xs font-semibold text-heading"
+                >
+                  Secondary Color
+                </label>
+                <div class="flex items-center gap-2">
+                  <input
+                    type="color"
+                    id="secondary_color_picker"
+                    value={secondaryColor}
+                    aria-label="Pilih Secondary Color"
+                    class="h-9 w-9 rounded-[6px] border border-border bg-surface cursor-pointer p-0.5 shrink-0"
+                  />
+                  <input
+                    type="text"
+                    id="secondary_color"
+                    name="secondary_color"
+                    value={secondaryColor}
+                    maxlength="7"
+                    placeholder="#E0FFC2"
+                    class="h-9 w-full rounded-[6px] border border-border bg-surface px-3 font-mono text-xs text-heading uppercase transition-colors"
+                  />
+                </div>
+                <p class="text-[11px] text-muted">
+                  Warna pendukung: badge, section, tombol sekunder.
+                </p>
+              </div>
+
+              <!-- Tertiary Color -->
+              <div class="space-y-1.5">
+                <label
+                  for="tertiary_color"
+                  class="block text-xs font-semibold text-heading"
+                >
+                  Tertiary Color
+                </label>
+                <div class="flex items-center gap-2">
+                  <input
+                    type="color"
+                    id="tertiary_color_picker"
+                    value={tertiaryColor}
+                    aria-label="Pilih Tertiary Color"
+                    class="h-9 w-9 rounded-[6px] border border-border bg-surface cursor-pointer p-0.5 shrink-0"
+                  />
+                  <input
+                    type="text"
+                    id="tertiary_color"
+                    name="tertiary_color"
+                    value={tertiaryColor}
+                    maxlength="7"
+                    placeholder="#D9F45B"
+                    class="h-9 w-full rounded-[6px] border border-border bg-surface px-3 font-mono text-xs text-heading uppercase transition-colors"
+                  />
+                </div>
+                <p class="text-[11px] text-muted">
+                  Warna aksen: highlight, statistik, penanda visual.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2.3 Mode Tampilan Default -->
+          <div class="pt-5 border-t border-border/70 space-y-2.5">
+            <div>
+              <span class="block text-xs font-semibold text-heading">
+                Mode Tampilan Default Pengunjung
+              </span>
+              <p class="mt-0.5 text-[11px] text-muted">
+                Menentukan mode awal website sebelum pengunjung menggantinya
+                secara manual via tombol tema.
+              </p>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <label class="p-3 rounded-[8px] border border-border bg-surface hover:border-heading cursor-pointer flex items-start gap-2.5 transition-colors">
+                <input
+                  type="radio"
+                  name="theme_mode"
+                  value="light"
+                  checked={themeMode === "light"}
+                  class="mt-0.5 cursor-pointer"
+                />
+                <div>
+                  <span class="block text-xs font-semibold text-heading">
+                    Light
+                  </span>
+                  <span class="block text-[11px] text-muted">
+                    Selalu menggunakan mode terang.
+                  </span>
+                </div>
+              </label>
+
+              <label class="p-3 rounded-[8px] border border-border bg-surface hover:border-heading cursor-pointer flex items-start gap-2.5 transition-colors">
+                <input
+                  type="radio"
+                  name="theme_mode"
+                  value="dark"
+                  checked={themeMode === "dark"}
+                  class="mt-0.5 cursor-pointer"
+                />
+                <div>
+                  <span class="block text-xs font-semibold text-heading">
+                    Dark
+                  </span>
+                  <span class="block text-[11px] text-muted">
+                    Selalu menggunakan mode gelap.
+                  </span>
+                </div>
+              </label>
+
+              <label class="p-3 rounded-[8px] border border-border bg-surface hover:border-heading cursor-pointer flex items-start gap-2.5 transition-colors">
+                <input
+                  type="radio"
+                  name="theme_mode"
+                  value="system"
+                  checked={themeMode === "system"}
+                  class="mt-0.5 cursor-pointer"
+                />
+                <div>
+                  <span class="block text-xs font-semibold text-heading">
+                    System
+                  </span>
+                  <span class="block text-[11px] text-muted">
+                    Mengikuti pengaturan perangkat pengunjung.
+                  </span>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- 2.4 Live Color Preview (Light & Dark Mode) -->
+          <div class="pt-5 border-t border-border/70 space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="block text-xs font-semibold text-heading">
+                Color Preview (Otomatis Light &amp; Dark Mode)
+              </span>
+              <span class="text-[11px] text-muted">
+                Background, Surface, Text &amp; Border dikelola otomatis oleh
+                sistem
+              </span>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <!-- Light Preview -->
+              <div
+                id="preview-light-canvas"
+                class="rounded-[10px] border p-4 space-y-3 transition-colors"
+                style={`background-color: ${resolvedTheme.light.background}; border-color: ${resolvedTheme.light.border};`}
+              >
+                <div class="flex items-center justify-between">
+                  <span
+                    id="preview-light-label"
+                    class="text-[11px] font-semibold uppercase tracking-wider"
+                    style={`color: ${resolvedTheme.light.muted};`}
+                  >
+                    Light Mode
+                  </span>
+                  <span
+                    id="preview-light-tertiary"
+                    class="rounded-[4px] px-2 py-0.5 text-[11px] font-semibold"
+                    style={`background-color: ${resolvedTheme.light.tertiary}; color: ${resolvedTheme.light.tertiaryForeground};`}
+                  >
+                    Highlight
+                  </span>
+                </div>
+
+                <div
+                  id="preview-light-surface"
+                  class="rounded-[8px] border p-3.5 space-y-2.5"
+                  style={`background-color: ${resolvedTheme.light.surface}; border-color: ${resolvedTheme.light.border};`}
+                >
+                  <div class="space-y-1">
+                    <h4
+                      id="preview-light-heading"
+                      class="font-display text-sm font-bold"
+                      style={`color: ${resolvedTheme.light.heading};`}
+                    >
+                      Portal Resmi Sekolah
+                    </h4>
+                    <p
+                      id="preview-light-muted"
+                      class="text-xs leading-relaxed"
+                      style={`color: ${resolvedTheme.light.muted};`}
+                    >
+                      Teks utama dan sekunder menjaga keterbacaan pada permukaan
+                      terang.
+                    </p>
+                  </div>
+                  <div class="flex flex-wrap items-center gap-2 pt-1">
+                    <span
+                      id="preview-light-primary"
+                      class="inline-flex h-7 items-center rounded-[6px] px-3 text-xs font-medium"
+                      style={`background-color: ${resolvedTheme.light.primary}; color: ${resolvedTheme.light.primaryForeground};`}
+                    >
+                      Tombol Utama
+                    </span>
+                    <span
+                      id="preview-light-secondary"
+                      class="inline-flex h-7 items-center rounded-[6px] px-2.5 text-xs font-medium"
+                      style={`background-color: ${resolvedTheme.light.secondary}; color: ${resolvedTheme.light.secondaryForeground};`}
+                    >
+                      Badge Pendukung
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Dark Preview -->
+              <div
+                id="preview-dark-canvas"
+                class="rounded-[10px] border p-4 space-y-3 transition-colors"
+                style={`background-color: ${resolvedTheme.dark.background}; border-color: ${resolvedTheme.dark.border};`}
+              >
+                <div class="flex items-center justify-between">
+                  <span
+                    id="preview-dark-label"
+                    class="text-[11px] font-semibold uppercase tracking-wider"
+                    style={`color: ${resolvedTheme.dark.muted};`}
+                  >
+                    Dark Mode
+                  </span>
+                  <span
+                    id="preview-dark-tertiary"
+                    class="rounded-[4px] px-2 py-0.5 text-[11px] font-semibold"
+                    style={`background-color: ${resolvedTheme.dark.tertiary}; color: ${resolvedTheme.dark.tertiaryForeground};`}
+                  >
+                    Highlight
+                  </span>
+                </div>
+
+                <div
+                  id="preview-dark-surface"
+                  class="rounded-[8px] border p-3.5 space-y-2.5"
+                  style={`background-color: ${resolvedTheme.dark.surface}; border-color: ${resolvedTheme.dark.border};`}
+                >
+                  <div class="space-y-1">
+                    <h4
+                      id="preview-dark-heading"
+                      class="font-display text-sm font-bold"
+                      style={`color: ${resolvedTheme.dark.heading};`}
+                    >
+                      Portal Resmi Sekolah
+                    </h4>
+                    <p
+                      id="preview-dark-muted"
+                      class="text-xs leading-relaxed"
+                      style={`color: ${resolvedTheme.dark.muted};`}
+                    >
+                      Primary dan Secondary otomatis disesuaikan untuk kontras
+                      gelap.
+                    </p>
+                  </div>
+                  <div class="flex flex-wrap items-center gap-2 pt-1">
+                    <span
+                      id="preview-dark-primary"
+                      class="inline-flex h-7 items-center rounded-[6px] px-3 text-xs font-medium"
+                      style={`background-color: ${resolvedTheme.dark.primary}; color: ${resolvedTheme.dark.primaryForeground};`}
+                    >
+                      Tombol Utama
+                    </span>
+                    <span
+                      id="preview-dark-secondary"
+                      class="inline-flex h-7 items-center rounded-[6px] px-2.5 text-xs font-medium"
+                      style={`background-color: ${resolvedTheme.dark.secondary}; color: ${resolvedTheme.dark.secondaryForeground};`}
+                    >
+                      Badge Pendukung
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 3: KONTAK DAN MEDIA SOSIAL                       -->
+
+      <section class="space-y-4">
+        <div class="pb-3">
+          <h2 class="font-display text-base font-semibold text-heading">
+            Kontak dan Media Sosial
+          </h2>
+          <p class="mt-0.5 text-xs text-muted">
+            Saluran komunikasi resmi yang ditampilkan pada header, kontak, dan
+            footer website.
+          </p>
+        </div>
+
+        <div class="rounded-lg border border-border bg-surface p-5 sm:p-6 space-y-6">
+          <!-- 3.1 Kontak Utama -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="space-y-1.5">
+              <label
+                for="phone"
+                class="block text-xs font-semibold text-heading"
+              >
+                Nomor Telepon Kantor
+              </label>
+              <input
+                id="phone"
+                name="phone"
+                type="text"
+                value={phone}
+                placeholder="(021) 555-0199"
+                class="h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading font-mono transition-colors"
+              />
+            </div>
+
+            <div class="space-y-1.5">
+              <label
+                for="email"
+                class="block text-xs font-semibold text-heading"
+              >
+                Email Pelayanan Resmi
+              </label>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                value={email}
+                placeholder="info@sman1unggulan.sch.id"
+                class="h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading font-mono transition-colors"
+              />
+            </div>
+          </div>
+
+          <!-- 3.2 Akun Media Sosial (Semua Opsional) -->
+          <div class="space-y-3 pt-4 border-t border-border/70">
+            <div class="flex items-center justify-between">
+              <div>
+                <span class="block text-xs font-semibold text-heading">
+                  Akun Media Sosial Resmi
+                </span>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <!-- WhatsApp -->
+              <div class="space-y-1">
+                <label
+                  for="social_whatsapp"
+                  class="block text-[11px] text-muted font-medium"
+                >
+                  WhatsApp Hotline Pelayanan
+                </label>
+                <input
+                  id="social_whatsapp"
+                  name="social_whatsapp"
+                  type="text"
+                  value={socialWhatsapp}
+                  placeholder="+62 812-3456-7890"
+                  class="h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading font-mono transition-colors"
+                />
+              </div>
+
+              <!-- Instagram -->
+              <div class="space-y-1">
+                <label
+                  for="social_instagram"
+                  class="block text-[11px] text-muted font-medium"
+                >
+                  Instagram (URL Lengkap)
+                </label>
+                <input
+                  id="social_instagram"
+                  name="social_instagram"
+                  type="url"
+                  value={socialInstagram}
+                  placeholder="https://instagram.com/sman1unggulan"
+                  class="h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading font-mono transition-colors"
+                />
+              </div>
+
+              <!-- YouTube -->
+              <div class="space-y-1">
+                <label
+                  for="social_youtube"
+                  class="block text-[11px] text-muted font-medium"
+                >
+                  Kanal YouTube (URL Lengkap)
+                </label>
+                <input
+                  id="social_youtube"
+                  name="social_youtube"
+                  type="url"
+                  value={socialYoutube}
+                  placeholder="https://youtube.com/@sman1unggulan"
+                  class="h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading font-mono transition-colors"
+                />
+              </div>
+
+              <!-- Facebook -->
+              <div class="space-y-1">
+                <label
+                  for="social_facebook"
+                  class="block text-[11px] text-muted font-medium"
+                >
+                  Facebook (URL Lengkap)
+                </label>
+                <input
+                  id="social_facebook"
+                  name="social_facebook"
+                  type="url"
+                  value={socialFacebook}
+                  placeholder="https://facebook.com/sman1unggulan"
+                  class="h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading font-mono transition-colors"
+                />
+              </div>
+
+              <!-- X / Twitter -->
+              <div class="space-y-1">
+                <label
+                  for="social_twitter"
+                  class="block text-[11px] text-muted font-medium"
+                >
+                  X / Twitter (URL Lengkap)
+                </label>
+                <input
+                  id="social_twitter"
+                  name="social_twitter"
+                  type="url"
+                  value={socialTwitter}
+                  placeholder="https://x.com/sman1unggulan"
+                  class="h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading font-mono transition-colors"
+                />
+              </div>
+
+              <!-- TikTok -->
+              <div class="space-y-1">
+                <label
+                  for="social_tiktok"
+                  class="block text-[11px] text-muted font-medium"
+                >
+                  TikTok (URL Lengkap)
+                </label>
+                <input
+                  id="social_tiktok"
+                  name="social_tiktok"
+                  type="url"
+                  value={socialTiktok}
+                  placeholder="https://tiktok.com/@sman1unggulan"
+                  class="h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading font-mono transition-colors"
+                />
+              </div>
+            </div>
+          </div>
+
+          <!-- 3.3 Gambar Latar Hero Kontak -->
+          <div class="space-y-3 pt-4 border-t border-border/70">
+            <div>
+              <span class="block text-xs font-semibold text-heading">
+                Gambar Latar Hero Halaman Kontak
+              </span>
+              <p class="text-[11px] text-muted">
+                URL gambar latar belakang transparan (watermark) pada bagian
+                kepala halaman kontak publik.
+              </p>
+            </div>
+
+            <div class="space-y-1.5">
+              <div class="flex items-center gap-2">
+                <input
+                  id="contact_bg_image"
+                  name="contact_bg_image"
+                  type="text"
+                  value={contactBgImage}
+                  placeholder="https://images.unsplash.com/... atau pilih dari media"
+                  class="h-9 flex-1 rounded-md border border-border bg-surface px-3 text-xs text-heading font-mono transition-colors"
+                />
+                <button
+                  type="button"
+                  id="btn-pick-contact-bg"
+                  class="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-border bg-surface px-3 text-xs font-medium text-heading transition-colors hover:bg-surface-subtle shrink-0"
+                >
+                  <svg
+                    class="h-3.5 w-3.5 text-muted"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                    />
+                  </svg>
+                  Pilih Media
+                </button>
+              </div>
+              <p class="text-[10px] text-muted">
+                Kosongkan untuk menggunakan gambar gedung kampus bawaan secara
+                default.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </form>
+  </div>
+
+  <MediaPickerModal id="settings-media-picker" />
+
+  <script is:inline>
+    function initPengaturan() {
+      const form = document.getElementById("settings-form");
+      const banner = document.getElementById("status-banner");
+      const btnHeaderSave = document.getElementById("btn-header-save");
+      const headerLabel = document.getElementById("btn-header-label");
+      const saveIcon = document.getElementById("btn-save-icon");
+      const saveSpinner = document.getElementById("btn-save-spinner");
+      const saveCheck = document.getElementById("btn-save-check");
+      const unsavedBadge = document.getElementById("unsaved-badge");
+
+      // Track Form Changes (Dirty State)
+      let isFormDirty = false;
+      function markFormDirty(dirty = true) {
+        isFormDirty = dirty;
+        if (unsavedBadge) {
+          if (dirty) {
+            unsavedBadge.classList.remove("hidden");
+          } else {
+            unsavedBadge.classList.add("hidden");
+          }
+        }
+      }
+
+      window.addEventListener("beforeunload", (e) => {
+        if (isFormDirty) {
+          e.preventDefault();
+          e.returnValue = "Ada perubahan pengaturan yang belum disimpan.";
+        }
+      });
+
+      // Inputs & Elements
+      const logoInput = document.getElementById("logo_url");
+      const logoImg = document.getElementById("logo-preview-img");
+      const logoEmpty = document.getElementById("logo-preview-empty");
+      const logoFilename = document.getElementById("logo-filename");
+      const btnPickLogo = document.getElementById("btn-pick-logo");
+      const btnRemoveLogo = document.getElementById("btn-remove-logo");
+      const uploadLogoFile = document.getElementById("upload-logo-file");
+
+      const toggleShowSchoolName = document.getElementById(
+        "toggle-show-school-name",
+      );
+      const headerShowNameInput = document.getElementById(
+        "header_show_school_name",
+      );
+      const orientRadios = document.querySelectorAll(
+        'input[name="logo_orientation"]',
+      );
+
+      const faviconInput = document.getElementById("favicon_url");
+      const faviconImg = document.getElementById("favicon-preview-img");
+      const faviconFilename = document.getElementById("favicon-filename");
+      const btnPickFavicon = document.getElementById("btn-pick-favicon");
+      const btnResetFavicon = document.getElementById("btn-reset-favicon");
+      const uploadFaviconFile = document.getElementById("upload-favicon-file");
+
+      // Mock Elements in Preview
+      const mockLogoImg = document.getElementById("mock-logo-img");
+      const mockLogoPlaceholder = document.getElementById(
+        "mock-logo-placeholder",
+      );
+      const mockSchoolNameBlock = document.getElementById(
+        "mock-school-name-block",
+      );
+      const mockBtnPpdb = document.getElementById("mock-btn-ppdb");
+
+      // Colors (Header preview sync)
+      const primaryInput = document.getElementById("primary_color");
+
+      // Real-time Header Preview Synchronizer
+      function updateLivePreview() {
+        const currentLogo = logoInput ? logoInput.value.trim() : "";
+        const showName = toggleShowSchoolName
+          ? toggleShowSchoolName.checked
+          : true;
+        let selectedOrient = "auto";
+        orientRadios.forEach((r) => {
+          if (r.checked) selectedOrient = r.value;
+        });
+        const primaryCol = primaryInput ? primaryInput.value.trim() : "#0d9488";
+
+        // 1. Sync Logo in preview
+        if (currentLogo) {
+          if (mockLogoImg) {
+            mockLogoImg.src = currentLogo;
+            mockLogoImg.classList.remove("hidden");
+            // Apply sizing per orientation
+            if (selectedOrient === "horizontal") {
+              mockLogoImg.className =
+                "h-8 max-w-[150px] w-auto object-contain rounded-[4px] transition-all";
+            } else if (selectedOrient === "square") {
+              mockLogoImg.className =
+                "h-8 w-8 object-contain rounded-[4px] transition-all";
+            } else {
+              mockLogoImg.className =
+                "h-8 max-w-[130px] w-auto object-contain rounded-[4px] transition-all";
+            }
+          }
+          if (mockLogoPlaceholder) mockLogoPlaceholder.classList.add("hidden");
+        } else {
+          if (mockLogoImg) mockLogoImg.classList.add("hidden");
+          if (mockLogoPlaceholder) {
+            mockLogoPlaceholder.classList.remove("hidden");
+            mockLogoPlaceholder.style.backgroundColor = primaryCol;
+          }
+        }
+
+        // 2. Sync School Name visibility
+        if (mockSchoolNameBlock) {
+          if (showName) {
+            mockSchoolNameBlock.classList.remove("hidden");
+          } else {
+            mockSchoolNameBlock.classList.add("hidden");
+          }
+        }
+
+        // 3. Sync Theme color on PPDB button
+        if (mockBtnPpdb) {
+          mockBtnPpdb.style.backgroundColor = primaryCol;
+        }
+      }
+
+      // Update Logo State in Settings Card
+      function applyLogoUrl(url) {
+        if (logoInput) logoInput.value = url;
+        if (url) {
+          if (logoImg) {
+            logoImg.src = url;
+            logoImg.classList.remove("hidden");
+          }
+          if (logoEmpty) logoEmpty.classList.add("hidden");
+          if (logoFilename)
+            logoFilename.textContent = url.split("/").pop() || "Logo Sekolah";
+          if (btnRemoveLogo) btnRemoveLogo.classList.remove("hidden");
+        } else {
+          if (logoImg) logoImg.classList.add("hidden");
+          if (logoEmpty) logoEmpty.classList.remove("hidden");
+          if (logoFilename) logoFilename.textContent = "Belum ada logo dipilih";
+          if (btnRemoveLogo) btnRemoveLogo.classList.add("hidden");
+        }
+        markFormDirty(true);
+        updateLivePreview();
+      }
+
+      // Update Favicon State in Settings Card
+      function applyFaviconUrl(url) {
+        if (faviconInput) faviconInput.value = url;
+        if (faviconImg) faviconImg.src = url || "/favicon.svg";
+        if (faviconFilename)
+          faviconFilename.textContent = (url || "/favicon.svg")
+            .split("/")
+            .pop();
+        markFormDirty(true);
+      }
+
+      // Toggle Nama Sekolah
+      toggleShowSchoolName?.addEventListener("change", () => {
+        if (headerShowNameInput) {
+          headerShowNameInput.value = toggleShowSchoolName.checked
+            ? "true"
+            : "false";
+        }
+        markFormDirty(true);
+        updateLivePreview();
+      });
+
+      // Orientasi Radio Buttons
+      orientRadios.forEach((radio) => {
+        radio.addEventListener("change", () => {
+          markFormDirty(true);
+          updateLivePreview();
+        });
+      });
+
+      // Logo Buttons
+      btnPickLogo?.addEventListener("click", () => {
+        window.openMediaPicker?.((media) => {
+          const pickedUrl =
+            media?.fileUrl ||
+            media?.url ||
+            media?.mediumUrl ||
+            (typeof media === "string" ? media : "");
+          if (pickedUrl) {
+            applyLogoUrl(pickedUrl);
+            showBanner(
+              "Logo berhasil dipilih. Klik 'Simpan Perubahan' di kanan atas untuk menyimpan.",
+              "success",
+            );
+          }
+        });
+      });
+
+      btnRemoveLogo?.addEventListener("click", () => {
+        applyLogoUrl("");
+        showBanner(
+          "Logo berhasil dihapus dari preview. Klik 'Simpan Perubahan' di kanan atas untuk menyimpan permanen.",
+          "success",
+        );
+      });
+
+      // Favicon Buttons
+      btnPickFavicon?.addEventListener("click", () => {
+        window.openMediaPicker?.((media) => {
+          const pickedUrl =
+            media?.fileUrl ||
+            media?.url ||
+            media?.mediumUrl ||
+            (typeof media === "string" ? media : "");
+          if (pickedUrl) {
+            applyFaviconUrl(pickedUrl);
+            showBanner(
+              "Favicon berhasil dipilih. Klik 'Simpan Perubahan' di kanan atas untuk menyimpan.",
+              "success",
+            );
+          }
+        });
+      });
+
+      btnResetFavicon?.addEventListener("click", () => {
+        applyFaviconUrl("/favicon.svg");
+        showBanner(
+          "Favicon direset ke default. Klik 'Simpan Perubahan' di kanan atas untuk menyimpan.",
+          "success",
+        );
+      });
+
+      // Contact Hero Background Picker
+      const inputContactBg = document.getElementById("contact_bg_image");
+      const btnPickContactBg = document.getElementById("btn-pick-contact-bg");
+      btnPickContactBg?.addEventListener("click", () => {
+        window.openMediaPicker?.((media) => {
+          const pickedUrl =
+            media?.fileUrl ||
+            media?.url ||
+            media?.mediumUrl ||
+            (typeof media === "string" ? media : "");
+          if (pickedUrl && inputContactBg) {
+            inputContactBg.value = pickedUrl;
+            markFormDirty(true);
+            showBanner(
+              "Gambar latar kontak berhasil dipilih. Klik 'Simpan Perubahan' di kanan atas untuk menyimpan.",
+              "success",
+            );
+          }
+        });
+      });
+
+      inputContactBg?.addEventListener("input", () => {
+        markFormDirty(true);
+      });
+
+      // Upload Helper
+      async function uploadFile(file, onUploaded) {
+        if (!file) return;
+        const fd = new FormData();
+        fd.append("file", file);
+        try {
+          const res = await fetch("/api/admin/media/upload", {
+            method: "POST",
+            body: fd,
+          });
+          const data = await res.json();
+          const uploadedUrl =
+            data?.media?.fileUrl ||
+            data?.media?.url ||
+            data?.data?.fileUrl ||
+            data?.url ||
+            "";
+          if (data.success && uploadedUrl) {
+            onUploaded(uploadedUrl);
+            showBanner(
+              "Berkas berhasil diunggah. Klik 'Simpan Perubahan' di kanan atas untuk menyimpan.",
+              "success",
+            );
+          } else {
+            showBanner(data.error || "Gagal mengunggah berkas.", "error");
+          }
+        } catch {
+          showBanner("Terjadi kesalahan jaringan saat mengunggah.", "error");
+        }
+      }
+
+      uploadLogoFile?.addEventListener("change", (e) => {
+        uploadFile(e.target.files?.[0], (url) => {
+          applyLogoUrl(url);
+        });
+      });
+
+      uploadFaviconFile?.addEventListener("change", (e) => {
+        uploadFile(e.target.files?.[0], (url) => {
+          applyFaviconUrl(url);
+        });
+      });
+
+      primaryInput?.addEventListener("input", () => {
+        updateLivePreview();
+      });
+
+      // Listen to all text inputs for unsaved state
+      form?.querySelectorAll("input").forEach((inp) => {
+        inp.addEventListener("input", () => markFormDirty(true));
+      });
+
+      // Feedback Banner
+      function showBanner(text, type) {
+        banner.classList.remove("hidden");
+        banner.innerText = text;
+        if (type === "success") {
+          banner.className =
+            "rounded-lg border border-primary/20 bg-primary-light p-3.5 text-xs text-primary font-medium block";
+        } else if (type === "error") {
+          banner.className =
+            "rounded-lg border border-error/20 bg-error-light p-3.5 text-xs text-error font-medium block";
+        } else {
+          banner.className =
+            "rounded-lg border border-border bg-surface-subtle p-3.5 text-xs text-muted font-medium block";
+        }
+      }
+
+      // Save Form Handler
+      async function saveSettings() {
+        banner.classList.add("hidden");
+        setLoading(true);
+
+        const fd = new FormData(form);
+        const payload = {};
+        fd.forEach((val, key) => {
+          payload[key] = String(val).trim();
+        });
+
+        // Ensure explicit values for toggle & radios
+        payload["header_show_school_name"] = toggleShowSchoolName
+          ? toggleShowSchoolName.checked
+            ? "true"
+            : "false"
+          : "true";
+
+        try {
+          const res = await fetch("/api/admin/settings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          const data = await res.json();
+          setLoading(false);
+
+          if (data.success) {
+            markFormDirty(false);
+            showBanner("Pengaturan sekolah berhasil disimpan.", "success");
+            saveIcon?.classList.add("hidden");
+            saveCheck?.classList.remove("hidden");
+            if (headerLabel) headerLabel.innerText = "Tersimpan";
+            setTimeout(() => {
+              saveCheck?.classList.add("hidden");
+              saveIcon?.classList.remove("hidden");
+              if (headerLabel) headerLabel.innerText = "Simpan Perubahan";
+            }, 2500);
+          } else {
+            saveIcon?.classList.remove("hidden");
+            showBanner(data.error || "Gagal menyimpan pengaturan.", "error");
+          }
+        } catch {
+          setLoading(false);
+          saveIcon?.classList.remove("hidden");
+          showBanner("Terjadi kesalahan jaringan saat menyimpan.", "error");
+        }
+      }
+
+      function setLoading(isLoading) {
+        if (btnHeaderSave) btnHeaderSave.disabled = isLoading;
+        if (isLoading) {
+          saveIcon?.classList.add("hidden");
+          saveSpinner?.classList.remove("hidden");
+          saveCheck?.classList.add("hidden");
+          if (headerLabel) headerLabel.innerText = "Menyimpan...";
+        } else {
+          saveSpinner?.classList.add("hidden");
+        }
+      }
+
+      form?.addEventListener("submit", (e) => {
+        e.preventDefault();
+        saveSettings();
+      });
+
+      btnHeaderSave?.addEventListener("click", () => {
+        if (form?.reportValidity()) saveSettings();
+      });
+
+      // Initialize Preview on page load
+      updateLivePreview();
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", initPengaturan);
+    } else {
+      initPengaturan();
+    }
+  </script>
+
+  <script>
+    import {
+      THEME_PRESETS,
+      DEFAULT_THEME_PRESET,
+      DEFAULT_THEME_MODE,
+      resolveThemeConfig,
+      normalizeHex,
+      type ModePalette,
+    } from "../../../utils/themeSystem";
+
+    function initPengaturanTheme() {
+      const presetInput = document.getElementById(
+        "theme_preset",
+      ) as HTMLInputElement | null;
+      const presetBadge = document.getElementById("active-preset-badge");
+      const presetBtns =
+        document.querySelectorAll<HTMLButtonElement>(".btn-swatch-preset");
+      const btnResetTheme = document.getElementById("btn-reset-theme");
+
+      const primaryPicker = document.getElementById(
+        "primary_color_picker",
+      ) as HTMLInputElement | null;
+      const primaryInput = document.getElementById(
+        "primary_color",
+      ) as HTMLInputElement | null;
+      const secondaryPicker = document.getElementById(
+        "secondary_color_picker",
+      ) as HTMLInputElement | null;
+      const secondaryInput = document.getElementById(
+        "secondary_color",
+      ) as HTMLInputElement | null;
+      const tertiaryPicker = document.getElementById(
+        "tertiary_color_picker",
+      ) as HTMLInputElement | null;
+      const tertiaryInput = document.getElementById(
+        "tertiary_color",
+      ) as HTMLInputElement | null;
+      const modeRadios = document.querySelectorAll<HTMLInputElement>(
+        'input[name="theme_mode"]',
+      );
+      const mockBtnPpdb = document.getElementById("mock-btn-ppdb");
+      const mockLogoPlaceholder = document.getElementById(
+        "mock-logo-placeholder",
+      );
+
+      function applyPreviewCard(prefix: "light" | "dark", p: ModePalette) {
+        const canvas = document.getElementById(`preview-${prefix}-canvas`);
+        const label = document.getElementById(`preview-${prefix}-label`);
+        const tertiary = document.getElementById(`preview-${prefix}-tertiary`);
+        const surface = document.getElementById(`preview-${prefix}-surface`);
+        const heading = document.getElementById(`preview-${prefix}-heading`);
+        const muted = document.getElementById(`preview-${prefix}-muted`);
+        const primaryBtn = document.getElementById(`preview-${prefix}-primary`);
+        const secondaryBadge = document.getElementById(
+          `preview-${prefix}-secondary`,
+        );
+
+        if (canvas) {
+          canvas.style.backgroundColor = p.background;
+          canvas.style.borderColor = p.border;
+        }
+        if (label) label.style.color = p.muted;
+        if (tertiary) {
+          tertiary.style.backgroundColor = p.tertiary;
+          tertiary.style.color = p.tertiaryForeground;
+        }
+        if (surface) {
+          surface.style.backgroundColor = p.surface;
+          surface.style.borderColor = p.border;
+        }
+        if (heading) heading.style.color = p.heading;
+        if (muted) muted.style.color = p.muted;
+        if (primaryBtn) {
+          primaryBtn.style.backgroundColor = p.primary;
+          primaryBtn.style.color = p.primaryForeground;
+        }
+        if (secondaryBadge) {
+          secondaryBadge.style.backgroundColor = p.secondary;
+          secondaryBadge.style.color = p.secondaryForeground;
+        }
+      }
+
+      function updatePresetButtonsUI(activeId: string) {
+        presetBtns.forEach((btn) => {
+          const isMatch = btn.getAttribute("data-preset-id") === activeId;
+          btn.classList.toggle("border-primary", isMatch);
+          btn.classList.toggle("bg-primary-light/60", isMatch);
+          btn.classList.toggle("border-border", !isMatch);
+          btn.classList.toggle("bg-surface", !isMatch);
+        });
+        if (presetBadge) {
+          presetBadge.textContent =
+            activeId === "custom" ? "Custom Colors" : `Preset: ${activeId}`;
+        }
+      }
+
+      function refreshAppearancePreview() {
+        const pHex = normalizeHex(primaryInput?.value, "#064734");
+        const sHex = normalizeHex(secondaryInput?.value, "#E0FFC2");
+        const tHex = normalizeHex(tertiaryInput?.value, "#D9F45B");
+        const presetVal = presetInput?.value || "custom";
+
+        const resolved = resolveThemeConfig({
+          theme_preset: presetVal,
+          primary_color: pHex,
+          secondary_color: sHex,
+          tertiary_color: tHex,
+        });
+
+        if (presetInput) presetInput.value = resolved.presetId;
+        updatePresetButtonsUI(resolved.presetId);
+        applyPreviewCard("light", resolved.light);
+        applyPreviewCard("dark", resolved.dark);
+
+        if (mockBtnPpdb) {
+          mockBtnPpdb.style.backgroundColor = resolved.light.primary;
+          mockBtnPpdb.style.color = resolved.light.primaryForeground;
+        }
+        if (mockLogoPlaceholder) {
+          mockLogoPlaceholder.style.backgroundColor = resolved.light.primary;
+          mockLogoPlaceholder.style.color = resolved.light.primaryForeground;
+        }
+      }
+
+      function bindColorPair(
+        picker: HTMLInputElement | null,
+        input: HTMLInputElement | null,
+      ) {
+        picker?.addEventListener("input", () => {
+          if (!input) return;
+          input.value = picker.value.toUpperCase();
+          if (presetInput) presetInput.value = "custom";
+          refreshAppearancePreview();
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+
+        input?.addEventListener("input", () => {
+          if (/^#[0-9A-Fa-f]{6}$/.test(input.value) && picker) {
+            picker.value = input.value;
+          }
+          if (presetInput && input.dataset.fromPreset !== "1") {
+            presetInput.value = "custom";
+          }
+          refreshAppearancePreview();
+        });
+      }
+
+      bindColorPair(primaryPicker, primaryInput);
+      bindColorPair(secondaryPicker, secondaryInput);
+      bindColorPair(tertiaryPicker, tertiaryInput);
+
+      function applyIdentityToInputs(
+        presetId: string,
+        p: string,
+        s: string,
+        t: string,
+      ) {
+        if (presetInput) presetInput.value = presetId;
+        if (primaryInput) primaryInput.value = p.toUpperCase();
+        if (primaryPicker) primaryPicker.value = p;
+        if (secondaryInput) secondaryInput.value = s.toUpperCase();
+        if (secondaryPicker) secondaryPicker.value = s;
+        if (tertiaryInput) tertiaryInput.value = t.toUpperCase();
+        if (tertiaryPicker) tertiaryPicker.value = t;
+
+        refreshAppearancePreview();
+        if (primaryInput) {
+          primaryInput.dataset.fromPreset = "1";
+          primaryInput.dispatchEvent(new Event("input", { bubbles: true }));
+          delete primaryInput.dataset.fromPreset;
+        }
+      }
+
+      presetBtns.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const id = btn.getAttribute("data-preset-id") || "custom";
+          const p = btn.getAttribute("data-primary");
+          const s = btn.getAttribute("data-secondary");
+          const t = btn.getAttribute("data-tertiary");
+          if (p && s && t) {
+            applyIdentityToInputs(id, p, s, t);
+          }
+        });
+      });
+
+      btnResetTheme?.addEventListener("click", () => {
+        const def =
+          THEME_PRESETS.find((x) => x.id === DEFAULT_THEME_PRESET) ||
+          THEME_PRESETS[0];
+        modeRadios.forEach((r) => {
+          r.checked = r.value === DEFAULT_THEME_MODE;
+        });
+        applyIdentityToInputs(
+          def.id,
+          def.identity.primary,
+          def.identity.secondary,
+          def.identity.tertiary,
+        );
+      });
+
+      refreshAppearancePreview();
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", initPengaturanTheme);
+    } else {
+      initPengaturanTheme();
+    }
+  </script>
+</AdminLayout>

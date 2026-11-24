@@ -1,0 +1,83 @@
+---
+---
+
+<div
+  id="__toast_container"
+  class="fixed bottom-5 right-5 z-[200] flex flex-col gap-2.5 max-w-sm w-full pointer-events-none px-4 sm:px-0"
+  aria-live="polite"
+  aria-atomic="true"
+></div>
+
+<script is:inline>
+  (function () {
+    const container = document.getElementById('__toast_container');
+
+    window.showToast = function (message, type, duration) {
+      if (!type) type = 'info';
+      if (typeof duration !== 'number') duration = 4000;
+
+      if (!container) {
+        console.warn('ToastContainer not found, fallback alert:', message);
+        return;
+      }
+
+      const toast = document.createElement('div');
+      toast.className = 'pointer-events-auto rounded-[8px] border p-3.5 shadow-xl flex items-start gap-3 bg-surface text-heading transition-all duration-200 ease-out transform translate-x-6 opacity-0';
+
+      let borderClass = 'border-border';
+      let iconHtml = '';
+
+      if (type === 'success') {
+        borderClass = 'border-success';
+        iconHtml = '<div class="h-6 w-6 rounded-full bg-success text-white flex items-center justify-center shrink-0 text-xs font-bold shadow-xs">✓</div>';
+      } else if (type === 'error') {
+        borderClass = 'border-error';
+        iconHtml = '<div class="h-6 w-6 rounded-full bg-error text-white flex items-center justify-center shrink-0 text-xs font-bold shadow-xs">✕</div>';
+      } else if (type === 'warning') {
+        borderClass = 'border-warning';
+        iconHtml = '<div class="h-6 w-6 rounded-full bg-warning text-white flex items-center justify-center shrink-0 text-xs font-bold shadow-xs">!</div>';
+      } else {
+        borderClass = 'border-primary';
+        iconHtml = '<div class="h-6 w-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0 text-xs font-bold shadow-xs">i</div>';
+      }
+
+      toast.classList.add(borderClass);
+
+      toast.innerHTML = `
+        ${iconHtml}
+        <div class="min-w-0 flex-1 pt-0.5">
+          <p class="font-body text-xs font-medium text-heading leading-relaxed break-words">${message}</p>
+        </div>
+        <button type="button" class="text-muted hover:text-heading cursor-pointer p-0.5 shrink-0 transition-colors" aria-label="Tutup notifikasi">
+          <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      `;
+
+      const closeBtn = toast.querySelector('button');
+      function dismiss() {
+        toast.classList.remove('translate-x-0', 'opacity-100');
+        toast.classList.add('translate-x-6', 'opacity-0');
+        setTimeout(function () { toast.remove(); }, 180);
+      }
+
+      closeBtn?.addEventListener('click', dismiss);
+
+      container.appendChild(toast);
+      requestAnimationFrame(function () {
+        toast.classList.remove('translate-x-6', 'opacity-0');
+        toast.classList.add('translate-x-0', 'opacity-100');
+      });
+
+      if (duration > 0) {
+        setTimeout(dismiss, duration);
+      }
+    };
+
+    // Override native window.alert to automatically route through showToast
+    window.alert = function (msg) {
+      window.showToast(String(msg), 'error', 5000);
+    };
+  })();
+</script>

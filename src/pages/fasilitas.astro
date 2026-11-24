@@ -1,0 +1,411 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import Breadcrumb from "../components/Breadcrumb.astro";
+import Icon from "../components/Icon.astro";
+import { db, facilities, settings } from "../db";
+import { eq, asc, desc } from "drizzle-orm";
+
+export const prerender = false;
+
+// Ambil konfigurasi identitas sekolah
+const allSettings = await db
+  .select()
+  .from(settings)
+  .catch(() => []);
+const schoolInfo = allSettings.reduce(
+  (acc, curr) => {
+    acc[curr.key] = curr.value;
+    return acc;
+  },
+  {} as Record<string, string>,
+);
+const schoolName = schoolInfo["school_name"] || "SMAN 1 Unggulan";
+
+// Ambil seluruh data fasilitas aktif dari database
+const rawFacilities = await db
+  .select()
+  .from(facilities)
+  .where(eq(facilities.isActive, true))
+  .orderBy(asc(facilities.orderNumber), desc(facilities.id))
+  .catch(() => []);
+
+// Fallback fasilitas representatif sekolah (6 fasilitas, 5 kategori)
+const fallbackFacilities = [
+  {
+    id: 1,
+    name: "Laboratorium Komputer & TI",
+    category: "Laboratorium",
+    location: "Gedung B Lantai 2",
+    capacity: "40 Komputer",
+    description:
+      "Ruang pembelajaran komputer yang digunakan untuk mendukung kegiatan teknologi informasi, pemrograman, dan asesmen digital nasional.",
+    imageUrl:
+      "https://images.unsplash.com/photo-1562774053-701939374585?auto=format&fit=crop&w=1000&q=80",
+  },
+  {
+    id: 2,
+    name: "Ruang Kelas Digital (Smart Classroom)",
+    category: "Ruang Belajar",
+    location: "Gedung B & C",
+    capacity: "36 Siswa / Kelas",
+    description:
+      "Ruang belajar interaktif berpendingin ruangan dengan display digital dan pencahayaan optimal untuk pembelajaran aktif.",
+    imageUrl:
+      "https://images.unsplash.com/photo-1580582932707-520aed937b7b?auto=format&fit=crop&w=1000&q=80",
+  },
+  {
+    id: 3,
+    name: "Perpustakaan Graha Pustaka",
+    category: "Penunjang",
+    location: "Gedung Utama Lantai 1",
+    capacity: "100 Siswa",
+    description:
+      "Pusat literasi dan referensi ilmiah dengan ruang baca hening ber-AC, bilik digital multimedia, dan katalog buku terpadu.",
+    imageUrl:
+      "https://images.unsplash.com/photo-1521587760476-6c12a4b040da?auto=format&fit=crop&w=1000&q=80",
+  },
+  {
+    id: 4,
+    name: "Gelanggang & Lapangan Olahraga Multifungsi",
+    category: "Olahraga",
+    location: "Area Barat Sekolah",
+    capacity: "400 Penonton",
+    description:
+      "Fasilitas olahraga terbuka dengan lantai standar untuk basket, bola voli, dan bulutangkis serta tribun penonton beratap.",
+    imageUrl:
+      "https://images.unsplash.com/photo-1546519638-68e109498ffc?auto=format&fit=crop&w=1000&q=80",
+  },
+  {
+    id: 5,
+    name: "Aula Serbaguna Graha Widya",
+    category: "Penunjang",
+    location: "Gedung Utama Lantai 3",
+    capacity: "600 Kursi",
+    description:
+      "Gedung pertemuan representatif dengan panggung utama, tata akustik profesional, dan pendingin ruangan untuk perhelatan resmi sekolah.",
+    imageUrl:
+      "https://images.unsplash.com/photo-1517457373958-b7bdd4587205?auto=format&fit=crop&w=1000&q=80",
+  },
+  {
+    id: 6,
+    name: "Unit Kesehatan Sekolah (UKS)",
+    category: "Kesehatan & Ibadah",
+    location: "Gedung Utama Lantai 1",
+    capacity: "6 Tempat Tidur",
+    description:
+      "Ruang pelayanan kesehatan pertama bagi warga sekolah, dilengkapi tempat tidur istirahat, kotak obat P3K, dan perawat siaga.",
+    imageUrl:
+      "https://images.unsplash.com/photo-1519494026892-80bbd2d6fd0d?auto=format&fit=crop&w=1000&q=80",
+  },
+];
+
+const facilitiesList =
+  rawFacilities.length > 0 ? rawFacilities : fallbackFacilities;
+
+// Hitung kategori unik aktif untuk statistik
+const categoriesCount = new Set(facilitiesList.map((f) => f.category)).size;
+---
+
+<Layout
+  title={`Sarana & Prasarana Sekolah — ${schoolName}`}
+  description="Daftar sarana dan prasarana pendidikan yang mendukung kegiatan pembelajaran, pengembangan keterampilan, dan aktivitas peserta didik."
+>
+  <Header currentPath="/fasilitas" />
+
+  <main class="flex-1 py-10 sm:py-14 bg-background">
+    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <!-- Breadcrumb -->
+      <Breadcrumb
+        items={[
+          { label: "Beranda", href: "/" },
+          { label: "Sarana & Prasarana" },
+        ]}
+      />
+
+      <!-- Section Title Header -->
+      <div class="pb-2 mb-8 space-y-4">
+        <h1
+          class="font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-heading"
+        >
+          Sarana & Prasarana
+        </h1>
+        <p
+          class="mt-2 font-body text-sm sm:text-base text-muted max-w-2xl leading-relaxed"
+        >
+          Fasilitas pendidikan yang mendukung kegiatan pembelajaran,
+          pengembangan keterampilan, dan aktivitas peserta didik {schoolName}.
+        </p>
+
+        <!-- Stats Counter (Kartu KPI Mandiri) -->
+        <div class="mt-6 flex flex-wrap gap-3 sm:gap-4">
+          <div class="rounded-[10px] border border-border bg-surface px-4 py-2.5 shadow-xs">
+            <span class="font-display text-lg sm:text-xl font-bold tracking-tight text-primary leading-none block">
+              {facilitiesList.length}
+            </span>
+            <span class="mt-1 font-body text-xs text-muted block whitespace-nowrap">
+              Fasilitas Kampus
+            </span>
+          </div>
+          <div class="rounded-[10px] border border-border bg-surface px-4 py-2.5 shadow-xs">
+            <span class="font-display text-lg sm:text-xl font-bold tracking-tight text-primary leading-none block">
+              {categoriesCount}
+            </span>
+            <span class="mt-1 font-body text-xs text-muted block whitespace-nowrap">
+              Kategori Sarana
+            </span>
+          </div>
+          <div class="rounded-[10px] border border-border bg-surface px-4 py-2.5 shadow-xs">
+            <span class="font-display text-lg sm:text-xl font-bold tracking-tight text-primary leading-none block">
+              100%
+            </span>
+            <span class="mt-1 font-body text-xs text-muted block whitespace-nowrap">
+              Standar Operasional
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Grid Kartu Fasilitas -->
+      <div
+        class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-5"
+        id="facility-grid"
+      >
+        {
+          facilitiesList.map((item) => (
+            <article
+              class="facility-card group overflow-hidden rounded-[10px] border border-border bg-surface transition-all duration-200 hover:-translate-y-0.5 hover:border-border-hover hover:shadow-(--shadow-hover) flex flex-col justify-between cursor-pointer"
+              tabindex="0"
+              role="button"
+              aria-label={`Lihat detail ${item.name}`}
+              data-facility={JSON.stringify(item)}
+            >
+              <div>
+                {/* Foto Rasio 16:9 */}
+                <div class="relative aspect-video w-full overflow-hidden bg-surface-subtle">
+                  <img
+                    src={
+                      item.imageUrl ||
+                      "https://images.unsplash.com/photo-1562774053-701939374585?auto=format&fit=crop&w=800&q=80"
+                    }
+                    alt={item.name}
+                    width="800"
+                    height="450"
+                    class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                    loading="lazy"
+                  />
+                  {item.category && (
+                    <div class="absolute top-2.5 left-2.5">
+                      <span class="rounded-[4px] border border-white/20 bg-black/60 backdrop-blur-xs px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white shadow-xs">
+                        {item.category}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Judul & Lokasi Fasilitas */}
+                <div class="p-3.5 sm:p-4 space-y-1.5">
+                  <h2 class="font-display text-xs sm:text-sm font-bold text-heading leading-snug line-clamp-2 transition-colors group-hover:text-primary">
+                    {item.name}
+                  </h2>
+                  {item.location && (
+                    <div class="flex items-center gap-1.5 text-[11px] text-muted font-body">
+                      <Icon name="map-pin" class="h-3 w-3 text-primary shrink-0" />
+                      <span class="truncate">{item.location}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </article>
+          ))
+        }
+      </div>
+    </div>
+  </main>
+
+  {/* Modal Detail Fasilitas Interaktif (Klik Kartu) */}
+  <div
+    id="facility-modal"
+    class="fixed inset-0 z-50 hidden bg-black/70 backdrop-blur-xs flex items-center justify-center p-4"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Detail Fasilitas Sekolah"
+  >
+    <div
+      class="relative max-w-xl w-full bg-surface rounded-[12px] border border-border overflow-hidden shadow-2xl p-5 sm:p-6 space-y-5 max-h-[90vh] overflow-y-auto"
+    >
+      <!-- Tombol Tutup -->
+      <button
+        id="btn-close-modal"
+        type="button"
+        class="absolute top-4 right-4 flex h-8 w-8 items-center justify-center rounded-full bg-surface-subtle text-muted hover:text-heading hover:bg-surface border border-border transition-colors cursor-pointer z-10"
+        aria-label="Tutup jendela detail"
+      >
+        <Icon name="close" class="h-4 w-4" />
+      </button>
+
+      <!-- Foto Fasilitas di Modal (16:9) -->
+      <div
+        class="aspect-video w-full rounded-[8px] overflow-hidden border border-border bg-surface-subtle shadow-xs"
+      >
+        <img
+          id="modal-image"
+          src=""
+          alt="Foto Prasarana Fasilitas Sekolah"
+          width="800"
+          height="450"
+          class="h-full w-full object-cover"
+        />
+      </div>
+
+      <!-- Konten Fasilitas -->
+      <div class="space-y-1.5">
+        <span
+          id="modal-category"
+          class="inline-block rounded-[4px] border border-primary/20 bg-primary-light px-2.5 py-0.5 text-[10px] font-semibold text-primary uppercase tracking-wider"
+        >
+        </span>
+        <h3
+          id="modal-name"
+          class="font-display text-xl sm:text-2xl font-bold text-heading leading-snug"
+        >
+        </h3>
+
+        <p
+          id="modal-desc"
+          class="font-body text-xs sm:text-sm text-muted leading-relaxed pt-1"
+        >
+        </p>
+      </div>
+
+      <!-- Grid Lokasi & Kapasitas Modal -->
+      <div class="grid grid-cols-2 gap-3 font-body text-xs">
+        <div
+          id="modal-location-container"
+          class="rounded-[8px] border border-border bg-surface-subtle p-3"
+        >
+          <span
+            class="block text-[10px] uppercase font-semibold text-muted tracking-wider"
+            >Lokasi</span
+          >
+          <span
+            id="modal-location"
+            class="font-medium text-heading mt-0.5 block"></span>
+        </div>
+        <div
+          id="modal-capacity-container"
+          class="rounded-[8px] border border-border bg-surface-subtle p-3"
+        >
+          <span
+            class="block text-[10px] uppercase font-semibold text-muted tracking-wider"
+            >Kapasitas</span
+          >
+          <span
+            id="modal-capacity"
+            class="font-medium text-heading mt-0.5 block"></span>
+        </div>
+      </div>
+
+      <div class="pt-2 flex justify-end">
+        <button
+          type="button"
+          id="btn-close-modal-bottom"
+          class="inline-flex h-9 items-center justify-center rounded-[6px] border border-border bg-surface px-4 text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+        >
+          Tutup
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <Footer />
+
+  <script>
+    function initFacilityDetailModal() {
+      const modal = document.getElementById("facility-modal");
+      const modalImg = document.getElementById(
+        "modal-image",
+      ) as HTMLImageElement | null;
+      const modalCategory = document.getElementById("modal-category");
+      const modalName = document.getElementById("modal-name");
+      const modalDesc = document.getElementById("modal-desc");
+      const modalLocation = document.getElementById("modal-location");
+      const modalLocationContainer = document.getElementById(
+        "modal-location-container",
+      );
+      const modalCapacity = document.getElementById("modal-capacity");
+      const modalCapacityContainer = document.getElementById(
+        "modal-capacity-container",
+      );
+      const closeBtn = document.getElementById("btn-close-modal");
+      const closeBottomBtn = document.getElementById("btn-close-modal-bottom");
+      const cards = document.querySelectorAll<HTMLElement>(".facility-card");
+
+      cards.forEach((card) => {
+        card.addEventListener("click", () => {
+          const raw = card.getAttribute("data-facility");
+          if (!raw) return;
+          try {
+            const data = JSON.parse(raw);
+            if (modalImg) {
+              modalImg.src = data.imageUrl || "";
+              modalImg.alt = data.name || "";
+            }
+            if (modalCategory) modalCategory.textContent = data.category || "";
+            if (modalName) modalName.textContent = data.name || "";
+            if (modalDesc)
+              modalDesc.textContent =
+                data.description || "Tidak ada deskripsi tambahan.";
+
+            if (data.location) {
+              if (modalLocation) modalLocation.textContent = data.location;
+              modalLocationContainer?.classList.remove("hidden");
+            } else {
+              modalLocationContainer?.classList.add("hidden");
+            }
+
+            if (data.capacity) {
+              if (modalCapacity) modalCapacity.textContent = data.capacity;
+              modalCapacityContainer?.classList.remove("hidden");
+            } else {
+              modalCapacityContainer?.classList.add("hidden");
+            }
+
+            modal?.classList.remove("hidden");
+          } catch {}
+        });
+
+        // Dukungan navigasi keyboard (Enter atau Space)
+        card.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            card.click();
+          }
+        });
+      });
+
+      function closeModal() {
+        modal?.classList.add("hidden");
+      }
+
+      closeBtn?.addEventListener("click", closeModal);
+      closeBottomBtn?.addEventListener("click", closeModal);
+      modal?.addEventListener("click", (e) => {
+        if (e.target === modal) closeModal();
+      });
+
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && !modal?.classList.contains("hidden")) {
+          closeModal();
+        }
+      });
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", initFacilityDetailModal);
+    } else {
+      initFacilityDetailModal();
+    }
+  </script>
+</Layout>

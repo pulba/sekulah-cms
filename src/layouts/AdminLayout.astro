@@ -1,0 +1,1707 @@
+---
+import "../styles/global.css";
+import SvgSprite from "../components/SvgSprite.astro";
+import Icon from "../components/Icon.astro";
+import ConfirmDialog from "../components/ConfirmDialog.astro";
+import ToastContainer from "../components/ToastContainer.astro";
+import { db, settings } from "../db";
+import { resolveThemeConfig, buildThemeCss } from "../utils/themeSystem";
+import { getSettingsMap } from "../utils/settingsCache";
+
+interface Props {
+  title?: string;
+  activeNav?: string;
+  settingsMap?: Record<string, string>;
+}
+
+const {
+  title = "Dashboard Admin",
+  activeNav = "dashboard",
+  settingsMap: passedSettings,
+} = Astro.props;
+
+// Reuse settings from parent page if already fetched, otherwise use cached settings
+const schoolSettings: Record<string, string> =
+  passedSettings || (await getSettingsMap());
+
+const schoolName = schoolSettings["school_name"] || "SMAN 1 Unggulan";
+const logoUrl = schoolSettings["logo_url"] || "";
+const faviconUrl = schoolSettings["favicon_url"] || "/favicon.svg";
+const resolvedTheme = resolveThemeConfig(schoolSettings);
+const themeCss = buildThemeCss(resolvedTheme);
+const defaultThemeMode = resolvedTheme.mode;
+const schoolInitial = (schoolName.trim().charAt(0) || "S").toUpperCase();
+
+// Deteksi status madrasah vs sekolah negeri/umum untuk label OSIS/OSIM
+const schoolType = (
+  schoolSettings["school_type"] ||
+  schoolSettings["school_level"] ||
+  "SMA"
+).toUpperCase();
+const isMadrasah = ["MA", "MTS", "MI"].includes(schoolType);
+const isSmk = schoolType === "SMK";
+const customStudentOrg = (
+  schoolSettings["student_org_type"] ||
+  schoolSettings["student_org_label"] ||
+  ""
+).trim();
+const studentOrgLabel = customStudentOrg || (isMadrasah ? "OSIM" : "OSIS");
+
+// Ambil data user dari locals (disiapkan oleh middleware)
+const user = Astro.locals.user || {
+  name: "Administrator IT",
+  email: "admin@sman1unggulan.sch.id",
+  role: "super_admin",
+};
+
+const isSuperAdmin = user.role === "super_admin";
+
+interface PrimaryNavItem {
+  id: string;
+  label: string;
+  href: string;
+  icon: string;
+}
+
+interface NavGroupItem {
+  id: string;
+  label: string;
+  href: string;
+}
+
+interface NavGroup {
+  id: string;
+  label: string;
+  icon: string;
+  children: NavGroupItem[];
+}
+
+// Menu mandiri untuk fitur yang sering digunakan (akses cepat langsung tanpa dropdown)
+const primaryNavItems: PrimaryNavItem[] = [
+  {
+    id: "dashboard",
+    label: "Dashboard",
+    href: "/admin",
+    icon: "M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z",
+  },
+  {
+    id: "berita",
+    label: "Berita & Artikel",
+    href: "/admin/berita",
+    icon: "M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z",
+  },
+  {
+    id: "agenda",
+    label: "Agenda Kegiatan",
+    href: "/admin/agenda",
+    icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z",
+  },
+  {
+    id: "media",
+    label: "Media Library",
+    href: "/admin/media",
+    icon: "M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z",
+  },
+  {
+    id: "galeri",
+    label: "Galeri Kegiatan",
+    href: "/admin/galeri",
+    icon: "M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z",
+  },
+];
+
+// Menu kelompok dropdown untuk fitur serumpun/berdekatan
+const navGroups: NavGroup[] = [
+  {
+    id: "pendaftaran_kelulusan",
+    label: "Pendaftaran & Kelulusan",
+    icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4",
+    children: [
+      {
+        id: "pendaftar",
+        label: "Data Pendaftar (Calon Siswa)",
+        href: "/admin/pendaftaran/pendaftar",
+      },
+      {
+        id: "pendaftaran",
+        label: "Pengaturan Pendaftaran",
+        href: "/admin/pendaftaran",
+      },
+      {
+        id: "kelulusan",
+        label: "Pengumuman Kelulusan",
+        href: "/admin/kelulusan",
+      },
+      {
+        id: "pengumuman",
+        label: "Banner Pengumuman",
+        href: "/admin/pengumuman",
+      },
+    ],
+  },
+  {
+    id: "kesiswaan",
+    label: "Kesiswaan & Alumni",
+    icon: "M12 14l9-5-9-5-9 5 9 5z M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z M12 14v7",
+    children: [
+      { id: "osis", label: studentOrgLabel, href: "/admin/osis" },
+      ...(isSmk
+        ? [{ id: "bkk", label: "BKK & Mitra Industri", href: "/admin/bkk" }]
+        : []),
+      ...(isMadrasah
+        ? [{ id: "mahad", label: "Ma'had & Tahfidz", href: "/admin/mahad" }]
+        : []),
+      { id: "prestasi", label: "Prestasi Siswa", href: "/admin/prestasi" },
+      { id: "ekskul", label: "Ekstrakurikuler", href: "/admin/ekskul" },
+      { id: "alumni", label: "Tracer Alumni", href: "/admin/alumni" },
+      { id: "rekap-kesiswaan", label: "Statistik Kesiswaan", href: "/admin/kesiswaan" },
+    ],
+  },
+  {
+    id: "kelembagaan",
+    label: "Kelembagaan & Sarana",
+    icon: "M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4",
+    children: [
+      ...(isSuperAdmin
+        ? [{ id: "profil", label: "Profil Sekolah", href: "/admin/profil" }]
+        : []),
+      {
+        id: "direktori",
+        label: "Direktori Guru & Staf",
+        href: "/admin/direktori",
+      },
+      { id: "fasilitas", label: "Fasilitas Sekolah", href: "/admin/fasilitas" },
+      { id: "mitra", label: "Mitra & Kerja Sama", href: "/admin/mitra" },
+    ],
+  },
+  {
+    id: "pengaturan",
+    label: "Pengaturan",
+    icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z",
+    children: [
+      ...(isSuperAdmin
+        ? [
+            {
+              id: "pengaturan",
+              label: "Pengaturan Sekolah",
+              href: "/admin/pengaturan",
+            },
+          ]
+        : []),
+      { id: "slider", label: "Tampilan & Navigasi", href: "/admin/slider" },
+      { id: "dokumen", label: "Repositori Dokumen", href: "/admin/dokumen" },
+    ],
+  },
+];
+
+// Menu sistem khusus super admin (di dalam dropdown User Profile & Logout)
+const systemNavItems = isSuperAdmin
+  ? [
+      {
+        id: "users",
+        label: "Pengguna & Staf",
+        href: "/admin/users",
+        icon: "M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z",
+      },
+      {
+        id: "pemeliharaan",
+        label: "Pemeliharaan & Backup",
+        href: "/admin/pemeliharaan",
+        icon: "M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4",
+      },
+      {
+        id: "logs",
+        label: "Audit Trail",
+        href: "/admin/logs",
+        icon: "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
+      },
+    ]
+  : [];
+
+// Resolve label nama halaman aktif untuk header topbar
+const currentNavLabel =
+  primaryNavItems.find((i) => i.id === activeNav)?.label ||
+  navGroups
+    .flatMap((g) => g.children)
+    .find(
+      (c) =>
+        c.id === activeNav ||
+        (c.id === "pendaftaran" && activeNav === "ppdb") ||
+        (c.id === "ppdb" && activeNav === "pendaftaran") ||
+        (c.id === "osis" && (activeNav === "osis" || activeNav === "osim")),
+    )?.label ||
+  systemNavItems.find((s) => s.id === activeNav)?.label;
+
+const pageName =
+  title && title !== "Ringkasan Sistem" && title !== "Dashboard Admin"
+    ? title
+    : currentNavLabel || title || "Dashboard";
+---
+
+<!doctype html>
+<html lang="id" class="h-full">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content={`Panel kendali dan dashboard CMS ${schoolName}`}
+    />
+    <title>{title} — CMS {schoolName}</title>
+    <link rel="icon" href={faviconUrl} />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400;1,600&display=swap"
+    />
+
+    <!-- Dark Mode Init (Mencegah FOUT, mendukung Light / Dark / System) -->
+    <script is:inline define:vars={{ defaultThemeMode }}>
+      (function () {
+        function applyInitialTheme() {
+          try {
+            var stored = localStorage.getItem("theme");
+            var activeMode =
+              stored === "light" || stored === "dark" || stored === "system"
+                ? stored
+                : defaultThemeMode;
+            var isDark =
+              activeMode === "dark" ||
+              (activeMode === "system" &&
+                window.matchMedia("(prefers-color-scheme: dark)").matches);
+            document.documentElement.classList.toggle("dark", isDark);
+          } catch (e) {}
+        }
+        applyInitialTheme();
+
+        if (window.matchMedia) {
+          window
+            .matchMedia("(prefers-color-scheme: dark)")
+            .addEventListener?.("change", function (e) {
+              var cur = localStorage.getItem("theme");
+              if (!cur || cur === "system") {
+                document.documentElement.classList.toggle("dark", e.matches);
+              }
+            });
+        }
+      })();
+    </script>
+
+    {/* Dynamic Semantic Theme Tokens dari Pengaturan Sekolah */}
+    <style is:inline set:html={themeCss}></style>
+
+    <style>
+      /* Desktop Collapsed Mini Sidebar Styles */
+      @media (min-width: 768px) {
+        #admin-sidebar.is-collapsed,
+        html.sidebar-collapsed-init #admin-sidebar {
+          width: 72px !important;
+        }
+        #admin-sidebar.is-collapsed .sidebar-header,
+        html.sidebar-collapsed-init #admin-sidebar .sidebar-header {
+          height: 76px !important;
+          padding: 8px 6px !important;
+          flex-direction: column !important;
+          justify-content: center !important;
+          gap: 6px !important;
+        }
+        #admin-sidebar.is-collapsed .sidebar-text,
+        html.sidebar-collapsed-init #admin-sidebar .sidebar-text,
+        #admin-sidebar.is-collapsed .sidebar-section-title,
+        html.sidebar-collapsed-init #admin-sidebar .sidebar-section-title,
+        #admin-sidebar.is-collapsed .sidebar-chevron,
+        html.sidebar-collapsed-init #admin-sidebar .sidebar-chevron,
+        #admin-sidebar.is-collapsed .nav-group-content,
+        html.sidebar-collapsed-init #admin-sidebar .nav-group-content {
+          display: none !important;
+        }
+        #admin-sidebar.is-collapsed .sidebar-nav-item,
+        html.sidebar-collapsed-init #admin-sidebar .sidebar-nav-item,
+        #admin-sidebar.is-collapsed .sidebar-group-btn,
+        html.sidebar-collapsed-init #admin-sidebar .sidebar-group-btn {
+          justify-content: center !important;
+          padding-left: 0 !important;
+          padding-right: 0 !important;
+          width: 44px !important;
+          height: 40px !important;
+          margin-left: auto !important;
+          margin-right: auto !important;
+        }
+        #admin-sidebar.is-collapsed .sidebar-divider,
+        html.sidebar-collapsed-init #admin-sidebar .sidebar-divider {
+          display: block !important;
+          margin-left: 14px;
+          margin-right: 14px;
+        }
+        #admin-sidebar.is-collapsed .sidebar-brand-link,
+        html.sidebar-collapsed-init #admin-sidebar .sidebar-brand-link {
+          flex: none !important;
+          justify-content: center !important;
+          padding-left: 0 !important;
+          padding-right: 0 !important;
+        }
+        #admin-sidebar.is-collapsed #desktop-collapse-btn,
+        html.sidebar-collapsed-init #admin-sidebar #desktop-collapse-btn {
+          width: 36px !important;
+          height: 24px !important;
+          margin-left: auto !important;
+          margin-right: auto !important;
+        }
+      }
+    </style>
+
+    {/* Pre-hydration check to avoid sidebar layout shift */}
+    <script is:inline>
+      try {
+        if (
+          window.innerWidth >= 768 &&
+          localStorage.getItem("admin_sidebar_collapsed") === "true"
+        ) {
+          document.documentElement.classList.add("sidebar-collapsed-init");
+        }
+      } catch (e) {}
+    </script>
+  </head>
+  <body class="h-full h-[100dvh] overflow-hidden bg-background text-body font-body antialiased flex flex-col md:flex-row">
+    <SvgSprite />
+    <!-- Mobile Sidebar Backdrop -->
+    <div
+      id="sidebar-backdrop"
+      class="fixed inset-0 bg-black/40 backdrop-blur-xs z-40 transition-opacity duration-200 opacity-0 pointer-events-none md:hidden hidden"
+      aria-hidden="true"
+    ></div>
+
+    <!-- Sidebar Kiri (Mendukung Expanded dan Collapsed Mini Mode) -->
+    <aside
+      id="admin-sidebar"
+      class="fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] h-full bg-heading flex flex-col transition-[width,transform] duration-200 ease-in-out -translate-x-full md:translate-x-0 md:static md:w-64 shrink-0 shadow-lg md:shadow-none overflow-x-hidden"
+    >
+      <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
+        <!-- Brand Header & Collapse Toggle Button -->
+        <div class="sidebar-header h-16 px-3.5 flex items-center justify-between shrink-0 gap-1.5 transition-all">
+          <a
+            href="/admin"
+            class="sidebar-brand-link flex items-center gap-2.5 min-w-0 flex-1 group"
+            title={`CMS ${schoolName}`}
+            data-nav-tooltip={`CMS ${schoolName}`}
+          >
+            {logoUrl ? (
+              <>
+                <img
+                  id="sidebar-logo-img"
+                  src={logoUrl}
+                  alt={schoolName}
+                  width="32"
+                  height="32"
+                  loading="eager"
+                  decoding="async"
+                  class="h-8 w-8 rounded-[6px] object-contain shrink-0"
+                  onerror="this.style.display='none'; document.getElementById('sidebar-logo-fallback')?.classList.remove('hidden');"
+                />
+                <div
+                  id="sidebar-logo-fallback"
+                  class="hidden flex h-8 w-8 items-center justify-center rounded-[6px] bg-primary text-surface border border-border font-display font-bold text-xs shrink-0"
+                >
+                  {schoolInitial}
+                </div>
+              </>
+            ) : (
+              <div
+                id="sidebar-logo-fallback"
+                class="flex h-8 w-8 items-center justify-center rounded-[6px] bg-primary text-surface border border-border font-display font-bold text-xs shrink-0"
+              >
+                {schoolInitial}
+              </div>
+            )}
+            <div class="min-w-0 flex flex-col sidebar-text">
+              <span
+                id="sidebar-school-name"
+                class="font-display text-xs font-bold tracking-tight text-surface truncate leading-tight group-hover:text-accent transition-colors"
+              >
+                {schoolName}
+              </span>
+              <span class="text-[10px] font-medium text-surface tracking-wider uppercase leading-tight mt-0.5">
+                Portal CMS
+              </span>
+            </div>
+          </a>
+
+          <!-- Desktop Collapse / Expand Button -->
+          <button
+            id="desktop-collapse-btn"
+            type="button"
+            class="hidden md:inline-flex h-8 w-8 items-center justify-center rounded-[6px] border border-transparent text-surface hover:bg-primary hover:text-surface transition-colors shrink-0 cursor-pointer"
+            title="Ciutkan / Perluas Sidebar"
+            aria-label="Ciutkan / Perluas Sidebar"
+          >
+            <svg
+              id="collapse-icon"
+              class="h-4 w-4 transition-transform duration-200"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M11 19l-7-7 7-7m8 14l-7-7 7-7"
+              />
+            </svg>
+          </button>
+
+          <!-- Mobile Close Button -->
+          <button
+            id="sidebar-close-btn"
+            type="button"
+            class="md:hidden p-1.5 rounded-[6px] text-surface hover:bg-primary hover:text-surface transition-colors shrink-0 cursor-pointer"
+            aria-label="Tutup menu navigasi"
+          >
+            <svg
+              class="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Nav Items -->
+        <nav class="flex-1 p-3 space-y-1 overflow-y-auto no-scrollbar">
+          {primaryNavItems.map((item) => {
+            const isActive = activeNav === item.id;
+            return (
+              <a
+                href={item.href}
+                data-nav-tooltip={item.label}
+                class:list={[
+                  "sidebar-nav-item flex items-center gap-3 rounded-[6px] px-3 py-2 text-xs font-medium transition-colors",
+                  isActive
+                    ? "bg-accent text-accent-foreground font-semibold"
+                    : "text-surface hover:bg-primary hover:text-surface",
+                ]}
+                title={item.label}
+              >
+                <svg
+                  class="h-4 w-4 shrink-0"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d={item.icon}
+                  />
+                </svg>
+                <span class="sidebar-text truncate">{item.label}</span>
+              </a>
+            );
+          })}
+
+          <!-- Menu Terpadu (Collapsible Dropdowns) -->
+          <div class="sidebar-section-title pt-3 pb-1 px-3 text-[10px] font-bold uppercase tracking-wider text-surface mt-2">
+            Kelola Portal
+          </div>
+          <div class="sidebar-divider hidden border-t border-primary-hover my-2"></div>
+
+          {navGroups.map((group) => {
+            const hasActiveChild = group.children.some(
+              (c) =>
+                c.id === activeNav ||
+                (c.id === "pendaftaran" && activeNav === "ppdb") ||
+                (c.id === "ppdb" && activeNav === "pendaftaran") ||
+                (c.id === "osis" &&
+                  (activeNav === "osis" || activeNav === "osim")),
+            );
+            return (
+              <div class="nav-group py-0.5" data-group-id={group.id}>
+                <button
+                  type="button"
+                  class:list={[
+                    "sidebar-group-btn w-full flex items-center justify-between gap-2 rounded-[6px] px-3 py-2 text-xs font-medium transition-colors cursor-pointer text-left select-none",
+                    hasActiveChild
+                      ? "bg-primary text-surface font-semibold"
+                      : "text-surface hover:bg-primary hover:text-surface",
+                  ]}
+                  aria-expanded={hasActiveChild ? "true" : "false"}
+                  data-group-toggle={group.id}
+                  data-group-label={group.label}
+                  data-group-children={JSON.stringify(group.children)}
+                  title={group.label}
+                >
+                  <div class="flex items-center gap-3 min-w-0">
+                    <svg
+                      class:list={[
+                        "h-4 w-4 shrink-0 transition-colors",
+                        hasActiveChild ? "text-accent" : "text-surface",
+                      ]}
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d={group.icon}
+                      />
+                    </svg>
+                    <span class="sidebar-text truncate">{group.label}</span>
+                  </div>
+                  <svg
+                    class:list={[
+                      "sidebar-chevron chevron-icon h-3.5 w-3.5 shrink-0 transition-transform duration-200 text-surface",
+                      hasActiveChild && "rotate-180",
+                    ]}
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M19 9l-7 7-7-7"
+                    />
+                  </svg>
+                </button>
+
+                <div
+                  id={`group-${group.id}`}
+                  class:list={[
+                    "nav-group-content space-y-0.5 pl-3.5 my-1 transition-all",
+                    !hasActiveChild && "hidden",
+                  ]}
+                >
+                  {group.children.map((child) => {
+                    const isChildActive =
+                      activeNav === child.id ||
+                      (child.id === "pendaftaran" && activeNav === "ppdb") ||
+                      (child.id === "ppdb" && activeNav === "pendaftaran") ||
+                      (child.id === "osis" &&
+                        (activeNav === "osis" || activeNav === "osim"));
+                    return (
+                      <a
+                        href={child.href}
+                        class:list={[
+                          "flex items-center gap-2 rounded-[6px] ml-1 px-2.5 py-1.5 text-xs font-medium transition-colors",
+                          isChildActive
+                            ? "bg-accent text-accent-foreground font-semibold shadow-xs"
+                            : "text-surface hover:bg-primary hover:text-surface",
+                        ]}
+                      >
+                        <span class="truncate">{child.label}</span>
+                      </a>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </nav>
+      </div>
+    </aside>
+
+    <!-- Floating Flyout Submenu for Collapsed Mode -->
+    <div
+      id="sidebar-flyout"
+      class="hidden fixed top-0 left-0 z-50 w-56 rounded-[10px] border border-border bg-surface shadow-2xl p-2.5 space-y-1 transition-all"
+    >
+      <div class="px-2 py-1.5 border-b border-border mb-1 flex items-center justify-between">
+        <span
+          id="flyout-title"
+          class="font-display text-xs font-bold text-heading truncate"
+        ></span>
+        <span class="text-[9px] font-semibold text-muted tracking-wider uppercase bg-surface-subtle px-1.5 py-0.5 rounded border border-border">
+          Menu
+        </span>
+      </div>
+      <div id="flyout-links" class="space-y-0.5"></div>
+    </div>
+
+    <!-- Floating Tooltip for Standalone Items in Collapsed Mode -->
+    <div
+      id="sidebar-tooltip"
+      class="hidden fixed top-0 left-0 z-50 pointer-events-none px-2.5 py-1 rounded-[6px] bg-heading text-surface text-[11px] font-medium shadow-md whitespace-nowrap"
+    >
+      <span id="tooltip-text"></span>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="flex-1 flex flex-col h-full min-w-0 overflow-hidden">
+      <!-- Topbar Header -->
+      <header class="h-14 border-b border-border bg-surface px-4 sm:px-6 flex items-center justify-between shrink-0 z-10">
+        <div class="flex items-center gap-3">
+          <button
+            id="sidebar-toggle-btn"
+            type="button"
+            class="md:hidden p-1.5 -ml-1.5 rounded-[6px] text-muted hover:bg-surface-subtle hover:text-heading transition-colors"
+            aria-label="Buka menu navigasi"
+          >
+            <svg
+              class="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M4 6h16M4 12h16M4 18h16"
+              />
+            </svg>
+          </button>
+          <span class="font-display text-xs font-semibold text-heading truncate">
+            {pageName}
+          </span>
+        </div>
+
+        <div class="flex items-center gap-3 text-xs shrink-0">
+          <span class="text-muted font-mono hidden md:inline text-[11px]">
+            {new Date().toLocaleDateString("id-ID", {
+              weekday: "long",
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+            })}
+          </span>
+          <a
+            href="/"
+            target="_blank"
+            class="h-8 w-8 inline-flex items-center justify-center rounded-[6px] border border-border bg-surface text-muted hover:text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+            title="Buka Website Publik Sekolah"
+            aria-label="Buka Website Publik Sekolah"
+          >
+            <Icon name="external-link" class="h-4 w-4" />
+          </a>
+
+          <!-- Dark Mode Toggle Button Admin -->
+          <button
+            type="button"
+            id="admin-theme-toggle"
+            class="relative h-8 w-8 inline-flex items-center justify-center rounded-[6px] border border-border bg-surface text-muted hover:text-heading hover:bg-surface-subtle transition-colors cursor-pointer overflow-hidden group"
+            title="Ganti Mode Gelap / Terang"
+            aria-label="Ganti Mode Gelap / Terang"
+          >
+            <svg
+              id="admin-theme-sun"
+              class="absolute h-4 w-4 text-warning transition-all duration-300 ease-in-out transform"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"
+              />
+            </svg>
+            <svg
+              id="admin-theme-moon"
+              class="absolute h-4 w-4 text-muted group-hover:text-heading transition-all duration-300 ease-in-out transform"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"
+              />
+            </svg>
+          </button>
+
+          <div class="hidden sm:block h-4 w-px bg-border"></div>
+
+          <!-- User Profile Dropdown Menu in Header -->
+          <div class="relative" id="user-menu-container">
+            <button
+              id="user-menu-btn"
+              type="button"
+              class="flex items-center gap-2 p-1 pl-1.5 pr-2 rounded-md hover:bg-surface-subtle border border-transparent hover:border-border transition-colors cursor-pointer select-none group"
+              aria-expanded="false"
+              aria-haspopup="true"
+              aria-label={`${user.name} - ${user.role === "super_admin" ? "Super Admin" : "Editor"}`}
+            >
+              <div
+                aria-hidden="true"
+                class="h-7 w-7 rounded-full bg-primary text-surface border border-primary/20 flex items-center justify-center font-display text-xs font-bold shrink-0"
+              >
+                {user.name.trim().charAt(0).toUpperCase()}
+              </div>
+              <div class="hidden md:flex flex-col text-left leading-tight">
+                <span class="font-display text-xs font-semibold text-heading group-hover:text-primary transition-colors max-w-[120px] truncate">
+                  {user.name}
+                </span>
+                <span class="text-[10px] text-muted capitalize">
+                  {user.role === "super_admin" ? "Super Admin" : "Editor"}
+                </span>
+              </div>
+              <svg
+                aria-hidden="true"
+                class="chevron-user h-3.5 w-3.5 text-muted group-hover:text-heading transition-transform duration-200"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M19 9l-7 7-7-7"
+                />
+              </svg>
+            </button>
+
+            <!-- Dropdown Popover -->
+            <div
+              id="user-menu-dropdown"
+              class="hidden absolute right-0 top-full mt-1.5 w-56 rounded-[10px] border border-border bg-surface shadow-2xl py-1.5 z-50 transform origin-top-right transition-all duration-150 ease-out opacity-0 scale-95 pointer-events-none text-xs"
+            >
+              <div class="px-3.5 py-2.5 border-b border-border/80 space-y-1 bg-surface-subtle">
+                <div class="flex items-center justify-between gap-1.5">
+                  <p class="font-display text-xs font-bold text-heading truncate">
+                    {user.name}
+                  </p>
+                  <span class="rounded-xs px-1.5 py-0.2 text-[9px] font-semibold bg-primary text-surface border border-primary/20 capitalize shrink-0">
+                    {user.role === "super_admin" ? "Super Admin" : "Editor"}
+                  </span>
+                </div>
+                <p
+                  class="text-[10px] text-muted font-mono truncate"
+                  title={user.email}
+                >
+                  {user.email}
+                </p>
+              </div>
+
+              {isSuperAdmin && systemNavItems.length > 0 && (
+                <div class="py-1">
+                  <div class="px-3.5 pt-1.5 pb-1 text-[9px] font-bold uppercase tracking-wider text-muted/70">
+                    Sistem & Pengaturan
+                  </div>
+                  {systemNavItems.map((item) => {
+                    const isActive = activeNav === item.id;
+                    return (
+                      <a
+                        href={item.href}
+                        class:list={[
+                          "flex items-center gap-2.5 px-3 py-1.5 text-xs transition-colors rounded-xs mx-1",
+                          isActive
+                            ? "bg-primary text-surface font-semibold shadow-xs"
+                            : "text-muted hover:text-heading hover:bg-surface-subtle",
+                        ]}
+                      >
+                        <svg
+                          class:list={[
+                            "h-3.5 w-3.5 shrink-0",
+                            isActive ? "text-surface" : "text-muted",
+                          ]}
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d={item.icon}
+                          />
+                        </svg>
+                        <span class="truncate">{item.label}</span>
+                      </a>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div class="sm:hidden border-t border-border/60 py-1">
+                <a
+                  href="/"
+                  target="_blank"
+                  class="flex items-center gap-2.5 px-3 py-1.5 text-xs text-muted hover:text-heading hover:bg-surface-subtle transition-colors rounded-xs mx-1"
+                >
+                  <Icon
+                    name="external-link"
+                    class="h-3.5 w-3.5 shrink-0 text-muted"
+                  />
+                  <span>Buka Web Publik</span>
+                </a>
+              </div>
+
+              <div class="border-t border-border pt-1">
+                <button
+                  id="change-password-btn"
+                  type="button"
+                  class="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-muted hover:text-heading hover:bg-surface-subtle transition-colors cursor-pointer text-left rounded-xs mx-1"
+                >
+                  <svg
+                    class="h-3.5 w-3.5 shrink-0"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
+                    />
+                  </svg>
+                  <span class="font-medium">Ganti Kata Sandi</span>
+                </button>
+                <button
+                  id="logout-btn"
+                  type="button"
+                  class="w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-muted hover:text-error hover:bg-error-light transition-colors cursor-pointer text-left rounded-xs mx-1"
+                >
+                  <svg
+                    class="h-3.5 w-3.5 shrink-0"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                    />
+                  </svg>
+                  <span class="font-medium">Keluar Sesi</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- Page Body Content -->
+      <main
+        id="admin-main-viewport"
+        class="flex-1 min-h-0 p-4 sm:p-6 md:p-8 overflow-y-auto framer-viewport-enter"
+        transition:name="admin-viewport"
+      >
+        <slot />
+      </main>
+    </div>
+
+    <!-- Modal Ganti Kata Sandi Mandiri -->
+    <div
+      id="password-modal-backdrop"
+      class="fixed inset-0 bg-heading/40 backdrop-blur-xs z-50 items-center justify-center p-4 hidden"
+    >
+      <div class="w-full max-w-md rounded-[12px] border border-border bg-surface shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div class="p-5 border-b border-border flex items-center justify-between">
+          <div>
+            <h3 class="font-display text-sm font-bold text-heading">
+              Ganti Kata Sandi
+            </h3>
+            <p class="font-body text-xs text-muted mt-0.5">
+              Perbarui kata sandi akun dinas Anda secara berkala.
+            </p>
+          </div>
+          <button
+            type="button"
+            id="close-password-modal"
+            class="text-muted hover:text-heading p-1 rounded-[6px] hover:bg-surface-subtle transition-colors"
+          >
+            <svg
+              class="h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+
+        <form id="change-password-form" class="p-5 space-y-4">
+          <div
+            id="password-alert"
+            class="hidden p-3 rounded-[6px] text-xs"
+          ></div>
+
+          <div class="space-y-1.5">
+            <label
+              for="current-password"
+              class="block font-body text-xs font-semibold text-heading"
+            >
+              Kata Sandi Saat Ini <span class="text-error">*</span>
+            </label>
+            <input
+              id="current-password"
+              name="currentPassword"
+              type="password"
+              required
+              placeholder="Masukkan sandi saat ini"
+              class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading placeholder:text-muted/60 transition-colors"
+            />
+          </div>
+
+          <div class="space-y-1.5">
+            <label
+              for="new-password"
+              class="block font-body text-xs font-semibold text-heading"
+            >
+              Kata Sandi Baru <span class="text-error">*</span>
+            </label>
+            <input
+              id="new-password"
+              name="newPassword"
+              type="password"
+              required
+              minlength="8"
+              placeholder="Minimal 8 karakter"
+              class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading placeholder:text-muted/60 transition-colors"
+            />
+          </div>
+
+          <div class="space-y-1.5">
+            <label
+              for="confirm-password"
+              class="block font-body text-xs font-semibold text-heading"
+            >
+              Konfirmasi Kata Sandi Baru <span class="text-error">*</span>
+            </label>
+            <input
+              id="confirm-password"
+              name="confirmPassword"
+              type="password"
+              required
+              minlength="8"
+              placeholder="Ketik ulang sandi baru"
+              class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading placeholder:text-muted/60 transition-colors"
+            />
+          </div>
+
+          <div class="pt-2 flex items-center justify-end gap-2 border-t border-border">
+            <button
+              type="button"
+              id="cancel-password-modal"
+              class="inline-flex h-[36px] items-center justify-center rounded-[6px] border border-border bg-surface px-4 font-body text-xs font-semibold text-heading transition-colors hover:bg-surface-subtle"
+            >
+              Batal
+            </button>
+            <button
+              type="submit"
+              id="submit-password-btn"
+              class="inline-flex h-[36px] items-center justify-center rounded-[6px] bg-primary px-4 font-body text-xs font-semibold text-white transition-all hover:bg-primary-hover shadow-xs"
+            >
+              Simpan Perubahan
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Native Body-Level Slot for Modals, Dialogs & Overlay Pickers -->
+    <slot name="modals" />
+
+    <script define:vars={{ activeNav }}>
+      const activeNavId = activeNav;
+      const sidebar = document.getElementById("admin-sidebar");
+      const desktopCollapseBtn = document.getElementById(
+        "desktop-collapse-btn",
+      );
+      const collapseIcon = document.getElementById("collapse-icon");
+      const toggleBtn = document.getElementById("sidebar-toggle-btn");
+      const closeBtn = document.getElementById("sidebar-close-btn");
+      const backdrop = document.getElementById("sidebar-backdrop");
+      const flyout = document.getElementById("sidebar-flyout");
+      const flyoutTitle = document.getElementById("flyout-title");
+      const flyoutLinks = document.getElementById("flyout-links");
+      const tooltip = document.getElementById("sidebar-tooltip");
+      const tooltipText = document.getElementById("tooltip-text");
+
+      let isCollapsed = false;
+      let activeFlyoutGroup = null;
+
+      // Initialize Desktop Sidebar Collapse State
+      function setCollapsedState(collapsed, save = true) {
+        isCollapsed = collapsed;
+        document.documentElement.classList.remove("sidebar-collapsed-init");
+        if (!sidebar) return;
+
+        if (collapsed) {
+          sidebar.classList.add("is-collapsed");
+          collapseIcon?.classList.add("rotate-180");
+          desktopCollapseBtn?.setAttribute("title", "Perluas Sidebar");
+          desktopCollapseBtn?.setAttribute(
+            "data-nav-tooltip",
+            "Perluas Sidebar",
+          );
+        } else {
+          sidebar.classList.remove("is-collapsed");
+          collapseIcon?.classList.remove("rotate-180");
+          desktopCollapseBtn?.setAttribute("title", "Ciutkan Sidebar");
+          desktopCollapseBtn?.removeAttribute("data-nav-tooltip");
+        }
+
+        // Close any active flyouts or tooltips
+        closeFlyout();
+        hideTooltip();
+
+        if (save) {
+          try {
+            localStorage.setItem(
+              "admin_sidebar_collapsed",
+              collapsed ? "true" : "false",
+            );
+          } catch {}
+        }
+      }
+
+      // Check saved preference on load
+      try {
+        const saved = localStorage.getItem("admin_sidebar_collapsed");
+        if (saved === "true" && window.innerWidth >= 768) {
+          setCollapsedState(true, false);
+        } else {
+          setCollapsedState(false, false);
+        }
+      } catch {}
+
+      // Desktop Toggle Button Click
+      desktopCollapseBtn?.addEventListener("click", () => {
+        setCollapsedState(!isCollapsed, true);
+      });
+
+      // Flyout Logic for Collapsed Mode
+      function openFlyout(btn, label, children) {
+        if (!flyout || !flyoutTitle || !flyoutLinks) return;
+        const rect = btn.getBoundingClientRect();
+        flyoutTitle.textContent = label;
+
+        flyoutLinks.innerHTML = children
+          .map((child) => {
+            const isChildActive = child.id === activeNavId;
+            return `
+              <a
+                href="${child.href}"
+                class="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-xs transition-colors ${
+                  isChildActive
+                    ? "bg-primary text-surface font-semibold shadow-xs"
+                    : "text-muted hover:bg-surface-subtle hover:text-heading"
+                }"
+              >
+                <span class="truncate">${child.label}</span>
+              </a>
+            `;
+          })
+          .join("");
+
+        // Calculate vertical position avoiding screen overflow
+        const top = Math.min(Math.max(rect.top, 12), window.innerHeight - 260);
+        const left = rect.right + 10;
+        flyout.style.top = `${top}px`;
+        flyout.style.left = `${left}px`;
+        flyout.classList.remove("hidden");
+        activeFlyoutGroup = btn;
+      }
+
+      function closeFlyout() {
+        flyout?.classList.add("hidden");
+        activeFlyoutGroup = null;
+      }
+
+      // Tooltip Logic for Mini Mode
+      function showTooltip(el, text) {
+        if (!isCollapsed || window.innerWidth < 768 || !tooltip || !tooltipText)
+          return;
+        const rect = el.getBoundingClientRect();
+        tooltipText.textContent = text;
+        tooltip.style.top = `${rect.top + rect.height / 2 - 12}px`;
+        tooltip.style.left = `${rect.right + 10}px`;
+        tooltip.classList.remove("hidden");
+      }
+
+      function hideTooltip() {
+        tooltip?.classList.add("hidden");
+      }
+
+      // Tooltip hover triggers for standalone items
+      document.querySelectorAll("[data-nav-tooltip]").forEach((el) => {
+        el.addEventListener("mouseenter", () => {
+          const text = el.getAttribute("data-nav-tooltip");
+          if (text) showTooltip(el, text);
+        });
+        el.addEventListener("mouseleave", hideTooltip);
+        el.addEventListener("focus", () => {
+          const text = el.getAttribute("data-nav-tooltip");
+          if (text) showTooltip(el, text);
+        });
+        el.addEventListener("blur", hideTooltip);
+      });
+
+      // Group Button Click (Accordion when Expanded, Popover Flyout when Collapsed)
+      document.querySelectorAll("[data-group-toggle]").forEach((btn) => {
+        // Tooltip on hover when collapsed
+        btn.addEventListener("mouseenter", () => {
+          if (isCollapsed && !activeFlyoutGroup) {
+            const text = btn.getAttribute("data-group-label");
+            if (text) showTooltip(btn, text);
+          }
+        });
+        btn.addEventListener("mouseleave", hideTooltip);
+
+        // Click handler
+        btn.addEventListener("click", (e) => {
+          hideTooltip();
+
+          // Collapsed Mode -> Popover Flyout
+          if (isCollapsed && window.innerWidth >= 768) {
+            e.stopPropagation();
+            if (activeFlyoutGroup === btn) {
+              closeFlyout();
+            } else {
+              const label = btn.getAttribute("data-group-label") || "";
+              const children = JSON.parse(
+                btn.getAttribute("data-group-children") || "[]",
+              );
+              openFlyout(btn, label, children);
+            }
+            return;
+          }
+
+          // Expanded Mode -> Single-open Accordion (auto-close other groups)
+          const groupId = btn.getAttribute("data-group-toggle");
+          const content = document.getElementById(`group-${groupId}`);
+          const chevron = btn.querySelector(".chevron-icon");
+          if (!content) return;
+
+          const isExpanded = btn.getAttribute("aria-expanded") === "true";
+
+          // Close all other group accordions
+          document
+            .querySelectorAll("[data-group-toggle]")
+            .forEach((otherBtn) => {
+              if (otherBtn !== btn) {
+                otherBtn.setAttribute("aria-expanded", "false");
+                const otherId = otherBtn.getAttribute("data-group-toggle");
+                const otherContent = document.getElementById(
+                  `group-${otherId}`,
+                );
+                const otherChevron = otherBtn.querySelector(".chevron-icon");
+                otherContent?.classList.add("hidden");
+                otherChevron?.classList.remove("rotate-180");
+              }
+            });
+
+          // Toggle current group
+          if (isExpanded) {
+            btn.setAttribute("aria-expanded", "false");
+            content.classList.add("hidden");
+            chevron?.classList.remove("rotate-180");
+          } else {
+            btn.setAttribute("aria-expanded", "true");
+            content.classList.remove("hidden");
+            chevron?.classList.add("rotate-180");
+          }
+        });
+      });
+
+      // User Menu Dropdown Toggle in Topbar Header
+      const userMenuBtn = document.getElementById("user-menu-btn");
+      const userMenuDropdown = document.getElementById("user-menu-dropdown");
+      const userMenuChevron = userMenuBtn?.querySelector(".chevron-user");
+
+      function toggleUserMenu(show) {
+        if (!userMenuDropdown) return;
+        const isOpen = userMenuDropdown.getAttribute("data-open") === "true";
+        const willShow = typeof show === "boolean" ? show : !isOpen;
+        if (willShow) {
+          userMenuDropdown.classList.remove("hidden");
+          requestAnimationFrame(() => {
+            userMenuDropdown.setAttribute("data-open", "true");
+            userMenuDropdown.classList.remove(
+              "opacity-0",
+              "scale-95",
+              "pointer-events-none",
+            );
+            userMenuDropdown.classList.add(
+              "opacity-100",
+              "scale-100",
+              "pointer-events-auto",
+            );
+          });
+          userMenuBtn?.setAttribute("aria-expanded", "true");
+          userMenuChevron?.classList.add("rotate-180");
+        } else {
+          userMenuDropdown.setAttribute("data-open", "false");
+          userMenuDropdown.classList.remove(
+            "opacity-100",
+            "scale-100",
+            "pointer-events-auto",
+          );
+          userMenuDropdown.classList.add(
+            "opacity-0",
+            "scale-95",
+            "pointer-events-none",
+          );
+          userMenuBtn?.setAttribute("aria-expanded", "false");
+          userMenuChevron?.classList.remove("rotate-180");
+          setTimeout(() => {
+            if (userMenuDropdown.getAttribute("data-open") !== "true") {
+              userMenuDropdown.classList.add("hidden");
+            }
+          }, 150);
+        }
+      }
+
+      userMenuBtn?.addEventListener("click", (e) => {
+        e.stopPropagation();
+        toggleUserMenu();
+      });
+
+      // Close Flyout and User Menu when clicking outside or scrolling
+      document.addEventListener("click", (e) => {
+        if (
+          flyout &&
+          !flyout.contains(e.target) &&
+          !e.target.closest("[data-group-toggle]")
+        ) {
+          closeFlyout();
+        }
+        if (
+          userMenuDropdown &&
+          !userMenuDropdown.contains(e.target) &&
+          !userMenuBtn?.contains(e.target)
+        ) {
+          toggleUserMenu(false);
+        }
+      });
+
+      window.addEventListener(
+        "scroll",
+        () => {
+          closeFlyout();
+          toggleUserMenu(false);
+        },
+        true,
+      );
+
+      // Mobile Drawer Toggle
+      function openSidebar() {
+        if (!sidebar || !backdrop) return;
+        backdrop.classList.remove("hidden");
+        requestAnimationFrame(() => {
+          sidebar.classList.remove("-translate-x-full");
+          backdrop.classList.remove("opacity-0", "pointer-events-none");
+          backdrop.classList.add("opacity-100");
+        });
+      }
+
+      function closeSidebar() {
+        if (!sidebar || !backdrop) return;
+        sidebar.classList.add("-translate-x-full");
+        backdrop.classList.remove("opacity-100");
+        backdrop.classList.add("opacity-0", "pointer-events-none");
+        setTimeout(() => {
+          if (backdrop.classList.contains("opacity-0")) {
+            backdrop.classList.add("hidden");
+          }
+        }, 200);
+      }
+
+      toggleBtn?.addEventListener("click", openSidebar);
+      closeBtn?.addEventListener("click", closeSidebar);
+      backdrop?.addEventListener("click", closeSidebar);
+
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          closeFlyout();
+          hideTooltip();
+          closeSidebar();
+          toggleUserMenu(false);
+        }
+      });
+
+      sidebar?.querySelectorAll("nav a").forEach((link) => {
+        link.addEventListener("click", () => {
+          if (window.innerWidth < 768) {
+            closeSidebar();
+          }
+        });
+      });
+
+      // Theme Toggle — dipasang via is:inline terpisah di bawah
+
+      // Change Password Modal Logic
+      const changePasswordBtn = document.getElementById("change-password-btn");
+      const passwordModal = document.getElementById("password-modal-backdrop");
+      const closePasswordBtn = document.getElementById("close-password-modal");
+      const cancelPasswordBtn = document.getElementById(
+        "cancel-password-modal",
+      );
+      const changePasswordForm = document.getElementById(
+        "change-password-form",
+      );
+      const passwordAlert = document.getElementById("password-alert");
+      const submitPasswordBtn = document.getElementById("submit-password-btn");
+
+      function openPasswordModal() {
+        toggleUserMenu(false);
+        if (changePasswordForm) changePasswordForm.reset();
+        if (passwordAlert) {
+          passwordAlert.classList.add("hidden");
+          passwordAlert.textContent = "";
+        }
+        if (passwordModal) {
+          passwordModal.classList.remove("hidden");
+          passwordModal.classList.add("flex");
+        }
+      }
+
+      function closePasswordModal() {
+        if (passwordModal) {
+          passwordModal.classList.add("is-closing");
+          setTimeout(() => {
+            passwordModal.classList.remove("is-closing");
+            passwordModal.classList.add("hidden");
+            passwordModal.classList.remove("flex");
+          }, 180);
+        }
+      }
+
+      changePasswordBtn?.addEventListener("click", openPasswordModal);
+      closePasswordBtn?.addEventListener("click", closePasswordModal);
+      cancelPasswordBtn?.addEventListener("click", closePasswordModal);
+      passwordModal?.addEventListener("click", (e) => {
+        if (e.target === passwordModal) closePasswordModal();
+      });
+
+      changePasswordForm?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const currentPasswordInput =
+          document.getElementById("current-password");
+        const newPasswordInput = document.getElementById("new-password");
+        const confirmPasswordInput =
+          document.getElementById("confirm-password");
+
+        const currentPassword = currentPasswordInput
+          ? currentPasswordInput.value
+          : "";
+        const newPassword = newPasswordInput ? newPasswordInput.value : "";
+        const confirmPassword = confirmPasswordInput
+          ? confirmPasswordInput.value
+          : "";
+
+        if (passwordAlert) {
+          passwordAlert.classList.add("hidden");
+          passwordAlert.className = "hidden p-3 rounded-[6px] text-xs";
+        }
+
+        if (newPassword !== confirmPassword) {
+          if (passwordAlert) {
+            passwordAlert.textContent =
+              "Konfirmasi kata sandi baru tidak cocok.";
+            passwordAlert.className =
+              "p-3 rounded-[6px] text-xs bg-error-light text-error-text border border-error/20";
+            passwordAlert.classList.remove("hidden");
+          }
+          return;
+        }
+
+        if (newPassword.length < 8) {
+          if (passwordAlert) {
+            passwordAlert.textContent = "Kata sandi baru minimal 8 karakter.";
+            passwordAlert.className =
+              "p-3 rounded-[6px] text-xs bg-error-light text-error-text border border-error/20";
+            passwordAlert.classList.remove("hidden");
+          }
+          return;
+        }
+
+        if (submitPasswordBtn) {
+          submitPasswordBtn.disabled = true;
+          submitPasswordBtn.textContent = "Menyimpan...";
+        }
+
+        try {
+          const res = await fetch("/api/auth/change-password", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ currentPassword, newPassword }),
+          });
+          const data = await res.json();
+
+          if (data.success) {
+            if (passwordAlert) {
+              passwordAlert.textContent = "Kata sandi berhasil diperbarui.";
+              passwordAlert.className =
+                "p-3 rounded-[6px] text-xs bg-accent-light text-accent-text border border-accent/20";
+              passwordAlert.classList.remove("hidden");
+            }
+            if (changePasswordForm) changePasswordForm.reset();
+            setTimeout(() => {
+              closePasswordModal();
+            }, 1200);
+          } else {
+            if (passwordAlert) {
+              passwordAlert.textContent =
+                data.error || "Gagal mengubah kata sandi.";
+              passwordAlert.className =
+                "p-3 rounded-[6px] text-xs bg-error-light text-error-text border border-error/20";
+              passwordAlert.classList.remove("hidden");
+            }
+          }
+        } catch {
+          if (passwordAlert) {
+            passwordAlert.textContent = "Terjadi kesalahan jaringan.";
+            passwordAlert.className =
+              "p-3 rounded-[6px] text-xs bg-error-light text-error-text border border-error/20";
+            passwordAlert.classList.remove("hidden");
+          }
+        } finally {
+          if (submitPasswordBtn) {
+            submitPasswordBtn.disabled = false;
+            submitPasswordBtn.textContent = "Simpan Perubahan";
+          }
+        }
+      });
+
+      // Logout handler
+      const logoutBtn = document.getElementById("logout-btn");
+      logoutBtn?.addEventListener("click", async () => {
+        try {
+          await fetch("/api/auth/logout", { method: "POST" });
+          window.location.href = "/admin/login";
+        } catch {
+          window.location.href = "/admin/login";
+        }
+      });
+      // Centralized Modal Scroll-Lock & Body Portal Engine
+      (function initModalScrollLock() {
+        const viewport = document.getElementById("admin-main-viewport");
+
+        // Auto-portal modal elements to document.body so position:fixed covers full viewport (outside <main>)
+        function portalModalsToBody() {
+          const modalElements = document.querySelectorAll(
+            '[role="dialog"], [aria-modal="true"], .modal, .modal-backdrop, div[id$="-modal"], div[id^="modal-"], div[id$="-backdrop"]',
+          );
+          modalElements.forEach((el) => {
+            if (el.id === "sidebar-backdrop") return;
+            if (el.parentElement && el.parentElement !== document.body) {
+              if (el.id) {
+                const existingInBody = document.body.querySelector(
+                  `:scope > #${el.id}`,
+                );
+                if (existingInBody && existingInBody !== el) {
+                  existingInBody.remove();
+                }
+              }
+              document.body.appendChild(el);
+            }
+          });
+        }
+
+        portalModalsToBody();
+        document.addEventListener("astro:page-load", portalModalsToBody);
+
+        function isModalActive(el) {
+          if (!el || el.id === "sidebar-backdrop") return false;
+          // Must not have hidden class, and no ancestor should have hidden class
+          if (el.classList.contains("hidden") || el.closest(".hidden"))
+            return false;
+
+          const style = window.getComputedStyle(el);
+          if (
+            style.display === "none" ||
+            style.visibility === "hidden" ||
+            style.opacity === "0"
+          ) {
+            return false;
+          }
+
+          // Check if this is actually a dialog or fixed/absolute modal overlay
+          const isDialog =
+            el.getAttribute("role") === "dialog" ||
+            el.getAttribute("aria-modal") === "true";
+          const isOverlay =
+            (style.position === "fixed" || style.position === "absolute") &&
+            (el.classList.contains("modal") ||
+              el.classList.contains("modal-backdrop") ||
+              (el.id &&
+                (el.id.endsWith("-modal") ||
+                  el.id.startsWith("modal-") ||
+                  el.id.endsWith("-backdrop"))));
+
+          return isDialog || isOverlay;
+        }
+
+        function updateScrollLock() {
+          const candidates = document.querySelectorAll(
+            '[role="dialog"], [aria-modal="true"], .modal, .modal-backdrop, div[id$="-modal"], div[id^="modal-"], div[id$="-backdrop"]',
+          );
+          let hasOpen = false;
+          for (const el of candidates) {
+            if (isModalActive(el)) {
+              hasOpen = true;
+              break;
+            }
+          }
+
+          document.documentElement.classList.toggle("has-modal-open", hasOpen);
+          document.body.classList.toggle("has-modal-open", hasOpen);
+          if (viewport) {
+            if (hasOpen) {
+              viewport.style.overflow = "hidden";
+            } else {
+              viewport.style.overflow = "";
+            }
+          }
+        }
+
+        const modalObserver = new MutationObserver((mutations) => {
+          let shouldCheck = false;
+          for (const m of mutations) {
+            if (m.type === "attributes" && m.attributeName === "class") {
+              shouldCheck = true;
+              break;
+            }
+          }
+          if (shouldCheck) {
+            portalModalsToBody();
+            updateScrollLock();
+          }
+        });
+
+        modalObserver.observe(document.body, {
+          attributes: true,
+          subtree: true,
+          attributeFilter: ["class"],
+        });
+
+        window.lockAdminScroll = function (locked) {
+          document.documentElement.classList.toggle(
+            "has-modal-open",
+            Boolean(locked),
+          );
+          document.body.classList.toggle("has-modal-open", Boolean(locked));
+          if (viewport) {
+            viewport.style.overflow = locked ? "hidden" : "";
+          }
+        };
+
+        updateScrollLock();
+      })();
+    </script>
+    <!-- Centralized Feedback: Modal Konfirmasi & Toast Notifikasi -->
+    <ConfirmDialog />
+    <ToastContainer />
+  </body>
+
+  <!-- Admin Dark Mode Toggle (is:inline — tidak di-bundle, langsung inline) -->
+  <script is:inline>
+    (function () {
+      function applyTheme(dark) {
+        if (dark) document.documentElement.classList.add("dark");
+        else document.documentElement.classList.remove("dark");
+        try {
+          localStorage.setItem("theme", dark ? "dark" : "light");
+        } catch (_) {}
+      }
+
+      function attachAdminThemeToggle() {
+        var btn = document.getElementById("admin-theme-toggle");
+        if (!btn || btn.dataset.themeAttached) return;
+        btn.dataset.themeAttached = "1";
+
+        btn.addEventListener("click", function (event) {
+          var nextDark = !document.documentElement.classList.contains("dark");
+          var reducedMotion = window.matchMedia(
+            "(prefers-reduced-motion: reduce)",
+          ).matches;
+          var hasVT = typeof document.startViewTransition === "function";
+
+          if (!hasVT || reducedMotion) {
+            document.documentElement.classList.add("theme-transition");
+            applyTheme(nextDark);
+            setTimeout(function () {
+              document.documentElement.classList.remove("theme-transition");
+            }, 400);
+            return;
+          }
+
+          var r = btn.getBoundingClientRect();
+          var x = event.clientX || r.left + r.width / 2;
+          var y = event.clientY || r.top + r.height / 2;
+          var endRadius = Math.hypot(
+            Math.max(x, window.innerWidth - x),
+            Math.max(y, window.innerHeight - y),
+          );
+
+          document.documentElement.classList.add("theme-changing");
+          var vt = document.startViewTransition(function () {
+            applyTheme(nextDark);
+          });
+          vt.ready
+            .then(function () {
+              document.documentElement.animate(
+                {
+                  clipPath: [
+                    "circle(0px at " + x + "px " + y + "px)",
+                    "circle(" + endRadius + "px at " + x + "px " + y + "px)",
+                  ],
+                },
+                {
+                  duration: 420,
+                  easing: "ease-in-out",
+                  pseudoElement: "::view-transition-new(root)",
+                },
+              );
+            })
+            .catch(function () {
+              applyTheme(nextDark);
+            })
+            .finally(function () {
+              document.documentElement.classList.remove("theme-changing");
+            });
+        });
+      }
+
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", attachAdminThemeToggle);
+      } else {
+        attachAdminThemeToggle();
+      }
+    })();
+  </script>
+
+  <!-- ============================================================
+       ANIME.JS CMS ANIMATION ENGINE (KPI Stagger, Counter Up, Panel Entrance)
+       ============================================================ -->
+  <script>
+    import { initAdminAnimations } from "../scripts/animeAdmin";
+
+    function runAdminAnime() {
+      initAdminAnimations();
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", runAdminAnime);
+    } else {
+      runAdminAnime();
+    }
+  </script>
+</html>

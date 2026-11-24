@@ -1,0 +1,822 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import Breadcrumb from "../components/Breadcrumb.astro";
+import Icon from "../components/Icon.astro";
+import { db, settings, documents, teachers } from "../db";
+import { eq, and, or, like, asc, desc } from "drizzle-orm";
+
+export const prerender = false;
+
+// 1. Ambil data konfigurasi profil sekolah dari basis data settings
+const allSettings = await db.select().from(settings).catch(() => []);
+const schoolInfo = allSettings.reduce(
+  (acc, curr) => {
+    acc[curr.key] = curr.value;
+    return acc;
+  },
+  {} as Record<string, string>,
+);
+
+const schoolName = schoolInfo["school_name"] || "SMAN 1 Unggulan";
+const npsn = schoolInfo["npsn"] || "20101234";
+const accreditation = schoolInfo["accreditation"] || "A (Unggul)";
+const schoolAddress = schoolInfo["address"] || "Jl. Pendidikan No. 45, Kota Pendidikan";
+const schoolEmail = schoolInfo["email"] || "info@sman1unggulan.sch.id";
+const schoolPhone = schoolInfo["phone"] || "(021) 555-0199";
+const schoolType = schoolInfo["school_type"] || schoolInfo["school_level"] || "SMA (Sekolah Menengah Atas)";
+const schoolStatus = schoolInfo["school_status"] || "Negeri";
+const foundedYear = schoolInfo["founded_year"] || "1995";
+
+// Visi & Misi Resmi dari CMS
+const schoolVision =
+  schoolInfo["school_vision"] ||
+  "Menjadi pusat keunggulan pendidikan yang melahirkan cendekiawan berakhlak mulia, berjiwa riset, dan kompetitif di kancah internasional.";
+
+const schoolMissionRaw =
+  schoolInfo["school_mission"] ||
+  "Menyelenggarakan pembelajaran berbasis riset sains terapan dan literasi digital global\nMenempa kepribadian siswa yang berintegritas, mandiri, dan berjiwa pemimpin\nMenyediakan ekosistem kampus berwawasan lingkungan hijau dengan fasilitas modern\nMemperluas jejaring pendampingan karier serta kolaborasi perguruan tinggi unggulan nasional dan dunia";
+
+const schoolMissionList = schoolMissionRaw
+  .split("\n")
+  .map((line) => line.trim().replace(/^[\d\.\-\*]\s*/, ""))
+  .filter((line) => line.length > 0);
+
+// Video Profil Sekolah dari CMS
+const videoUrl = schoolInfo["school_video_url"] || "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+const videoThumbnail =
+  schoolInfo["school_video_thumbnail"] ||
+  "https://images.unsplash.com/photo-1541339907198-e08756dedf3f?auto=format&fit=crop&w=1200&q=80";
+
+function getYouTubeEmbedUrl(url: string): string {
+  if (!url) return "";
+  const match = url.match(
+    /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i,
+  );
+  if (match && match[1]) {
+    return `https://www.youtube.com/embed/${match[1]}?autoplay=1&rel=0`;
+  }
+  return url;
+}
+const embedUrl = getYouTubeEmbedUrl(videoUrl);
+
+// Sejarah Sekolah dari CMS
+const schoolHistoryParagraph1 =
+  schoolInfo["school_history_p1"] ||
+  schoolInfo["school_history"] ||
+  `Perjalanan ${schoolName} bermula pada tahun ${foundedYear} atas prakarsa para tokoh pendidikan dan dewan guru perintis untuk menghadirkan pusat pembelajaran unggulan berstandar nasional. Mengawali kiprah dengan rombongan belajar perdana, sekolah memfokuskan pembinaan pada penguasaan dasar ilmu sains dan budi pekerti disiplin.`;
+
+const schoolHistoryParagraph2 =
+  schoolInfo["school_history_p2"] ||
+  `Dengan dukungan masyarakat dan komitmen berkelanjutan pemerintah daerah, sarana pembelajaran terus diperluas — mulai dari pembangunan ruang laboratorium terpadu, perpustakaan digital, hingga sarana olahraga representatif.`;
+
+const schoolHistoryParagraph3 =
+  schoolInfo["school_history_p3"] ||
+  `Memasuki dekade modern, ${schoolName} meraih Akreditasi A (Unggul) secara beruntun dari Badan Akreditasi Nasional. Sekolah mempelopori integrasi kurikulum riset aplikatif, pemanfaatan kecerdasan buatan dalam pembelajaran, serta program pertukaran budaya.\n\nKini, ribuan alumni almamater telah berkiprah di perguruan tinggi kedinasan, perguruan tinggi negeri terkemuka (UI, ITB, UGM, ITS, Unair), maupun kampus bergengsi mancanegara, serta menduduki posisi strategis di sektor sains, pemerintahan, dan industri teknologi.`;
+
+const schoolHistoryImage =
+  schoolInfo["school_history_image"] ||
+  "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80";
+
+const rawMilestones =
+  schoolInfo["school_history_milestones"] ||
+  `${foundedYear} | Peresmian pendirian dan operasional perdana satuan pendidikan.\n2012 | Perintisan kelas riset olimpiade sains dan laboratorium komputer terpadu.\n2025 | Re-akreditasi predikat A (Unggul) dengan nilai ketercapaian SPM mutu prima.`;
+
+const milestones = rawMilestones
+  .split("\n")
+  .map((line) => {
+    const parts = line.split("|");
+    return parts.length >= 2
+      ? { year: parts[0].trim(), text: parts.slice(1).join("|").trim() }
+      : null;
+  })
+  .filter((item): item is { year: string; text: string } => item !== null && item.year.length > 0);
+
+// Struktur Pimpinan Sekolah: Kepala Sekolah dari CMS
+const principalName = schoolInfo["principal_name"] || "Dr. H. Sulaiman, M.Pd.";
+const principalTitle = schoolInfo["principal_title"] || "Kepala Sekolah";
+const principalPhoto =
+  schoolInfo["principal_photo"] ||
+  "https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=600&q=80";
+const principalNip = schoolInfo["principal_nip"] || "19720514 199803 1 004";
+const principalQuote =
+  schoolInfo["principal_welcome_quote"] ||
+  "Selamat datang di portal resmi institusi kami. Kami berkomitmen menyelenggarakan ekosistem pendidikan berstandar tinggi yang mengintegrasikan kecakapan teknologi, kedalaman riset, dan budi pekerti luhur.";
+
+const speechParagraphs = (principalQuote || "")
+  .split("\n")
+  .map((p) => p.trim())
+  .filter((p) => p.length > 0);
+
+// Struktur Pimpinan: Wakil Kepala Sekolah diambil dinamis dari tabel teachers CMS
+const rawVicePrincipals = await db
+  .select()
+  .from(teachers)
+  .where(
+    and(
+      eq(teachers.isActive, true),
+      or(
+        like(teachers.position, "%Wakil%"),
+        like(teachers.position, "%Waka%")
+      )
+    )
+  )
+  .orderBy(asc(teachers.orderNumber), asc(teachers.id))
+  .limit(3)
+  .catch(() => []);
+
+const fallbackVicePrincipals = [
+  {
+    name: "Dra. Sri Wahyuni, M.Si.",
+    position: "Wakil Kepala Bidang Kurikulum",
+    nip: "19750821 200012 2 001",
+    photoUrl: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=600&q=80",
+  },
+  {
+    name: "Ahmad Dahlan, S.Pd.",
+    position: "Wakil Kepala Bidang Kesiswaan",
+    nip: "19800315 200501 1 008",
+    photoUrl: "https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=600&q=80",
+  },
+  {
+    name: "Ir. Siti Aminah, M.T.",
+    position: "Wakil Kepala Bidang Sarana & Prasarana",
+    nip: "19781110 200312 2 004",
+    photoUrl: "https://images.unsplash.com/photo-1580894732444-8ecded7900cd?auto=format&fit=crop&w=600&q=80",
+  },
+];
+
+const vicePrincipals = rawVicePrincipals.length > 0
+  ? rawVicePrincipals.map((vp) => ({
+      name: vp.name,
+      position: vp.position,
+      nip: vp.nip || "-",
+      photoUrl: vp.photoUrl || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=600&q=80",
+    }))
+  : fallbackVicePrincipals;
+
+// Dokumen & Legalitas Resmi dari tabel documents CMS
+const rawDocs = await db
+  .select()
+  .from(documents)
+  .orderBy(desc(documents.createdAt), desc(documents.id))
+  .limit(4)
+  .catch(() => []);
+
+const fallbackDocs = [
+  {
+    id: 1,
+    title: "Sertifikat Akreditasi BAN-PDM (Peringkat A - Unggul)",
+    fileSize: "1.8 MB",
+    fileType: "PDF",
+    category: "Legalitas",
+    fileUrl: "/dokumen/sertifikat-akreditasi.pdf",
+    date: "Tahun 2025 - 2030",
+  },
+  {
+    id: 2,
+    title: "Surat Keputusan Pendirian Satuan Pendidikan No. 421/1995",
+    fileSize: "2.4 MB",
+    fileType: "PDF",
+    category: "Legalitas",
+    fileUrl: "/dokumen/sk-pendirian-sekolah.pdf",
+    date: "12 Mei 1995",
+  },
+  {
+    id: 3,
+    title: "Surat Izin Operasional Penyelenggaraan Pendidikan Resmi",
+    fileSize: "1.5 MB",
+    fileType: "PDF",
+    category: "Legalitas",
+    fileUrl: "/dokumen/sk-izin-operasional.pdf",
+    date: "Dinas Pendidikan",
+  },
+  {
+    id: 4,
+    title: "Buku Profil Lembaga & Kurikulum Operasional Satuan Pendidikan",
+    fileSize: "4.2 MB",
+    fileType: "PDF",
+    category: "Kurikulum",
+    fileUrl: "/dokumen/buku-profil-dan-kosp.pdf",
+    date: "Tahun Ajaran 2026/2027",
+  },
+];
+
+const legalDocs = rawDocs.length > 0 ? rawDocs : fallbackDocs;
+
+const heroBgImage =
+  schoolInfo["profil_hero_bg"] ||
+  schoolInfo["school_hero_image"] ||
+  "https://images.unsplash.com/photo-1541829070764-84a7d30dd3f3?auto=format&fit=crop&w=1920&q=80";
+
+const heroSideImage =
+  schoolInfo["profil_side_image"] ||
+  "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=1200&q=80";
+
+const heroStats = [
+  { value: accreditation, label: "Akreditasi" },
+  { value: npsn, label: "NPSN" },
+  { value: foundedYear, label: "Tahun Berdiri" },
+];
+---
+
+<Layout
+  title={`Profil Sekolah — ${schoolName}`}
+  description={`Mengenal profil resmi ${schoolName}, identitas sekolah, visi misi, sejarah pendirian, pimpinan sekolah, dan dokumen legalitas.`}
+>
+  <Header currentPath="/profil" />
+
+  <main class="flex-1 bg-background *:px-4 sm:*:px-6 lg:*:px-12 *:py-12">
+    <!-- Hero Section dengan Background Image ::before -->
+    <section
+      class="relative isolate overflow-hidden bg-surface page-hero-section"
+      style={`--page-hero-bg: url('${heroBgImage}');`}
+    >
+      <div class="mx-auto max-w-7xl">
+        <!-- Breadcrumb Navigasi -->
+        <Breadcrumb
+          items={[
+            { label: "Beranda", href: "/" },
+            { label: "Profil Sekolah" },
+          ]}
+        />
+
+        {/* 1. HERO PROFIL SEKOLAH */}
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
+          
+          <!-- Narasi Pengenalan Sekolah (7 Kolom) -->
+          <div class="lg:col-span-7 space-y-4">
+            <span class="block uppercase text-xs font-semibold tracking-wider text-heading/85">
+              Profil Sekolah
+            </span>
+
+            <h1 class="font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-heading leading-[1.12]">
+              Mengenal {schoolName}
+            </h1>
+
+            <p class="font-body text-base sm:text-lg text-body/90 leading-relaxed max-w-2xl">
+              Membangun lingkungan pendidikan yang mendukung pengembangan potensi, karakter, dan prestasi peserta didik melalui penguatan literasi sains, riset terapan, dan budi pekerti luhur.
+            </p>
+
+            <!-- Statistik Ringkas: Disusun ringkas dengan selector Tailwind v4 *: -->
+            <div class="mt-8 inline-flex items-stretch divide-x divide-primary/15 *:flex *:flex-col *:justify-center *:px-6 sm:*:px-8 *:first:pl-0 *:last:pr-0">
+              {
+                heroStats.map((item) => (
+                  <div>
+                    <span class="font-display text-2xl sm:text-3xl font-bold tracking-tight text-primary leading-none">
+                      {item.value}
+                    </span>
+                    <span class="mt-1.5 font-body text-xs sm:text-[13px] text-primary/80 whitespace-nowrap">
+                      {item.label}
+                    </span>
+                  </div>
+                ))
+              }
+            </div>
+          </div>
+
+          <!-- Foto Asli Representasi Sekolah (5 Kolom) -->
+          <div class="lg:col-span-5">
+            <div class="relative overflow-hidden rounded-[12px] border border-border bg-surface shadow-xs transition-all duration-300 hover:shadow-sm group">
+              <div class="aspect-video lg:aspect-[4/3] w-full overflow-hidden bg-surface-subtle">
+                <img
+                  src={heroSideImage}
+                  alt={`Aktivitas Siswa dan Pembelajaran di ${schoolName}`}
+                  width="800"
+                  height="600"
+                  class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                  loading="eager"
+                  fetchpriority="high"
+                />
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+      {/* 2. IDENTITAS SEKOLAH (Ringkasan Data Pokok Terpadu) */}
+      <section class="scroll-mt-20" id="identitas">
+        <div class="mb-6">
+          <div class="uppercase text-xs font-semibold text-primary tracking-wider">
+            Data Pokok Pendidikan
+          </div>
+          <h2 class="mt-1 font-display text-2xl sm:text-3xl font-bold tracking-tight text-heading">
+            Identitas Sekolah
+          </h2>
+        </div>
+
+        <div class="rounded-[10px] border border-border overflow-hidden shadow-xs">
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-border *:p-5 sm:*:p-6 *:space-y-1 *:transition-colors">
+            
+            <div class="bg-surface hover:bg-surface-subtle">
+              <span class="text-[11px] font-semibold uppercase tracking-wider text-muted block">
+                Nama Resmi
+              </span>
+              <p class="font-display text-sm sm:text-base font-bold text-heading">
+                {schoolName}
+              </p>
+            </div>
+
+            <div class="bg-surface-subtle/80 hover:bg-surface-subtle">
+              <span class="text-[11px] font-semibold uppercase tracking-wider text-muted block">
+                NPSN
+              </span>
+              <p class="font-mono text-sm sm:text-base font-bold text-heading">
+                {npsn}
+              </p>
+            </div>
+
+            <div class="bg-surface hover:bg-surface-subtle">
+              <span class="text-[11px] font-semibold uppercase tracking-wider text-muted block">
+                Status Kelembagaan
+              </span>
+              <p class="font-display text-sm sm:text-base font-bold text-heading">
+                {schoolStatus} / {schoolType}
+              </p>
+            </div>
+
+            <div class="bg-primary-light hover:bg-primary-light">
+              <span class="text-[11px] font-semibold uppercase tracking-wider text-primary block">
+                Peringkat Akreditasi
+              </span>
+              <p class="font-display text-sm sm:text-base font-bold text-primary">
+                {accreditation} (BAN-PDM)
+              </p>
+            </div>
+
+          </div>
+
+          <div class="border-t border-border grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-border *:p-5 sm:*:p-6 *:space-y-1 *:transition-colors">
+            
+            <div class="bg-surface-subtle/60 hover:bg-surface-subtle/90">
+              <span class="text-[11px] font-semibold uppercase tracking-wider text-muted block">
+                Tahun Berdiri
+              </span>
+              <p class="font-display text-sm font-semibold text-heading">
+                {foundedYear}
+              </p>
+            </div>
+
+            <div class="lg:col-span-2 bg-surface hover:bg-surface-subtle">
+              <span class="text-[11px] font-semibold uppercase tracking-wider text-muted block">
+                Alamat Kampus
+              </span>
+              <p class="font-body text-xs sm:text-sm text-heading leading-relaxed">
+                {schoolAddress}
+              </p>
+            </div>
+
+            <div class="bg-surface-subtle hover:bg-surface-subtle/70">
+              <span class="text-[11px] font-semibold uppercase tracking-wider text-muted block">
+                Kontak Resmi
+              </span>
+              <p class="font-body text-xs text-heading font-medium">
+                {schoolPhone}
+              </p>
+              <p class="font-body text-xs text-muted truncate">
+                {schoolEmail}
+              </p>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      {/* 3. VISI DAN MISI (Satu Section Bersatu Tanpa Label Generik) */}
+      <section class="bg-primary scroll-mt-20 px-4 sm:px-6 lg:px-8 py-12" id="visi-misi">
+        <div class="mb-6">
+          <div class="uppercase text-xs font-semibold text-white/85 tracking-wider">
+            Komitmen Pendidikan
+          </div>
+          <h2 class="mt-1 font-display text-2xl sm:text-3xl font-bold tracking-tight text-white">
+            Visi dan Misi Sekolah
+          </h2>
+        </div>
+
+        <div class="p-6 sm:p-8 lg:p-10">
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
+            
+            <!-- Kolom Kiri: Visi Sekolah dengan Teks Lebih Besar -->
+            <div class="lg:col-span-5 space-y-3">
+              <span class="text-xs font-bold uppercase tracking-wider text-white/90 block">
+                Visi Sekolah
+              </span>
+              <blockquote class="font-display text-lg sm:text-xl lg:text-2xl font-bold text-white leading-snug">
+                &ldquo;{schoolVision}&rdquo;
+              </blockquote>
+              <p class="font-body text-xs text-white/80 leading-relaxed pt-2">
+                Rumusan visi resmi yang menjadi pedoman utama penyelenggaraan kurikulum, pembinaan riset, serta pembentukan kepribadian peserta didik.
+              </p>
+            </div>
+
+            <!-- Kolom Kanan: Daftar Misi Bernomor 01, 02, 03... -->
+            <div class="lg:col-span-7 space-y-4 lg:border-l lg:border-white/20 lg:pl-10">
+              <span class="text-xs font-bold uppercase tracking-wider text-white/90 block">
+                Misi Sekolah
+              </span>
+              <div class="space-y-4 font-body text-sm text-white *:flex *:items-start *:gap-3.5">
+                {schoolMissionList.map((misi, idx) => (
+                  <div>
+                    <span class="font-mono text-sm font-bold text-primary shrink-0 mt-0.5 bg-white rounded-full p-2">
+                      {String(idx + 1).padStart(2, "0")}.
+                    </span>
+                    <p class="leading-relaxed text-white">
+                      {misi}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      {/* 4. VIDEO PROFIL SEKOLAH */}
+      {embedUrl && (
+        <section class="scroll-mt-20" id="video">
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+            <!-- Kolom Kiri: Teks Narasi & Informasi (5 Kolom Desktop) -->
+            <div class="lg:col-span-5 space-y-4">
+              <span class="block uppercase text-xs font-semibold tracking-wider text-heading/85">
+                Dokumentasi Resmi
+              </span>
+
+              <h2 class="font-display text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-heading leading-[1.15]">
+                Video Profil Sekolah
+              </h2>
+
+              <p class="font-body text-sm sm:text-base text-body/85 leading-relaxed">
+                Saksikan dokumentasi suasana belajar, pembinaan karakter, kultur riset, serta fasilitas pendukung di {schoolName}.
+              </p>
+            </div>
+
+            <!-- Kolom Kanan: Player Video / Thumbnail (7 Kolom Desktop, w-full Mobile) -->
+            <div class="lg:col-span-7">
+              <div class="relative overflow-hidden rounded-[12px] border border-border bg-heading shadow-md group">
+                <div id="profil-video-player-wrapper" class="relative aspect-[16/9] w-full overflow-hidden bg-heading">
+                  <!-- Thumbnail Asli Representasi Sekolah -->
+                  <img
+                    src={videoThumbnail}
+                    alt={`Video Profil ${schoolName}`}
+                    width="800"
+                    height="450"
+                    class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.02]"
+                    loading="lazy"
+                  />
+                  <!-- Dark Overlay Ringan (25% - 30%) -->
+                  <div class="absolute inset-0 bg-black/25 transition-colors duration-300 group-hover:bg-black/20 pointer-events-none"></div>
+
+                  <!-- Badge Durasi di Pojok Kanan Bawah -->
+                  <span class="absolute bottom-3.5 right-3.5 inline-flex items-center gap-1 rounded-[4px] bg-black/80 px-2 py-0.5 font-mono text-[11px] font-medium text-white shadow-xs backdrop-blur-xs select-none pointer-events-none">
+                    02:45
+                  </span>
+
+                  <!-- Tombol Play di Tengah: Opacity 90%, Backdrop Blur, Smooth Hover -->
+                  <div class="absolute inset-0 flex items-center justify-center">
+                    <button
+                      type="button"
+                      id="btn-play-profil-video"
+                      data-embed-url={embedUrl}
+                      class="flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center rounded-full bg-primary/90 text-white shadow-xl backdrop-blur-sm transition-all duration-300 hover:scale-105 hover:bg-primary hover:shadow-(--shadow-hover) cursor-pointer"
+                      aria-label="Putar Video Profil Sekolah"
+                    >
+                      <Icon name="play" class="h-7 w-7 sm:h-8 sm:w-8 translate-x-0.5 fill-current" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* 5. SEJARAH SINGKAT (Dua Kolom Seimbang & Tahun Berdiri Utama) */}
+      <section class="scroll-mt-20" id="sejarah">
+        <div class="mb-8">
+          <div class="uppercase text-xs font-semibold text-primary tracking-wider">
+            Sejarah Sekolah
+          </div>
+          <div class="mt-1 flex flex-col sm:flex-row sm:items-baseline gap-2 sm:gap-4">
+            <span class="font-display text-4xl sm:text-5xl font-extrabold tracking-tight text-primary">
+              {foundedYear}
+            </span>
+            <h2 class="font-display text-2xl sm:text-3xl font-bold tracking-tight text-heading">
+              Perjalanan {schoolName}
+            </h2>
+          </div>
+          <p class="mt-2 font-body text-xs sm:text-sm text-muted max-w-2xl">
+            Berdiri sebagai lembaga pendidikan yang berkomitmen mengembangkan kualitas akademik, riset sains terapan, dan karakter peserta didik.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-start">
+          
+          <!-- Kolom Kiri: Pendirian & Arsip Dokumentasi Awal (6 Kolom) -->
+          <div class="lg:col-span-6 space-y-4 font-body text-sm text-body leading-relaxed">
+            {schoolHistoryParagraph1 && (
+              <p>
+                {schoolHistoryParagraph1}
+              </p>
+            )}
+            {schoolHistoryParagraph2 && (
+              <p>
+                {schoolHistoryParagraph2}
+              </p>
+            )}
+
+            {schoolHistoryImage && (
+              <div class="overflow-hidden rounded-[8px] border border-border bg-surface-subtle mt-4">
+                <img
+                  src={schoolHistoryImage}
+                  alt={`Dokumentasi Perjalanan ${schoolName}`}
+                  width="800"
+                  height="500"
+                  class="aspect-[16/10] w-full object-cover"
+                  loading="lazy"
+                  onerror="this.src='https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80'"
+                />
+              </div>
+            )}
+          </div>
+
+          <!-- Kolom Kanan: Transformasi Mutu & Kontribusi Alumni (6 Kolom) -->
+          <div class="lg:col-span-6 space-y-4 font-body text-sm text-body leading-relaxed">
+            {schoolHistoryParagraph3 && (
+              schoolHistoryParagraph3.split("\n\n").map((p) => p.trim()).filter(Boolean).map((p) => (
+                <p>{p}</p>
+              ))
+            )}
+
+            {milestones.length > 0 && (
+              <div class="rounded-[10px] border border-border bg-surface p-5 space-y-3 mt-4 shadow-xs">
+                <span class="text-xs font-bold uppercase text-heading block">
+                  Tonggak Perkembangan Kelembagaan
+                </span>
+                <ul class="space-y-2 text-xs text-muted *:flex *:items-start *:gap-2">
+                  {milestones.map((m) => (
+                    <li>
+                      <span class="font-mono font-bold text-primary shrink-0">{m.year}:</span>
+                      <span>{m.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+
+        </div>
+      </section>
+
+      {/* 6. SAMBUTAN KEPALA SEKOLAH */}
+      <section class="scroll-mt-24" id="sambutan">
+        <div class="mb-6">
+          <div class="uppercase text-xs font-semibold text-primary tracking-wider">
+            Amanat &amp; Pandangan Pimpinan
+          </div>
+          <h2 class="mt-1 font-display text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-heading">
+            Sambutan Kepala Sekolah
+          </h2>
+        </div>
+
+        <div class="relative overflow-hidden rounded-[20px] sm:rounded-[24px] border border-border bg-surface p-6 sm:p-10 lg:p-12 shadow-xs">
+          <!-- Background Subtle Watermark -->
+          <div class="pointer-events-none absolute -right-4 -bottom-4 text-primary/[0.04] dark:text-white/[0.03]" aria-hidden="true">
+            <Icon name="quote" class="h-44 w-44" />
+          </div>
+
+          <div class="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
+            
+            <!-- Kolom Kiri: Foto Pimpinan & Identitas (5 Kolom di Desktop) -->
+            <div class="lg:col-span-5 flex flex-col items-center text-center">
+              <div class="relative w-full max-w-[240px] sm:max-w-[280px] overflow-hidden rounded-[16px] border border-border bg-surface-subtle aspect-[4/5] shadow-xs group">
+                <img
+                  src={principalPhoto}
+                  alt={principalName}
+                  width="280"
+                  height="350"
+                  class="h-full w-full object-cover object-top transition-transform duration-500 group-hover:scale-[1.02]"
+                  loading="lazy"
+                />
+              </div>
+
+              <div class="mt-4 space-y-1 w-full max-w-[280px]">
+                <span class="inline-block rounded-full border border-primary/20 bg-primary-light px-3 py-0.5 text-[10px] font-semibold text-primary uppercase tracking-wider">
+                  {principalTitle}
+                </span>
+                <h3 class="font-display text-lg sm:text-xl font-bold text-heading leading-snug">
+                  {principalName}
+                </h3>
+                <p class="font-mono text-xs text-muted">
+                  NIP: {principalNip}
+                </p>
+              </div>
+            </div>
+
+            <!-- Kolom Kanan: Teks Amanat & Sambutan Resmi (7 Kolom di Desktop) -->
+            <div class="lg:col-span-7 flex flex-col justify-center space-y-4">
+              <div class="space-y-2">
+                <div class="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-subtle px-3 py-1 text-xs font-semibold text-primary">
+                  <Icon name="quote" class="h-3 w-3 text-primary" />
+                  <span>Amanat Kepemimpinan</span>
+                </div>
+                <h4 class="font-display text-xl sm:text-2xl font-bold tracking-tight text-heading leading-snug">
+                  Membina Generasi Unggul, Berkarakter &amp; Berdaya Saing
+                </h4>
+              </div>
+
+              <!-- Isi Sambutan / Paragraf -->
+              <div class="space-y-3.5 font-body text-sm sm:text-[15px] text-body/90 leading-relaxed">
+                {speechParagraphs.map((paragraph, idx) => (
+                  <p class:list={[
+                    idx === 0 && paragraph.toLowerCase().includes("assalamu") ? "font-semibold text-heading" : "",
+                    idx === speechParagraphs.length - 1 && paragraph.toLowerCase().includes("wassalamu") ? "font-semibold text-heading pt-1" : "",
+                  ]}>
+                    {paragraph}
+                  </p>
+                ))}
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      {/* 7. STRUKTUR KEPEMIMPINAN (Kepala Sekolah Utama + Wakil Sejajar 1 Baris) */}
+      <section class="scroll-mt-24 bg-primary" id="struktur">
+        <div class="mb-10 sm:mb-14 grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-center">
+          <div class="lg:col-span-4 space-y-2 text-left">
+            <span class="block uppercase text-xs font-semibold tracking-wider text-white/85">
+              Tata Kelola Kelembagaan
+            </span>
+            <h2 class="font-display text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-white leading-tight">
+              Struktur Kepemimpinan Sekolah
+            </h2>
+            <p class="font-body text-sm text-white/85 leading-relaxed pt-1">
+              Pimpinan sekolah yang bertanggung jawab mengawal akuntabilitas tata kelola, mutu kurikulum, dan pelayanan pendidikan.
+            </p>
+          </div>
+
+          <div
+            id="kepala-sekolah"
+            class="scroll-mt-28 lg:col-span-8 rounded-[12px] border border-white/20 bg-surface p-6 sm:p-8 lg:p-10 shadow-lg"
+          >
+            <div class="flex flex-col sm:flex-row items-start gap-6 lg:gap-8">
+              <div class="w-48 lg:w-52 shrink-0 overflow-hidden rounded-[8px] border border-border bg-surface-subtle aspect-[3/4] shadow-xs">
+                <img
+                  src={principalPhoto}
+                  alt={principalName}
+                  width="208"
+                  height="277"
+                  class="h-full w-full object-cover object-top"
+                  loading="lazy"
+                />
+              </div>
+
+              <div class="space-y-3 text-left flex-1 min-w-0">
+                <div class="space-y-1">
+                  <span class="block font-body text-xs font-bold uppercase tracking-wider text-primary">
+                    Kepala Sekolah
+                  </span>
+                  <h3 class="font-display text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-heading leading-tight">
+                    {principalName}
+                  </h3>
+                  <p class="font-mono text-xs text-muted/90 pt-0.5">
+                    NIP: {principalNip}
+                  </p>
+                </div>
+
+                <p class="font-body text-sm sm:text-[15px] text-body/90 leading-relaxed pt-1">
+                  Memimpin komitmen penyelenggaraan ekosistem pendidikan berstandar tinggi yang memadukan kedisiplinan riset sains, adopsi teknologi cerdas, dan keteguhan karakter pekerti.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h4 class="text-xs font-bold uppercase tracking-wider text-white pt-2 mb-6 text-center">
+            Wakil Kepala Sekolah
+          </h4>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-5xl mx-auto *:rounded-[10px] *:border *:border-white/20 *:bg-surface *:transition-all *:duration-200 *:flex *:flex-col *:justify-between">
+            {vicePrincipals.map((vp) => (
+              <div class="hover:-translate-y-0.5 hover:shadow-(--shadow-hover) shadow-xs overflow-hidden">
+                <div>
+                  <div class="aspect-video w-full overflow-hidden bg-surface-subtle mb-3">
+                    <img
+                      src={vp.photoUrl}
+                      alt={vp.name}
+                      width="400"
+                      height="225"
+                      class="h-full w-full object-cover object-top transition-transform duration-300 hover:scale-[1.02]"
+                      loading="lazy"
+                    />
+                  </div>
+                  <div class="space-y-1 p-4">
+                    <h5 class="font-display text-sm sm:text-base font-bold text-heading leading-snug">
+                      {vp.name}
+                    </h5>
+                    <p class="font-body text-xs text-primary font-semibold">
+                      {vp.position}
+                    </p>
+                    <p class="font-mono text-[11px] text-muted pt-2">
+                      NIP: {vp.nip}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* 7. DOKUMEN DAN LEGALITAS SEKOLAH */}
+      <section class="pt-8" id="dokumen">
+        <div class="mb-6">
+          <div class="uppercase text-xs font-semibold text-primary tracking-wider">
+            Transparansi Tata Kelola
+          </div>
+          <h2 class="mt-1 font-display text-2xl sm:text-3xl font-bold tracking-tight text-heading">
+            Dokumen & Legalitas Sekolah
+          </h2>
+          <p class="mt-1 font-body text-xs sm:text-sm text-muted">
+            Salinan resmi surat keputusan kelembagaan, perizinan operasional, serta akreditasi untuk keperluan verifikasi kedinasan dan publik.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 *:rounded-[10px] *:border *:border-border *:bg-surface *:p-5 *:transition-all *:duration-200 *:flex *:flex-col *:justify-between *:shadow-xs">
+          {legalDocs.map((doc) => (
+            <div class="hover:-translate-y-0.5 hover:border-border-hover hover:shadow-(--shadow-hover)">
+              <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                  <span class="inline-flex items-center justify-center h-8 w-8 rounded-[4px] bg-primary-light text-primary font-bold text-xs border border-primary/20">
+                    {doc.fileType || "PDF"}
+                  </span>
+                  <span class="text-[11px] font-mono text-muted">
+                    {doc.fileSize || "Resmi"}
+                  </span>
+                </div>
+
+                <div>
+                  <h3 class="font-display text-xs sm:text-sm font-bold text-heading leading-snug line-clamp-2" title={doc.title}>
+                    {doc.title}
+                  </h3>
+                  <p class="mt-1 text-[11px] text-muted">
+                    {doc.date || doc.category || "Dokumen Resmi"}
+                  </p>
+                </div>
+              </div>
+
+              <div class="pt-3 mt-4">
+                <a
+                  href={doc.fileUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:text-primary-hover hover:underline transition-colors"
+                >
+                  <span>Buka / Unduh</span>
+                  <Icon name="download" class="h-3.5 w-3.5 shrink-0" />
+                </a>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+  </main>
+
+  <Footer />
+
+  <script>
+    function initProfilVideo() {
+      const btn = document.getElementById("btn-play-profil-video");
+      const wrapper = document.getElementById("profil-video-player-wrapper");
+      if (!btn || !wrapper) return;
+
+      btn.addEventListener("click", () => {
+        const embedUrl = btn.getAttribute("data-embed-url");
+        if (embedUrl) {
+          wrapper.innerHTML = `
+            <iframe
+              src="${embedUrl}"
+              title="Video Profil Resmi Sekolah"
+              class="h-full w-full border-0"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowfullscreen
+            ></iframe>
+          `;
+        }
+      });
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", initProfilVideo);
+    } else {
+      initProfilVideo();
+    }
+  </script>
+</Layout>

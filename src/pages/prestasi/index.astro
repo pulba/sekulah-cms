@@ -1,0 +1,862 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import Header from "../../components/Header.astro";
+import Footer from "../../components/Footer.astro";
+import Breadcrumb from "../../components/Breadcrumb.astro";
+import Icon from "../../components/Icon.astro";
+import Pagination from "../../components/Pagination.astro";
+import { db, studentsAlumni, settings } from "../../db";
+import { fallbackAchievements } from "../../utils/fallbackAchievements";
+import { eq, and, desc } from "drizzle-orm";
+
+export const prerender = false;
+
+// Query parameters for year filter and pagination
+const currentYearParam = (Astro.url.searchParams.get("tahun") || "").trim();
+const rawPage = Math.max(1, parseInt(Astro.url.searchParams.get("page") || "1", 10) || 1);
+const pageSize = 8;
+
+const [rawAchievements, rawSettings] = await Promise.all([
+  db
+    .select()
+    .from(studentsAlumni)
+    .where(
+      and(
+        eq(studentsAlumni.type, "achievement"),
+        eq(studentsAlumni.isPublicConsent, true)
+      )
+    )
+    .orderBy(desc(studentsAlumni.year), desc(studentsAlumni.id))
+    .catch(() => []),
+  db.select().from(settings).catch(() => []),
+]);
+
+const schoolSettings = (rawSettings || []).reduce((acc, curr) => {
+  acc[curr.key] = curr.value;
+  return acc;
+}, {} as Record<string, string>);
+
+const schoolName = schoolSettings["school_name"] || "SMAN 1 UNGGULAN";
+
+// Dynamic PPDB / Admissions configuration from CMS settings
+const admissionsLabel = schoolSettings["admissions_label"] || schoolSettings["ppdb_label"] || "PPDB";
+const academicYear = schoolSettings["ppdb_year"] || schoolSettings["admissions_year"] || "2026/2027";
+const boardingAvailable = schoolSettings["boarding_available"] === "true";
+
+const defaultAdmissionsTitle =
+  admissionsLabel.toUpperCase() === "PSB"
+    ? (boardingAvailable ? "Penerimaan Santri & Siswa Baru" : "Penerimaan Siswa Baru")
+    : admissionsLabel.toUpperCase() === "SPMB"
+      ? "Sistem Penerimaan Siswa Baru"
+      : admissionsLabel.toUpperCase() === "PPDBM"
+        ? "Penerimaan Peserta Didik Baru Madrasah"
+        : admissionsLabel.toUpperCase() === "PPDB"
+          ? "Penerimaan Peserta Didik Baru"
+          : `Pendaftaran Siswa Baru (${admissionsLabel})`;
+
+const rawAdmissionsTitle = (schoolSettings["admissions_title"] || schoolSettings["ppdb_title"] || "").trim();
+const admissionsTitle = rawAdmissionsTitle || `${defaultAdmissionsTitle} TA ${academicYear}`;
+const admissionsSubtitle =
+  (schoolSettings["admissions_subtitle"] || schoolSettings["ppdb_subtitle"] || "").trim() ||
+  "Akses alur registrasi resmi, jadwal seleksi akademik, dan persyaratan berkas secara daring.";
+
+// Active school social media channels
+const rawSocials = [
+  {
+    key: "youtube",
+    name: "YouTube",
+    url: (schoolSettings["social_youtube"] || "").trim(),
+    iconColor: "text-[#FF0000]",
+    hoverClass: "hover:border-[#FF0000]/60 hover:bg-surface-subtle hover:text-[#FF0000]",
+  },
+  {
+    key: "instagram",
+    name: "Instagram",
+    url: (schoolSettings["social_instagram"] || "").trim()
+      ? (schoolSettings["social_instagram"].trim().startsWith("http")
+          ? schoolSettings["social_instagram"].trim()
+          : `https://instagram.com/${schoolSettings["social_instagram"].trim().replace("@", "")}`)
+      : "",
+    iconColor: "text-[#E4405F]",
+    hoverClass: "hover:border-[#E4405F]/60 hover:bg-surface-subtle hover:text-[#E4405F]",
+  },
+  {
+    key: "facebook",
+    name: "Facebook",
+    url: (schoolSettings["social_facebook"] || "").trim(),
+    iconColor: "text-[#1877F2]",
+    hoverClass: "hover:border-[#1877F2]/60 hover:bg-surface-subtle hover:text-[#1877F2]",
+  },
+  {
+    key: "twitter",
+    name: "X (Twitter)",
+    url: (schoolSettings["social_twitter"] || "").trim()
+      ? (schoolSettings["social_twitter"].trim().startsWith("http")
+          ? schoolSettings["social_twitter"].trim()
+          : `https://x.com/${schoolSettings["social_twitter"].trim().replace("@", "")}`)
+      : "",
+    iconColor: "text-heading",
+    hoverClass: "hover:border-heading hover:bg-surface-subtle hover:text-heading",
+  },
+  {
+    key: "tiktok",
+    name: "TikTok",
+    url: (schoolSettings["social_tiktok"] || "").trim()
+      ? (schoolSettings["social_tiktok"].trim().startsWith("http")
+          ? schoolSettings["social_tiktok"].trim()
+          : `https://tiktok.com/@${schoolSettings["social_tiktok"].trim().replace("@", "")}`)
+      : "",
+    iconColor: "text-heading",
+    hoverClass: "hover:border-heading hover:bg-surface-subtle hover:text-heading",
+  },
+  {
+    key: "whatsapp",
+    name: "WhatsApp",
+    url: (schoolSettings["social_whatsapp"] || "").trim()
+      ? (schoolSettings["social_whatsapp"].trim().startsWith("http")
+          ? schoolSettings["social_whatsapp"].trim()
+          : `https://wa.me/${schoolSettings["social_whatsapp"].replace(/[^0-9]/g, "")}`)
+      : "",
+    iconColor: "text-[#25D366]",
+    hoverClass: "hover:border-[#25D366]/60 hover:bg-surface-subtle hover:text-[#25D366]",
+  },
+];
+
+const activeSocialChannels = rawSocials.filter((item) => Boolean(item.url));
+
+// Merge DB achievements with fallback data, sorted by newest year first
+const achievements = [
+  ...rawAchievements,
+  ...fallbackAchievements.filter((f) => !rawAchievements.some((r) => r.id === f.id)),
+].sort((a, b) => (Number(b.year) || 0) - (Number(a.year) || 0) || b.id - a.id);
+
+const allYears = [...new Set(achievements.map((a) => a.year).filter(Boolean))].sort(
+  (a, b) => Number(b) - Number(a)
+);
+
+const activeYear = currentYearParam || null;
+const filteredAchievements = activeYear
+  ? achievements.filter((a) => a.year === activeYear)
+  : achievements;
+
+const defaultPhoto =
+  "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=1200&q=80";
+
+// 1. Hero Showcase Data (top 3 for carousel slider, next 4 for 2x2 grid)
+const heroSlides = !activeYear ? filteredAchievements.slice(0, 3) : [];
+const heroSub = !activeYear ? filteredAchievements.slice(1, 5) : [];
+
+// 2. Editor's Pick Data (mid section)
+const editorFeatured = !activeYear ? (filteredAchievements[2] || filteredAchievements[0] || null) : null;
+const editorMinis = !activeYear ? filteredAchievements.slice(3, 7) : [];
+const editorSides = !activeYear ? filteredAchievements.slice(7, 9) : [];
+
+// 3. Main Stream Data with Pagination
+const totalAchievementsCount = filteredAchievements.length;
+const totalPages = Math.max(1, Math.ceil(totalAchievementsCount / pageSize));
+const currentPage = Math.min(rawPage, totalPages);
+const startIndex = (currentPage - 1) * pageSize;
+const paginatedAchievements = filteredAchievements.slice(startIndex, startIndex + pageSize);
+const feedFeatured = !activeYear ? (paginatedAchievements[0] || null) : null;
+const feedList = !activeYear ? paginatedAchievements.slice(1) : paginatedAchievements;
+
+// 4. Visual Strip items (5 columns: top years + related school archives)
+const yearStripItems = allYears.slice(0, 2).map((yr) => {
+  const sample = achievements.find((a) => a.year === yr);
+  return {
+    name: `Tahun ${yr}`,
+    href: `/prestasi?tahun=${encodeURIComponent(yr)}`,
+    image: sample?.photoUrl || defaultPhoto,
+  };
+});
+
+const staticStripItems = [
+  {
+    name: "Galeri Foto",
+    href: "/galeri",
+    image: achievements[2]?.photoUrl || defaultPhoto,
+  },
+  {
+    name: "Alumni Sekolah",
+    href: "/alumni",
+    image: achievements[3]?.photoUrl || defaultPhoto,
+  },
+  {
+    name: "Berita Resmi",
+    href: "/berita",
+    image: achievements[4]?.photoUrl || defaultPhoto,
+  },
+  {
+    name: "Semua Prestasi",
+    href: "/prestasi#stream-section",
+    image: achievements[0]?.photoUrl || defaultPhoto,
+  },
+];
+
+const visualStrip = [...yearStripItems, ...staticStripItems].slice(0, 5);
+
+// 5. Sidebar top highlights
+const sidebarHighlights = achievements.slice(0, 5);
+
+const buildPageUrl = (page: number) => {
+  const params = new URLSearchParams();
+  if (activeYear) params.set("tahun", activeYear);
+  params.set("page", String(page));
+  return `?${params.toString()}`;
+};
+---
+
+<Layout
+  title={activeYear
+    ? `Prestasi Tahun ${activeYear} — ${schoolName}`
+    : `Arsip Capaian & Prestasi Siswa — ${schoolName}`}
+  description="Rekam jejak capaian gemilang, piala penghargaan, dan dedikasi peserta didik di kompetisi sains, teknologi, riset, seni, dan olahraga."
+>
+  <Header currentPath="/prestasi" />
+
+  <main class="flex-1 py-8 sm:py-12 bg-background">
+    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-8 sm:space-y-10">
+      {
+        activeYear && (
+          <div class="pb-6 flex flex-col items-center justify-center gap-2">
+            <h1 class="font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-heading">
+              Prestasi Tahun {activeYear}
+            </h1>
+            <span id="stream-count" class="font-body text-xs text-muted">
+              {filteredAchievements.length} Prestasi Tahun {activeYear}
+            </span>
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <Breadcrumb
+                class="mb-0"
+                items={[
+                  { label: "Beranda", href: "/" },
+                  { label: "Prestasi", href: "/prestasi" },
+                  { label: `Tahun ${activeYear}` },
+                ]}
+              />
+            </div>
+          </div>
+        )
+      }
+
+      <!-- 1. TOP HERO SHOWCASE (Carousel Left + 4 Sub-cards 2x2 Right) -->
+      {
+        !activeYear && filteredAchievements.length > 0 && (
+          <section class="overflow-hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4">
+              <!-- Left: Carousel Hero Slider Card -->
+              <div class={heroSub.length > 0 ? "lg:col-span-7" : "lg:col-span-12"}>
+                <div
+                  class="relative overflow-hidden rounded-[12px] border border-border bg-heading h-[380px] sm:h-[450px] lg:h-[480px]"
+                  id="hero-carousel"
+                >
+                  {heroSlides.map((slide, sIdx) => (
+                    <article
+                      class={`hero-slide absolute inset-0 transition-opacity duration-500 ease-in-out ${
+                        sIdx === 0 ? "opacity-100 z-10" : "opacity-0 pointer-events-none z-0"
+                      }`}
+                      data-slide-index={sIdx}
+                    >
+                      <img
+                        src={slide.photoUrl || defaultPhoto}
+                        alt={slide.title}
+                        width="1200"
+                        height="675"
+                        class="h-full w-full object-cover"
+                        loading={sIdx === 0 ? "eager" : "lazy"}
+                        fetchpriority={sIdx === 0 ? "high" : "low"}
+                      />
+                      <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/10" />
+
+                      <div class="absolute inset-x-0 bottom-0 p-5 sm:p-7 flex flex-col justify-end">
+                        <div class="mb-2.5">
+                          <a
+                            href={`/prestasi?tahun=${encodeURIComponent(slide.year)}`}
+                            class="inline-block rounded-[4px] bg-primary px-2.5 py-1 text-[11px] font-semibold text-white uppercase tracking-wider hover:bg-primary-hover transition-colors"
+                          >
+                            Tahun {slide.year}
+                          </a>
+                        </div>
+
+                        <h2 class="font-display text-xl sm:text-2xl lg:text-3xl font-bold text-white leading-tight hover:text-primary-light transition-colors max-w-xl">
+                          <a href={`/prestasi/${slide.id}`}>{slide.title}</a>
+                        </h2>
+
+                        <div class="mt-3 flex items-center gap-3 text-xs text-white/75 font-body">
+                          <span class="truncate max-w-[200px]">{slide.name}</span>
+                          <span>&bull;</span>
+                          <span class="truncate max-w-[220px]">
+                            {slide.organization || "Prestasi Sekolah"}
+                          </span>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+
+                  {heroSlides.length > 1 && (
+                    <div class="absolute bottom-5 right-5 z-20 flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        id="btn-hero-prev"
+                        aria-label="Prestasi sebelumnya"
+                        class="h-8 w-8 rounded-[6px] bg-black/60 backdrop-blur-xs text-white flex items-center justify-center hover:bg-primary transition-colors cursor-pointer border border-white/20"
+                      >
+                        <Icon name="chevron-left" class="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        id="btn-hero-next"
+                        aria-label="Prestasi berikutnya"
+                        class="h-8 w-8 rounded-[6px] bg-black/60 backdrop-blur-xs text-white flex items-center justify-center hover:bg-primary transition-colors cursor-pointer border border-white/20"
+                      >
+                        <Icon name="chevron-right" class="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <!-- Right: 4 Sub-Cards (2x2 Grid) -->
+              {heroSub.length > 0 && (
+                <div class="lg:col-span-5 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 lg:h-[480px]">
+                  {heroSub.map((sub) => (
+                    <article class="group relative overflow-hidden rounded-[12px] border border-border bg-heading h-[180px] sm:h-auto lg:h-full">
+                      <img
+                        src={sub.photoUrl || defaultPhoto}
+                        alt={sub.title}
+                        width="400"
+                        height="240"
+                        class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                        loading="lazy"
+                      />
+                      <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/10" />
+
+                      <div class="absolute inset-x-0 bottom-0 p-3.5 sm:p-4 flex flex-col justify-end">
+                        <div class="mb-1.5">
+                          <a
+                            href={`/prestasi?tahun=${encodeURIComponent(sub.year)}`}
+                            class="inline-block rounded-[4px] bg-primary-light border border-primary/20 px-2 py-0.5 text-[10px] font-semibold text-primary uppercase tracking-wider hover:bg-primary hover:text-white transition-colors"
+                          >
+                            {sub.year}
+                          </a>
+                        </div>
+
+                        <h3 class="font-display text-xs sm:text-sm font-bold text-white leading-snug line-clamp-2 group-hover:text-primary-light transition-colors">
+                          <a href={`/prestasi/${sub.id}`}>{sub.title}</a>
+                        </h3>
+
+                        <span class="mt-1.5 font-mono text-[10px] text-white/70 truncate">
+                          {sub.name}
+                        </span>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        )
+      }
+
+
+      <!-- 3. SOROTAN PRESTASI / EDITOR'S PICK (2 Columns) -->
+      {
+        !activeYear && editorFeatured && (
+          <section class="space-y-5">
+            <div class="flex items-center justify-between pb-1">
+              <div class="flex items-center gap-2">
+                <span class="h-2.5 w-2.5 bg-primary rounded-[2px]" />
+                <h2 class="font-display text-base sm:text-lg font-bold uppercase tracking-wider text-heading">
+                  Sorotan Prestasi
+                </h2>
+              </div>
+              <span class="text-xs text-muted font-body">Capaian Pilihan</span>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+              <!-- Left (8 cols): 1 Horizontal Card + 4 Mini Cards -->
+              <div class="lg:col-span-8 flex flex-col justify-between gap-5">
+                <article class="group overflow-hidden rounded-[10px] border border-border bg-surface p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-(--shadow-hover) flex flex-col sm:flex-row gap-4">
+                  <a
+                    href={`/prestasi/${editorFeatured.id}`}
+                    class="sm:w-5/12 aspect-[16/10] overflow-hidden rounded-[8px] bg-surface-subtle block shrink-0"
+                  >
+                    <img
+                      src={editorFeatured.photoUrl || defaultPhoto}
+                      alt={editorFeatured.title}
+                      class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      loading="lazy"
+                    />
+                  </a>
+                  <div class="sm:w-7/12 flex flex-col justify-between py-0.5">
+                    <div>
+                      <div class="mb-1.5">
+                        <a
+                          href={`/prestasi?tahun=${encodeURIComponent(editorFeatured.year)}`}
+                          class="inline-block rounded-[4px] bg-primary-light border border-primary/20 px-2 py-0.5 text-[10px] font-semibold text-primary uppercase hover:bg-primary hover:text-white transition-colors"
+                        >
+                          Tahun {editorFeatured.year}
+                        </a>
+                      </div>
+                      <h3 class="font-display text-base font-bold text-heading leading-snug group-hover:text-primary transition-colors">
+                        <a href={`/prestasi/${editorFeatured.id}`}>{editorFeatured.title}</a>
+                      </h3>
+                      {editorFeatured.description && (
+                        <p class="mt-2 line-clamp-2 text-xs leading-relaxed text-muted font-body">
+                          {editorFeatured.description}
+                        </p>
+                      )}
+                    </div>
+                    <div class="mt-3 flex items-center gap-2 text-[11px] text-muted font-mono">
+                      <span class="font-body truncate max-w-[160px]">{editorFeatured.name}</span>
+                      <span>&bull;</span>
+                      <span class="truncate">{editorFeatured.organization || "Prestasi Unggulan"}</span>
+                    </div>
+                  </div>
+                </article>
+
+                {editorMinis.length > 0 && (
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {editorMinis.map((mini) => (
+                      <article class="group flex items-start gap-3 p-3 rounded-[8px] border border-border bg-surface transition-all hover:border-primary/40">
+                        <a
+                          href={`/prestasi/${mini.id}`}
+                          class="w-20 sm:w-24 aspect-video overflow-hidden rounded-[6px] bg-surface-subtle shrink-0 block"
+                        >
+                          <img
+                            src={mini.photoUrl || defaultPhoto}
+                            alt={mini.title}
+                            class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                            loading="lazy"
+                          />
+                        </a>
+                        <div class="min-w-0 flex-1">
+                          <a
+                            href={`/prestasi?tahun=${encodeURIComponent(mini.year)}`}
+                            class="text-[9px] font-semibold uppercase text-primary tracking-wider hover:underline"
+                          >
+                            {mini.organization || `Tahun ${mini.year}`}
+                          </a>
+                          <h4 class="mt-0.5 font-display text-xs font-bold text-heading leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+                            <a href={`/prestasi/${mini.id}`}>{mini.title}</a>
+                          </h4>
+                          <span class="mt-1 block font-mono text-[10px] text-muted truncate">
+                            {mini.name}
+                          </span>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <!-- Right (4 cols): 2 Compact Vertical Cards aligned with Left Column -->
+              <div class="lg:col-span-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 lg:grid-rows-2 gap-4 h-full">
+                {editorSides.map((side) => (
+                  <article class="group flex flex-col h-full overflow-hidden rounded-[10px] border border-border bg-surface p-3 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-(--shadow-hover)">
+                    <a
+                      href={`/prestasi/${side.id}`}
+                      class="h-32 sm:h-28 lg:h-24 xl:h-28 w-full overflow-hidden rounded-[6px] bg-surface-subtle block shrink-0"
+                    >
+                      <img
+                        src={side.photoUrl || defaultPhoto}
+                        alt={side.title}
+                        class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                        loading="lazy"
+                      />
+                    </a>
+                    <div class="pt-2.5 flex-1 flex flex-col justify-between">
+                      <div>
+                        <a
+                          href={`/prestasi?tahun=${encodeURIComponent(side.year)}`}
+                          class="inline-block rounded-[4px] bg-primary-light border border-primary/20 px-2 py-0.5 text-[9px] font-semibold text-primary uppercase hover:bg-primary hover:text-white transition-colors"
+                        >
+                          Tahun {side.year}
+                        </a>
+                        <h4 class="mt-1 font-display text-xs font-bold text-heading leading-snug group-hover:text-primary transition-colors line-clamp-2">
+                          <a href={`/prestasi/${side.id}`}>{side.title}</a>
+                        </h4>
+                      </div>
+                      <span class="mt-1.5 block font-mono text-[10px] text-muted truncate">
+                        {side.name}
+                      </span>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
+          </section>
+        )
+      }
+
+      <!-- 4. VISUAL STRIP ARSIP & KANAL (5 Columns) -->
+      {
+        !activeYear && (
+          <section class="overflow-hidden">
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+              {visualStrip.map((vItem) => (
+                <div class="group relative h-28 sm:h-32 overflow-hidden rounded-[8px] border border-border bg-heading block">
+                  <img
+                    src={vItem.image}
+                    alt={vItem.name}
+                    class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+                    loading="lazy"
+                  />
+                  <div class="absolute inset-0 bg-black/40 group-hover:bg-black/25 transition-colors" />
+                  <div class="absolute inset-0 flex items-center justify-center p-2">
+                    <a
+                      href={vItem.href}
+                      class="rounded-[4px] border border-border bg-surface px-3 py-1 font-display text-xs font-bold text-heading group-hover:bg-primary group-hover:text-white group-hover:border-primary transition-colors shadow-xs"
+                    >
+                      {vItem.name}
+                    </a>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )
+      }
+
+      <!-- 5. MAIN FEED (8 Cols) + SIDEBAR (4 Cols) -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-start" id="stream-section">
+        <!-- Left: Main Stream & Feed (lg:col-span-8) -->
+        <div class="lg:col-span-8 space-y-6" id="stream-container">
+          {
+            filteredAchievements.length === 0 ? (
+              <div id="empty-state" class="rounded-[12px] border border-border bg-surface p-12 text-center">
+                <p class="font-display text-lg font-bold text-heading">
+                  Belum ada data prestasi {activeYear ? `untuk tahun ${activeYear}` : "publik"}
+                </p>
+                <p class="mt-1 text-xs text-muted">
+                  Silakan pilih tahun lain atau kembali ke seluruh arsip prestasi siswa.
+                </p>
+                <div class="mt-4">
+                  <a
+                    href="/prestasi"
+                    class="inline-flex h-[38px] items-center justify-center rounded-[6px] border border-border bg-surface px-4 font-body text-xs font-medium text-heading hover:bg-surface-subtle transition-colors"
+                  >
+                    Lihat Semua Prestasi
+                  </a>
+                </div>
+              </div>
+            ) : (
+              <div id="stream-achievements-container" class="space-y-6">
+                <!-- Featured Horizontal Card (Semua Prestasi mode) -->
+                {feedFeatured && (
+                  <article class="group overflow-hidden rounded-[12px] border border-border bg-surface p-4 sm:p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-(--shadow-hover) flex flex-col md:flex-row gap-5">
+                    <a
+                      href={`/prestasi/${feedFeatured.id}`}
+                      class="md:w-1/2 aspect-[16/10] overflow-hidden rounded-[8px] bg-surface-subtle block shrink-0"
+                    >
+                      <img
+                        src={feedFeatured.photoUrl || defaultPhoto}
+                        alt={feedFeatured.title}
+                        class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                        loading="lazy"
+                      />
+                    </a>
+
+                    <div class="md:w-1/2 flex flex-col justify-between py-1">
+                      <div>
+                        <div class="mb-2">
+                          <a
+                            href={`/prestasi?tahun=${encodeURIComponent(feedFeatured.year)}`}
+                            class="inline-block rounded-[4px] bg-primary-light border border-primary/20 px-2 py-0.5 text-[10px] font-semibold text-primary uppercase transition-colors hover:bg-primary hover:text-white"
+                          >
+                            Tahun {feedFeatured.year}
+                          </a>
+                        </div>
+
+                        <h3 class="font-display text-lg sm:text-xl font-bold text-heading leading-snug group-hover:text-primary transition-colors">
+                          <a href={`/prestasi/${feedFeatured.id}`}>
+                            {feedFeatured.title}
+                          </a>
+                        </h3>
+
+                        {feedFeatured.description && (
+                          <p class="mt-2.5 line-clamp-3 text-xs sm:text-sm leading-relaxed text-muted font-body">
+                            {feedFeatured.description}
+                          </p>
+                        )}
+                      </div>
+
+                      <div class="mt-4 pt-1 flex items-center justify-between text-[11px] text-muted">
+                        <span
+                          class="font-medium text-heading truncate max-w-[180px]"
+                          title={feedFeatured.name}
+                        >
+                          {feedFeatured.name}
+                        </span>
+                        <span class="font-mono truncate max-w-[160px]">
+                          {feedFeatured.organization || "Prestasi Siswa"}
+                        </span>
+                      </div>
+                    </div>
+                  </article>
+                )}
+
+                <!-- Stream List of Achievements (Solid Card Surface Policy) -->
+                <div class="space-y-4" id="stream-list">
+                  {feedList.map((item) => (
+                    <article class="stream-achievement group rounded-[10px] border border-border bg-surface p-4 sm:p-5 flex flex-col sm:flex-row gap-4 sm:gap-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-(--shadow-hover)">
+                      <a
+                        href={`/prestasi/${item.id}`}
+                        class="w-full sm:w-48 md:w-56 aspect-[16/10] overflow-hidden rounded-[8px] bg-surface-subtle shrink-0 block"
+                      >
+                        <img
+                          src={item.photoUrl || defaultPhoto}
+                          alt={item.title}
+                          class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                          loading="lazy"
+                        />
+                      </a>
+
+                      <div class="flex-1 flex flex-col justify-between py-0.5">
+                        <div>
+                          <div class="mb-2 flex items-center gap-2">
+                            <a
+                              href={`/prestasi?tahun=${encodeURIComponent(item.year)}`}
+                              class="inline-block rounded-[4px] bg-primary-light border border-primary/20 px-2 py-0.5 text-[10px] font-semibold text-primary uppercase transition-colors hover:bg-primary hover:text-white"
+                              title={`Filter prestasi tahun ${item.year}`}
+                            >
+                              Tahun {item.year}
+                            </a>
+                            {item.organization && (
+                              <span class="text-[11px] font-medium text-muted truncate max-w-[240px]">
+                                {item.organization}
+                              </span>
+                            )}
+                          </div>
+
+                          <h3 class="font-display text-base sm:text-lg font-bold text-heading leading-snug group-hover:text-primary transition-colors">
+                            <a href={`/prestasi/${item.id}`}>
+                              {item.title}
+                            </a>
+                          </h3>
+
+                          {item.description && (
+                            <p class="mt-2 line-clamp-2 text-xs leading-relaxed text-muted font-body">
+                              {item.description}
+                            </p>
+                          )}
+                        </div>
+
+                        <div class="mt-3 flex items-center justify-between gap-3 text-[11px] text-muted font-mono">
+                          <span
+                            class="font-body font-medium text-heading truncate max-w-[200px]"
+                            title={item.name}
+                          >
+                            {item.name}
+                          </span>
+                          <a
+                            href={`/prestasi/${item.id}`}
+                            class="font-body font-semibold text-primary shrink-0 inline-flex items-center gap-1 hover:underline"
+                          >
+                            <span>Detail</span>
+                            <Icon name="chevron-right" class="h-3 w-3" />
+                          </a>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+
+                <!-- Pagination Prestasi -->
+                {totalPages > 1 && (
+                  <Pagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    totalItems={totalAchievementsCount}
+                    pageSize={pageSize}
+                    itemLabel="prestasi"
+                    getPageUrl={buildPageUrl}
+                    class="rounded-[10px] border border-border shadow-xs mt-6"
+                  />
+                )}
+              </div>
+            )
+          }
+        </div>
+
+        <!-- 6. SIDEBAR LENGKAP (4 Cols) -->
+        <aside class="lg:col-span-4 space-y-8 sticky top-20">
+          <!-- Widget 1: Prestasi Terbaru -->
+          <div class="rounded-[12px] border border-border bg-surface p-5 sm:p-6 shadow-xs">
+            <div class="flex items-center justify-between pb-3">
+              <h3 class="font-display text-sm font-bold uppercase tracking-wider text-heading">
+                Prestasi Terbaru
+              </h3>
+            </div>
+
+            <div class="space-y-2">
+              {
+                sidebarHighlights.map((hl, idx) => (
+                  <article class="p-2.5 rounded-[8px] border border-transparent hover:border-border hover:bg-surface-subtle/60 transition-all flex items-start gap-3 group">
+                    <span
+                      class={`flex h-6 w-6 shrink-0 items-center justify-center rounded-[4px] font-mono text-xs font-bold transition-colors ${
+                        idx === 0
+                          ? "bg-primary text-white"
+                          : "bg-surface-subtle text-muted group-hover:bg-primary group-hover:text-white"
+                      }`}
+                    >
+                      {idx + 1}
+                    </span>
+
+                    <a
+                      href={`/prestasi/${hl.id}`}
+                      class="w-16 h-14 overflow-hidden rounded-[6px] bg-surface-subtle shrink-0 block"
+                    >
+                      <img
+                        src={hl.photoUrl || defaultPhoto}
+                        alt={hl.title}
+                        class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                        loading="lazy"
+                      />
+                    </a>
+
+                    <div class="min-w-0 flex-1">
+                      <h4 class="font-display text-xs font-bold text-heading leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+                        <a href={`/prestasi/${hl.id}`}>{hl.title}</a>
+                      </h4>
+                      <div class="mt-1 flex items-center gap-2 text-[10px] text-muted font-mono">
+                        <span class="truncate max-w-[120px] font-body">{hl.name}</span>
+                        <span>&bull;</span>
+                        <span>{hl.year}</span>
+                      </div>
+                    </div>
+                  </article>
+                ))
+              }
+            </div>
+          </div>
+
+          <!-- Widget 2: Saluran Resmi Sekolah -->
+          {
+            activeSocialChannels.length > 0 && (
+              <div class="rounded-[12px] border border-border bg-surface p-5 sm:p-6 shadow-xs space-y-4">
+                <div class="pb-1">
+                  <h3 class="font-display text-xs sm:text-sm font-bold uppercase tracking-wider text-heading">
+                    Saluran Resmi Sekolah
+                  </h3>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2.5">
+                  {activeSocialChannels.map((soc, idx) => {
+                    const isLastOdd = idx === activeSocialChannels.length - 1 && activeSocialChannels.length % 2 === 1;
+                    return (
+                      <a
+                        href={soc.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={`Kunjungi ${soc.name} Resmi Sekolah`}
+                        aria-label={`Kunjungi ${soc.name} Resmi Sekolah`}
+                        class={`flex items-center gap-2.5 px-3 py-2.5 rounded-[8px] border border-border bg-surface text-heading transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xs group ${soc.hoverClass} ${isLastOdd ? "col-span-2 sm:col-span-1" : ""}`}
+                      >
+                        <span class={`flex h-5 w-5 shrink-0 items-center justify-center transition-colors ${soc.iconColor} group-hover:text-current`}>
+                          <Icon name={soc.key} class="h-4.5 w-4.5 transition-transform duration-200 group-hover:scale-110" />
+                        </span>
+                        <span class="font-display text-xs font-semibold text-heading group-hover:text-current transition-colors truncate">
+                          {soc.name}
+                        </span>
+                      </a>
+                    );
+                  })}
+                </div>
+              </div>
+            )
+          }
+
+          <!-- Widget 3: Filter Tahun Prestasi -->
+          <div class="rounded-[12px] border border-border bg-surface p-5 sm:p-6 shadow-xs space-y-4">
+            <div class="flex items-center justify-between pb-1">
+              <h3 class="font-display text-sm font-bold uppercase tracking-wider text-heading">
+                Tahun Prestasi
+              </h3>
+            </div>
+
+            <div class="flex flex-wrap gap-2 *:rounded-[4px] *:px-2.5 *:py-1 *:text-xs *:transition-colors">
+              <a
+                href="/prestasi"
+                class={
+                  !activeYear
+                    ? "bg-primary text-white font-semibold shadow-xs"
+                    : "border border-border bg-surface font-medium text-muted hover:border-heading hover:text-heading"
+                }
+              >
+                Semua Tahun
+              </a>
+              {allYears.map((yr) => {
+                const isActive = activeYear === yr;
+                return (
+                  <a
+                    href={`/prestasi?tahun=${encodeURIComponent(yr)}`}
+                    class={
+                      isActive
+                        ? "bg-primary text-white font-semibold shadow-xs"
+                        : "border border-border bg-surface font-medium text-muted hover:border-heading hover:text-heading"
+                    }
+                  >
+                    {yr}
+                  </a>
+                );
+              })}
+            </div>
+          </div>
+
+          <!-- Widget 4: PPDB & Informasi Publik Dinamis -->
+          <div class="rounded-[12px] border border-border bg-surface p-5 sm:p-6 shadow-xs space-y-3">
+            <span class="inline-block rounded-[4px] bg-primary-light text-primary font-bold px-2 py-0.5 text-[10px] tracking-wider uppercase border border-primary/20">
+              Informasi {admissionsLabel}
+            </span>
+            <h4 class="font-display text-sm font-bold text-heading">
+              {admissionsTitle}
+            </h4>
+            <p class="text-xs leading-relaxed text-muted font-body">
+              {admissionsSubtitle}
+            </p>
+            <div class="pt-2">
+              <a
+                href="/pendaftaran"
+                class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[8px] bg-primary px-5 font-display text-xs sm:text-sm font-semibold text-white shadow-xs transition-all duration-200 hover:bg-primary-hover hover:shadow-sm group"
+              >
+                <span>Lihat Informasi {admissionsLabel}</span>
+                <Icon name="chevron-right" class="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
+              </a>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </main>
+
+  <!-- Hero Carousel Slider Script -->
+  <script is:inline>
+    document.addEventListener("DOMContentLoaded", () => {
+      const slides = document.querySelectorAll(".hero-slide");
+      const btnPrev = document.getElementById("btn-hero-prev");
+      const btnNext = document.getElementById("btn-hero-next");
+      if (slides.length && btnPrev && btnNext) {
+        let current = 0;
+        const total = slides.length;
+        function showSlide(index) {
+          slides.forEach((s, idx) => {
+            if (idx === index) {
+              s.classList.remove("opacity-0", "pointer-events-none", "z-0");
+              s.classList.add("opacity-100", "z-10");
+            } else {
+              s.classList.remove("opacity-100", "z-10");
+              s.classList.add("opacity-0", "pointer-events-none", "z-0");
+            }
+          });
+          current = index;
+        }
+        btnPrev.addEventListener("click", () => showSlide((current - 1 + total) % total));
+        btnNext.addEventListener("click", () => showSlide((current + 1) % total));
+        setInterval(() => showSlide((current + 1) % total), 7000);
+      }
+    });
+  </script>
+
+  <Footer />
+</Layout>

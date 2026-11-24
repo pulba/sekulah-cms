@@ -1,0 +1,121 @@
+---
+export const prerender = false;
+import Layout from '../layouts/Layout.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import Breadcrumb from '../components/Breadcrumb.astro';
+import Icon from '../components/Icon.astro';
+import { db, settings } from '../db';
+
+let schoolSettings: Record<string, string> = {};
+try {
+  const allSettings = await db.select().from(settings);
+  schoolSettings = allSettings.reduce(
+    (acc, curr) => {
+      acc[curr.key] = curr.value;
+      return acc;
+    },
+    {} as Record<string, string>,
+  );
+} catch {
+  schoolSettings = {};
+}
+
+const schoolName = schoolSettings['school_name'] || 'SMAN 1 UNGGULAN';
+const schoolEmail = schoolSettings['email'] || 'info@sman1unggulan.sch.id';
+const schoolAddress = schoolSettings['address'] || 'Jl. Pendidikan No. 45, Kota Pendidikan';
+---
+
+<Layout
+  title={`Syarat & Ketentuan Layanan — ${schoolName}`}
+  description="Ketentuan resmi penggunaan layanan informasi publik, portal akademik, dan sistem pendaftaran di lingkungan sekolah."
+>
+  <Header currentPath="/syarat-ketentuan" />
+
+  <main class="flex-1 py-12 bg-background">
+    <div class="mx-auto max-w-4xl px-4 sm:px-6">
+      <!-- Breadcrumb -->
+      <Breadcrumb
+        items={[
+          { label: 'Beranda', href: '/' },
+          { label: 'Syarat & Ketentuan' },
+        ]}
+      />
+
+      <div class="rounded-[10px] border border-border bg-surface p-6 sm:p-10 shadow-xs space-y-8">
+        <div class="space-y-2.5">
+          <div class="inline-flex items-center gap-1.5 rounded-[4px] bg-accent-light px-2.5 py-1 text-[11px] font-semibold text-accent-text border border-accent/20">
+            <Icon name="info" class="h-3 w-3 text-accent shrink-0" />
+            <span>Ketentuan Layanan & Regulasi</span>
+          </div>
+          <h1 class="font-display text-2xl sm:text-3xl font-bold tracking-tight text-heading">
+            Syarat & Ketentuan Penggunaan (Terms & Conditions)
+          </h1>
+          <p class="font-body text-xs text-muted">
+            Terakhir diperbarui: <span id="terms-date">Januari 2026</span> &bull; Pengelola Resmi Website {schoolName}
+          </p>
+        </div>
+
+        <section class="space-y-2.5 font-body text-sm text-body leading-relaxed">
+          <h2 class="font-display text-base font-bold text-heading">1. Penerimaan Syarat</h2>
+          <p>
+            Dengan mengakses dan memanfaatkan seluruh fasilitas situs resmi {schoolName}, Anda menyatakan setuju dan terikat secara hukum pada Syarat dan Ketentuan ini, Kebijakan Privasi kami, serta seluruh regulasi hukum pendidikan dan teknologi informasi yang berlaku di Negara Kesatuan Republik Indonesia.
+          </p>
+        </section>
+
+        <section class="space-y-2.5 font-body text-sm text-body leading-relaxed">
+          <h2 class="font-display text-base font-bold text-heading">2. Hak Kekayaan Intelektual</h2>
+          <p>
+            Seluruh konten yang dimuat dalam situs ini—meliputi logo institusi, teks berita, dokumentasi foto kegiatan, karya ilmiah siswa, silabus, dan materi publikasi—merupakan hak milik sah {schoolName} dan/atau pihak terafiliasi. Penggunaan kembali untuk tujuan non-komersial diwajibkan menyertakan atribusi sumber resmi sekolah.
+          </p>
+        </section>
+
+        <section class="space-y-2.5 font-body text-sm text-body leading-relaxed">
+          <h2 class="font-display text-base font-bold text-heading">3. Layanan Pendaftaran & Pengumuman Daring</h2>
+          <ul class="list-disc pl-5 space-y-2 text-muted">
+            <li><strong class="text-heading font-medium">Keaslian Data Calon Siswa:</strong> Setiap data, berkas identitas, rapor, dan sertifikat yang diunggah pada portal seleksi (PPDB/PSB) harus sah, benar, dan dapat diverifikasi keasliannya secara fisik.</li>
+            <li><strong class="text-heading font-medium">Sanksi Pemalsuan:</strong> Pemalsuan data atau identitas merupakan pelanggaran hukum dan berakibat pembatalan status penerimaan secara mutlak.</li>
+            <li><strong class="text-heading font-medium">Pengumuman Kelulusan:</strong> Informasi kelulusan yang sah secara hukum adalah dokumen fisik berstempel resmi atau hasil verifikasi yang diterbitkan oleh panitia pelaksana.</li>
+          </ul>
+        </section>
+
+        <section class="space-y-2.5 font-body text-sm text-body leading-relaxed">
+          <h2 class="font-display text-base font-bold text-heading">4. Keamanan Akun Staf & Hak Akses</h2>
+          <p>
+            Akses ke portal manajemen konten (CMS Staf/Guru) dibatasi khusus untuk pegawai yang memiliki izin operasional resmi. Staf wajib menjaga kerahasiaan kredensial dan bertanggung jawab atas setiap manipulasi data yang terjadi di bawah akun masing-masing.
+          </p>
+        </section>
+
+        <section class="space-y-2.5 font-body text-sm text-body leading-relaxed">
+          <h2 class="font-display text-base font-bold text-heading">5. Batasan Tanggung Jawab</h2>
+          <p>
+            {schoolName} berupaya menyajikan informasi yang akurat dan terkini. Namun, sekolah tidak bertanggung jawab atas kerugian langsung maupun tidak langsung yang timbul akibat gangguan jaringan, serangan pihak ketiga di luar kendali server, atau kekeliruan interpretasi data oleh pengguna.
+          </p>
+        </section>
+
+        <div class="rounded-[10px] bg-surface-subtle p-5 border border-border space-y-3">
+          <div class="flex items-center gap-2">
+            <Icon name="info" class="h-4 w-4 text-primary shrink-0" />
+            <h3 class="font-display text-sm font-semibold text-heading">Layanan Bantuan & Klarifikasi Regulasi</h3>
+          </div>
+          <div class="space-y-1.5 text-xs text-muted">
+            <p class="text-xs text-muted">
+              Hubungi Bagian Hubungan Masyarakat (Humas) {schoolName}:
+            </p>
+            <div class="flex items-start gap-2">
+              <Icon name="mail" class="h-3.5 w-3.5 text-muted shrink-0 mt-0.5" />
+              <span>Email Resmi: <a href={`mailto:${schoolEmail}`} class="text-primary font-mono font-medium hover:text-primary-hover hover:underline transition-colors">{schoolEmail}</a></span>
+            </div>
+            <div class="flex items-start gap-2">
+              <Icon name="map-pin" class="h-3.5 w-3.5 text-muted shrink-0 mt-0.5" />
+              <span>Alamat Kampus: {schoolAddress}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <Footer />
+</Layout>
+

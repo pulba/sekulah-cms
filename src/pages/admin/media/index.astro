@@ -1,0 +1,1942 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import Icon from '../../../components/Icon.astro';
+import Pagination from '../../../components/Pagination.astro';
+import { db, media } from '../../../db';
+import { desc, sql } from 'drizzle-orm';
+
+export const prerender = false;
+
+const PAGE_SIZE = 36;
+
+// Ambil berkas awal dan hitung total berkas langsung via DB untuk SSR instan
+const [totalRes, initialList] = await Promise.all([
+  db.select({ count: sql<number>`count(*)` }).from(media),
+  db.select().from(media).orderBy(desc(media.createdAt)).limit(PAGE_SIZE),
+]);
+
+const totalItems = Number(totalRes[0]?.count || 0);
+const totalPages = Math.ceil(totalItems / PAGE_SIZE) || 1;
+
+function getBadgeFormat(ext: string | null, mime: string | null): string {
+  const e = (ext || '').toUpperCase();
+  if (e === 'JPG' || e === 'JPEG') return 'JPEG';
+  if (e === 'PNG') return 'PNG';
+  if (e === 'WEBP') return 'WEBP';
+  if (e === 'PDF') return 'PDF';
+  if (e === 'MP4') return 'MP4';
+  return e || 'FILE';
+}
+---
+
+<AdminLayout title="Media Library" activeNav="media">
+  <div class="space-y-4 max-w-7xl pb-20">
+    <!-- Top Header Row (Exact match to reference screenshot) -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
+      <h1 class="font-display text-2xl sm:text-3xl font-bold tracking-tight text-heading">
+        Media Library
+      </h1>
+
+      <div class="flex items-center gap-2.5">
+        <!-- Button: + Add new folder -->
+        <button
+          type="button"
+          id="btn-add-folder"
+          class="inline-flex h-[36px] items-center gap-1.5 rounded-[6px] border border-border bg-surface px-3.5 text-xs font-semibold text-heading hover:bg-surface-subtle transition-colors shadow-2xs cursor-pointer"
+        >
+          <Icon name="folder" class="h-4 w-4 text-muted" />
+          <span>Add new folder</span>
+        </button>
+
+        <!-- Button: Upload Files (Primary CTA) -->
+        <button
+          type="button"
+          id="btn-open-upload"
+          class="inline-flex h-[36px] items-center gap-1.5 rounded-[6px] bg-primary px-4 font-body text-xs font-semibold text-white shadow-xs transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary cursor-pointer"
+        >
+          <Icon name="upload" class="h-4 w-4 text-white" />
+          <span>Upload Files</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Filter & Toolbar Row (Exact match to reference screenshot) -->
+    <div class="flex items-center justify-between gap-3 pt-0.5">
+      <div class="flex items-center gap-2">
+        <!-- Search Input -->
+        <div class="relative w-64 sm:w-72">
+          <Icon name="search" class="w-4 h-4 text-muted absolute left-3 top-2.5 pointer-events-none" />
+          <input
+            type="text"
+            id="search-input"
+            placeholder="Search by filename..."
+            class="h-[36px] w-full rounded-[6px] border border-border bg-surface pl-9 pr-8 text-xs text-heading placeholder:text-muted/60 transition-colors"
+          />
+          <button
+            type="button"
+            id="btn-clear-search"
+            class="hidden absolute inset-y-0 right-0 pr-2.5 flex items-center text-muted hover:text-heading cursor-pointer"
+            aria-label="Clear search"
+          >
+            <Icon name="close" class="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <!-- Dropdown: All types ⌄ -->
+        <div class="relative shrink-0">
+          <button
+            type="button"
+            id="type-dropdown-btn"
+            class="h-[36px] inline-flex items-center gap-2 rounded-[6px] border border-border bg-surface px-3 text-xs font-semibold text-heading hover:bg-surface-subtle transition-colors cursor-pointer shadow-2xs"
+          >
+            <span id="selected-type-label">All types</span>
+            <Icon name="chevron-down" class="w-3.5 h-3.5 text-muted transition-transform duration-200" id="type-caret" />
+          </button>
+
+          <!-- Dropdown Menu (Exact match to screenshot) -->
+          <div
+            id="type-dropdown-menu"
+            class="hidden absolute left-0 top-full mt-1.5 w-40 rounded-[8px] border border-border bg-surface shadow-xl z-30 py-1 text-xs"
+          >
+            <button type="button" class="type-opt-btn w-full px-3.5 py-2 text-left hover:bg-surface-subtle flex items-center justify-between font-semibold text-heading cursor-pointer" data-type="all">
+              <span>All types</span>
+              <span class="type-check text-heading font-bold">✓</span>
+            </button>
+            <button type="button" class="type-opt-btn w-full px-3.5 py-2 text-left hover:bg-surface-subtle flex items-center justify-between text-muted hover:text-heading cursor-pointer" data-type="image">
+              <span>Images</span>
+              <span class="type-check text-heading font-bold hidden">✓</span>
+            </button>
+            <button type="button" class="type-opt-btn w-full px-3.5 py-2 text-left hover:bg-surface-subtle flex items-center justify-between text-muted hover:text-heading cursor-pointer" data-type="video">
+              <span>Video</span>
+              <span class="type-check text-heading font-bold hidden">✓</span>
+            </button>
+            <button type="button" class="type-opt-btn w-full px-3.5 py-2 text-left hover:bg-surface-subtle flex items-center justify-between text-muted hover:text-heading cursor-pointer" data-type="audio">
+              <span>Audio</span>
+              <span class="type-check text-heading font-bold hidden">✓</span>
+            </button>
+            <button type="button" class="type-opt-btn w-full px-3.5 py-2 text-left hover:bg-surface-subtle flex items-center justify-between text-muted hover:text-heading cursor-pointer" data-type="document">
+              <span>Documents</span>
+              <span class="type-check text-heading font-bold hidden">✓</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Segmented View Toggle (Grid / List) -->
+      <div class="inline-flex rounded-[8px] border border-border bg-surface-subtle p-0.5 shrink-0 *:h-[30px] *:w-[30px] *:rounded-[6px] *:flex *:items-center *:justify-center *:transition-all *:cursor-pointer">
+        <button
+          type="button"
+          id="btn-view-grid"
+          class="bg-surface text-heading shadow-2xs"
+          title="Grid view"
+        >
+          <Icon name="grid" class="w-4 h-4" />
+        </button>
+        <button
+          type="button"
+          id="btn-view-list"
+          class="text-muted hover:text-heading"
+          title="List view"
+        >
+          <Icon name="list" class="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+
+    <!-- Active Folder Breadcrumbs (Subtle indicator if folder active) -->
+    <div id="folder-breadcrumb" class="hidden items-center gap-2 text-xs text-muted pt-1">
+      <span>Folder:</span>
+      <span id="active-folder-name" class="font-semibold text-heading">All Files</span>
+      <button type="button" id="btn-reset-folder" class="text-primary hover:underline ml-1">
+        Reset to all files
+      </button>
+    </div>
+
+    <!-- Media Library Grid Container (Exact Match to Screenshot) -->
+    <div id="media-container" class="min-h-[300px]">
+      <!-- Grid View (4 Columns, Exactly matching reference image) -->
+      <div id="media-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        {initialList.map((item, index) => {
+          const isImg = item.fileType?.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp', 'avif'].includes(item.fileExtension || '');
+          const displayUrl = item.thumbnailUrl || item.mediumUrl || item.fileUrl;
+          const badgeFormat = getBadgeFormat(item.fileExtension, item.fileType);
+          const isAboveFold = index < 4;
+
+          return (
+            <a
+              href={item.fileUrl || displayUrl}
+              class="media-card group rounded-[10px] border border-border bg-surface overflow-hidden shadow-2xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between block no-underline text-inherit"
+              data-id={item.id}
+            >
+              <!-- Image Container: Aspect 16/10 rounded image -->
+              <div class="w-full aspect-[16/10] bg-surface-subtle overflow-hidden relative flex items-center justify-center">
+                {isImg ? (
+                  <img
+                    src={displayUrl}
+                    alt={item.originalName || item.fileName}
+                    loading={isAboveFold ? "eager" : "lazy"}
+                    fetchpriority={index === 0 ? "high" : "auto"}
+                    decoding={isAboveFold ? "sync" : "async"}
+                    class="w-full h-full object-cover group-hover:scale-102 transition-transform duration-200"
+                  />
+                ) : (
+                  <div class="flex flex-col items-center justify-center text-muted">
+                    <span class="text-3xl mb-1">📄</span>
+                  </div>
+                )}
+              </div>
+
+              <!-- Bottom Row: filename on left, JPEG badge on right -->
+              <div class="px-3.5 py-2.5 flex items-center justify-between gap-2 bg-surface">
+                <span class="text-[11px] text-heading truncate" title={item.originalName || item.fileName}>
+                  {item.originalName || item.fileName}
+                </span>
+                <span class="text-[10px] text-muted bg-surface-subtle px-1.5 py-0.5 rounded uppercase shrink-0 font-mono">
+                  {badgeFormat}
+                </span>
+              </div>
+            </a>
+          );
+        })}
+      </div>
+
+      <!-- List View -->
+      <div id="media-list" class="hidden rounded-[10px] border border-border bg-surface overflow-hidden shadow-xs">
+        <table class="w-full text-left font-body text-xs">
+          <thead class="bg-surface-subtle text-[11px] font-semibold text-muted uppercase">
+            <tr>
+              <th class="py-3 px-4 w-14">Preview</th>
+              <th class="py-3 px-4">Filename</th>
+              <th class="py-3 px-4">Folder</th>
+              <th class="py-3 px-4">Type / Size</th>
+              <th class="py-3 px-4">Date</th>
+              <th class="py-3 px-4 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="media-table-body" class="divide-y divide-border"></tbody>
+        </table>
+      </div>
+
+      <!-- Empty State -->
+      <div
+        id="empty-state"
+        class="hidden flex flex-col items-center justify-center py-16 px-4 text-center rounded-[10px] border border-dashed border-border bg-surface min-h-[260px] space-y-3"
+      >
+        <span class="text-3xl">📂</span>
+        <div>
+          <h3 class="font-display text-sm font-bold text-heading">No files found</h3>
+          <p class="text-xs text-muted mt-1">Upload files or adjust your search to see results.</p>
+        </div>
+        <button
+          type="button"
+          id="btn-upload-empty"
+          class="inline-flex h-[36px] items-center gap-1.5 rounded-[6px] bg-primary px-4 font-body text-xs font-semibold text-white shadow-xs transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary cursor-pointer"
+        >
+          <Icon name="upload" class="h-4 w-4 text-white" />
+          <span>Upload Files</span>
+        </button>
+      </div>
+
+      <!-- Loading State -->
+      <div id="loading-state" class="hidden flex flex-col items-center justify-center py-16 text-muted">
+        <svg class="animate-spin h-6 w-6 text-heading mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+        </svg>
+        <span class="text-xs font-mono">Loading media files...</span>
+      </div>
+    </div>
+
+    <!-- Pagination Terpusat (Sesuai Standar Design System) -->
+    <div id="media-pagination-container" class="rounded-[10px] border border-border bg-surface overflow-hidden shadow-2xs [&_.border-t]:border-t-0">
+      <Pagination
+        id="media-pagination"
+        currentPage={1}
+        totalPages={totalPages}
+        totalItems={totalItems}
+        pageSize={PAGE_SIZE}
+        itemLabel="berkas media"
+      />
+    </div>
+  </div>
+
+  <!-- Initial SSR Data Container -->
+  <script id="initial-media-data" type="application/json" set:html={JSON.stringify(initialList)}></script>
+
+  <!-- ============================================================
+       MODAL: ADD NEW FOLDER
+  ============================================================ -->
+  <div id="folder-modal" class="fixed inset-0 bg-heading/40 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+    <div class="rounded-[10px] border border-border bg-surface p-5 shadow-2xl max-w-sm w-full space-y-4">
+      <div class="flex items-center justify-between pb-3">
+        <h3 class="font-display text-sm font-bold text-heading">Create new folder</h3>
+        <button type="button" id="close-folder-modal-btn" class="text-muted hover:text-heading p-1 cursor-pointer" aria-label="Close modal">
+          <Icon name="close" class="w-4 h-4" />
+        </button>
+      </div>
+      <form id="folder-form" class="space-y-3.5">
+        <div class="space-y-1">
+          <label class="block text-xs font-semibold text-heading">Folder name</label>
+          <input
+            type="text"
+            id="new-folder-name"
+            placeholder="e.g. Foto Kegiatan 2026"
+            required
+            class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 text-xs text-heading transition-colors"
+          />
+        </div>
+        <div class="flex items-center justify-end gap-2 pt-2">
+          <button type="button" id="cancel-folder-btn" class="h-[36px] px-4 rounded-[6px] border border-border text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer">
+            Cancel
+          </button>
+          <button type="submit" id="btn-submit-folder" class="inline-flex h-[36px] items-center justify-center gap-1.5 px-4 rounded-[6px] bg-primary text-white text-xs font-semibold hover:bg-primary-hover shadow-xs transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+            <Icon id="folder-save-icon" name="save" class="h-3.5 w-3.5 text-white" />
+            <svg id="folder-save-spinner" class="hidden h-3.5 w-3.5 animate-spin text-white" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <Icon id="folder-save-check" name="check" class="hidden h-3.5 w-3.5 text-white" />
+            <span id="folder-save-text">Create folder</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       MODAL: UPLOAD FILES
+  ============================================================ -->
+  <div id="upload-modal" class="fixed inset-0 bg-heading/40 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+    <div class="rounded-[10px] border border-border bg-surface p-6 shadow-2xl max-w-lg w-full space-y-4">
+      <div class="flex items-center justify-between pb-3">
+        <div>
+          <h3 class="font-display text-base font-bold text-heading">Upload Files</h3>
+          <p class="text-[11px] text-muted">Upload images, documents, or video to central storage.</p>
+        </div>
+        <button type="button" id="close-upload-modal-btn" class="text-muted hover:text-heading p-1 cursor-pointer" aria-label="Close modal">
+          <Icon name="close" class="w-5 h-5" />
+        </button>
+      </div>
+
+      <form id="upload-form" class="space-y-4">
+        <div
+          id="dropzone-area"
+          class="rounded-[8px] border-2 border-dashed border-border/80 bg-surface-subtle hover:bg-surface-subtle hover:border-primary transition-all p-6 text-center cursor-pointer flex flex-col items-center justify-center gap-2 group"
+        >
+          <input
+            type="file"
+            id="file-input"
+            name="file"
+            multiple
+            accept="image/*,video/mp4,audio/*,.pdf,.doc,.docx,.xls,.xlsx"
+            class="hidden"
+          />
+          <div class="h-10 w-10 rounded-full bg-surface-subtle border border-border flex items-center justify-center text-primary">
+            <Icon name="upload" class="w-5 h-5" />
+          </div>
+          <div>
+            <p class="text-xs font-semibold text-heading">Click to upload or drag and drop</p>
+            <p class="text-[11px] text-muted mt-0.5">JPG, PNG, WebP, PDF, MP4 (Max 15MB each)</p>
+          </div>
+          <div id="selected-files-list" class="hidden w-full pt-2 space-y-1 text-left"></div>
+        </div>
+
+        <div class="space-y-3">
+          <div class="space-y-1">
+            <label class="block text-xs font-semibold text-heading">Folder</label>
+            <select
+              id="upload-folder-select"
+              class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 text-xs text-heading transition-colors"
+            >
+              <option value="Foto Kegiatan">Foto Kegiatan</option>
+              <option value="Logo & Atribut">Logo & Atribut</option>
+              <option value="Dokumen PPDB & Beasiswa">Dokumen Pendaftaran</option>
+              <option value="Materi Pembelajaran">Materi Pembelajaran</option>
+              <option value="Umum" selected>Umum</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="upload-progress-container" class="hidden space-y-1.5 pt-2">
+          <div class="flex items-center justify-between text-xs">
+            <span id="upload-progress-text" class="font-medium text-heading">Uploading...</span>
+            <span id="upload-progress-percent" class="font-mono text-muted">0%</span>
+          </div>
+          <div class="h-1.5 w-full bg-border rounded-full overflow-hidden">
+            <div id="upload-progress-bar" class="h-full w-0 bg-primary transition-all duration-200"></div>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-2">
+          <button type="button" id="btn-cancel-upload" class="h-[36px] px-4 rounded-[6px] border border-border text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer">
+            Cancel
+          </button>
+          <button type="submit" id="btn-submit-upload" class="inline-flex h-[36px] items-center justify-center gap-1.5 px-4 rounded-[6px] bg-primary text-white text-xs font-semibold hover:bg-primary-hover shadow-xs transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+            <Icon id="upload-save-icon" name="upload" class="h-3.5 w-3.5 text-white" />
+            <svg id="upload-save-spinner" class="hidden h-3.5 w-3.5 animate-spin text-white" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <Icon id="upload-save-check" name="check" class="hidden h-3.5 w-3.5 text-white" />
+            <span id="upload-save-text">Upload</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       MODAL: DETAIL, EDIT / CROP IMAGE, & ASSET USAGE
+  ============================================================ -->
+  <div id="detail-modal" class="fixed inset-0 bg-heading/40 backdrop-blur-xs z-50 hidden flex items-center justify-center p-3 sm:p-4">
+    <div class="rounded-[12px] border border-border bg-surface shadow-2xl max-w-xl w-full max-h-[92vh] flex flex-col overflow-hidden">
+      <!-- Modal Header (Mirip Screenshot 1) -->
+      <div class="flex items-start justify-between px-5 pt-4 bg-surface shrink-0">
+        <div class="min-w-0 pr-3">
+          <h3 class="font-display text-base font-bold text-heading">Media details</h3>
+          <p id="detail-filename-subtitle" class="text-xs text-muted truncate mt-0.5">file.jpg</p>
+        </div>
+        <button type="button" id="close-detail-modal-btn" class="text-muted hover:text-heading p-1.5 rounded-md hover:bg-surface-subtle transition-colors cursor-pointer shrink-0" aria-label="Close modal">
+          <Icon name="close" class="w-5 h-5" />
+        </button>
+      </div>
+
+      <!-- Segmented Navigation Tabs: Details | Edit image -->
+      <div class="px-5 py-2 shrink-0">
+        <div class="grid grid-cols-2 gap-1 bg-surface-subtle border border-border rounded-lg text-xs font-medium">
+          <button
+            type="button"
+            id="tab-btn-details"
+            class="tab-btn flex items-center justify-center py-1.5 px-3 rounded-[6px] bg-surface text-heading font-semibold shadow-2xs transition-all cursor-pointer"
+            data-tab="details"
+          >
+            Details
+          </button>
+          <button
+            type="button"
+            id="tab-btn-crop"
+            class="tab-btn flex items-center justify-center py-1.5 px-3 rounded-[6px] text-muted hover:text-heading transition-all cursor-pointer"
+            data-tab="crop"
+          >
+            Edit image
+          </button>
+        </div>
+      </div>
+
+      <!-- Modal Body Content with Scroll -->
+      <div class="flex-1 overflow-y-auto p-5">
+        <!-- ==================== TAB 1: DETAILS (Screenshot 1) ==================== -->
+        <div id="tab-content-details" class="space-y-4">
+          <!-- Image Preview -->
+          <div class="relative rounded-[10px] flex items-center justify-center max-h-[200px] overflow-hidden">
+            <img id="detail-preview-img" src="" alt="" class="max-h-[280px] w-auto max-w-full object-contain rounded-[6px]" />
+            <div id="detail-preview-fallback" class="hidden py-14 text-center text-4xl">📄</div>
+          </div>
+
+          <!-- 2-Column Metadata Grid (Exact Match to Screenshot 1) -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-y-1 gap-x-4 text-[11px]">
+            <!-- Size -->
+            <div class="flex items-center gap-2 text-muted min-w-0">
+              <svg class="w-4 h-4 text-muted/80 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <rect x="3" y="4" width="18" height="16" rx="2" stroke-width="1.8" />
+                <line x1="7" y1="12" x2="17" y2="12" stroke-width="1.8" />
+              </svg>
+              <span class="truncate">Size: <strong id="meta-size" class="font-semibold text-heading"></strong></span>
+            </div>
+
+            <!-- Dimensions -->
+            <div class="flex items-center gap-2 text-muted min-w-0">
+              <svg class="w-4 h-4 text-muted/80 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+              </svg>
+              <span class="truncate">Dimensions: <strong id="meta-dimensions" class="font-semibold text-heading"></strong></span>
+            </div>
+
+            <!-- Uploaded Date -->
+            <div class="flex items-center gap-2 text-muted min-w-0">
+              <svg class="w-4 h-4 text-muted/80 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <rect x="3" y="4" width="18" height="18" rx="2" stroke-width="1.8" />
+                <line x1="16" y1="2" x2="16" y2="6" stroke-width="1.8" />
+                <line x1="8" y1="2" x2="8" y2="6" stroke-width="1.8" />
+                <line x1="3" y1="10" x2="21" y2="10" stroke-width="1.8" />
+              </svg>
+              <span class="truncate">Uploaded: <strong id="meta-date" class="font-semibold text-heading"></strong></span>
+            </div>
+
+            <!-- Format -->
+            <div class="flex items-center gap-2 text-muted min-w-0">
+              <svg class="w-4 h-4 text-muted/80 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span class="truncate">Format: <strong id="meta-format" class="font-semibold text-heading uppercase"></strong></span>
+            </div>
+          </div>
+
+          <!-- URL Field with Inline Copy Icon (Exact Match to Screenshot 1) -->
+          <div class="">
+            <div class="flex items-center gap-2">
+              <svg class="w-4 h-4 text-muted shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+              </svg>
+              <span class="text-xs font-semibold text-muted select-none">URL:</span>
+              <input
+                type="text"
+                id="detail-copy-url"
+                readonly
+                class="flex-1 bg-transparent font-mono text-xs text-heading focus:outline-hidden truncate select-all"
+              />
+              <button
+                type="button"
+                id="btn-copy-url"
+                class="p-1 rounded text-muted hover:text-heading hover:bg-surface transition-colors cursor-pointer shrink-0"
+                title="Copy URL"
+                aria-label="Copy URL"
+              >
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Actions Footer (Exact Match to Screenshot 1) -->
+          <div class="sticky bottom-0 left-0 w-full py-2 border-t border-border bg-surface z-20">
+            <div class="flex items-center justify-between">
+              <!-- Delete (Red button with trash icon) -->
+              <button
+                type="button"
+                id="btn-delete-media"
+                class="inline-flex h-[36px] items-center gap-1.5 rounded-[6px] bg-red-600 px-3.5 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-red-700 cursor-pointer"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                <span>Delete</span>
+              </button>
+
+              <!-- Replace image (Light button with refresh icon) -->
+              <button
+                type="button"
+                id="btn-trigger-replace"
+                class="inline-flex h-[36px] items-center gap-1.5 rounded-[6px] border border-border bg-surface px-3.5 text-xs font-semibold text-heading transition-colors hover:bg-surface-subtle cursor-pointer"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span>Replace image</span>
+              </button>
+              <input type="file" id="replace-file-input" class="hidden" accept="image/*,.pdf,.doc,.docx" />
+            </div>
+          </div>
+        </div>
+
+        <!-- ==================== TAB 2: EDIT IMAGE / CROP (Screenshot 2) ==================== -->
+        <div id="tab-content-crop" class="hidden space-y-4">
+          <!-- Aspect Ratio Toolbar -->
+          <div class="flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2">
+              <label for="aspect-ratio-select" class="text-xs font-semibold text-heading shrink-0">Rasio Aspek:</label>
+              <select
+                id="aspect-ratio-select"
+                class="h-[34px] rounded-[6px] border border-border bg-surface px-2.5 font-body text-xs text-heading transition-colors focus:border-primary focus:outline-hidden cursor-pointer"
+              >
+                <option value="free" selected>Free (Bebas)</option>
+                <option value="16:9">16:9 (Banner / Lanskap)</option>
+                <option value="4:3">4:3 (Standar)</option>
+                <option value="1:1">1:1 (Persegi / Avatar)</option>
+                <option value="3:2">3:2 (Foto)</option>
+                <option value="9:16">9:16 (Story / Vertikal)</option>
+              </select>
+            </div>
+            <span id="cropper-dim-badge" class="font-mono text-[11px] text-muted shrink-0">0 × 0 px</span>
+          </div>
+
+          <!-- Cropper Workspace (Interactive Viewport) -->
+          <div id="cropper-stage" class="relative rounded-[10px] border border-border bg-heading/90 overflow-hidden flex items-center justify-center min-h-[300px] max-h-[380px] select-none p-2">
+            <div id="cropper-wrapper" class="relative inline-block overflow-hidden shadow-md">
+              <img id="cropper-img" src="" alt="Crop target" class="block max-h-[340px] max-w-full select-none pointer-events-none" />
+
+              <!-- Interactive Crop Box (Exact match to Screenshot 2) -->
+              <div
+                id="cropper-box"
+                class="absolute cursor-move border border-primary shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] top-[10%] left-[10%] w-[80%] h-[80%]"
+              >
+                <!-- 3x3 Rule-of-Thirds Grid (Primary dashed lines) -->
+                <div class="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none">
+                  <div class="border-r border-b border-dashed border-primary/70"></div>
+                  <div class="border-r border-b border-dashed border-primary/70"></div>
+                  <div class="border-b border-dashed border-primary/70"></div>
+                  <div class="border-r border-b border-dashed border-primary/70"></div>
+                  <div class="border-r border-b border-dashed border-primary/70"></div>
+                  <div class="border-b border-dashed border-primary/70"></div>
+                  <div class="border-r border-dashed border-primary/70"></div>
+                  <div class="border-r border-dashed border-primary/70"></div>
+                  <div></div>
+                </div>
+
+                <!-- 4 Square Corner Handles (Corner Pins like Screenshot 2) -->
+                <div id="handle-nw" class="absolute -top-1.5 -left-1.5 w-3 h-3 bg-primary border border-white rounded-[2px] cursor-nwse-resize z-20 shadow-xs" data-handle="nw"></div>
+                <div id="handle-ne" class="absolute -top-1.5 -right-1.5 w-3 h-3 bg-primary border border-white rounded-[2px] cursor-nesw-resize z-20 shadow-xs" data-handle="ne"></div>
+                <div id="handle-sw" class="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-primary border border-white rounded-[2px] cursor-nesw-resize z-20 shadow-xs" data-handle="sw"></div>
+                <div id="handle-se" class="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-primary border border-white rounded-[2px] cursor-nwse-resize z-20 shadow-xs" data-handle="se"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Crop Action Buttons -->
+          <div class="flex flex-wrap items-center justify-between gap-2 pt-3">
+            <button
+              type="button"
+              id="btn-reset-crop"
+              class="h-[36px] px-3 rounded-[6px] border border-border text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+            >
+              Reset Area
+            </button>
+
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                id="btn-save-crop-new"
+                class="inline-flex h-[36px] items-center gap-1.5 rounded-[6px] border border-border bg-surface px-3.5 text-xs font-semibold text-heading transition-colors hover:bg-surface-subtle cursor-pointer"
+              >
+                <span>Simpan Gambar Baru</span>
+              </button>
+              <button
+                type="button"
+                id="btn-save-crop-overwrite"
+                class="inline-flex h-[36px] items-center gap-1.5 rounded-[6px] bg-primary px-4 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-primary-hover cursor-pointer"
+              >
+                <Icon name="check" class="w-3.5 h-3.5 text-white" />
+                <span>Simpan Perubahan</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Feedback -->
+  <div id="toast" class="fixed bottom-5 right-5 z-[100] hidden rounded-[8px] bg-primary text-white px-4 py-2 text-xs font-semibold shadow-xl">
+    Copied to clipboard
+  </div>
+
+<script>
+  // State: Initialize directly from SSR JSON data
+  const rawDataEl = document.getElementById('initial-media-data');
+  let currentItems: any[] = [];
+  try {
+    currentItems = JSON.parse(rawDataEl?.textContent || '[]');
+  } catch {
+    currentItems = [];
+  }
+
+  const PAGE_SIZE = 36;
+  let currentPage = 1;
+  const paginationDataEl = document.getElementById('media-pagination');
+  let totalItems = Number(paginationDataEl?.dataset.totalItems || '0');
+  let totalPages = Number(paginationDataEl?.dataset.totalPages || '1');
+
+  let selectedType = 'all';
+  let selectedFolder = 'all';
+  let searchQuery = '';
+  let viewMode: 'grid' | 'list' = 'grid';
+  let currentDetailItem: any = null;
+
+  // DOM Elements
+  const mediaGrid = document.getElementById('media-grid') as HTMLDivElement;
+  const mediaList = document.getElementById('media-list') as HTMLDivElement;
+  const mediaTableBody = document.getElementById('media-table-body') as HTMLTableSectionElement;
+  const emptyState = document.getElementById('empty-state') as HTMLDivElement;
+  const loadingState = document.getElementById('loading-state') as HTMLDivElement;
+
+  const searchInput = document.getElementById('search-input') as HTMLInputElement;
+  const btnClearSearch = document.getElementById('btn-clear-search') as HTMLButtonElement;
+
+  // Type Dropdown
+  const typeDropdownBtn = document.getElementById('type-dropdown-btn') as HTMLButtonElement;
+  const typeDropdownMenu = document.getElementById('type-dropdown-menu') as HTMLDivElement;
+  const typeCaret = document.getElementById('type-caret') as HTMLElement;
+  const selectedTypeLabel = document.getElementById('selected-type-label') as HTMLSpanElement;
+
+  // View Switchers
+  const btnViewGrid = document.getElementById('btn-view-grid') as HTMLButtonElement;
+  const btnViewList = document.getElementById('btn-view-list') as HTMLButtonElement;
+
+  // Folder Breadcrumb
+  const folderBreadcrumb = document.getElementById('folder-breadcrumb') as HTMLDivElement;
+  const activeFolderName = document.getElementById('active-folder-name') as HTMLSpanElement;
+  const btnResetFolder = document.getElementById('btn-reset-folder') as HTMLButtonElement;
+
+  // Modals
+  const uploadModal = document.getElementById('upload-modal') as HTMLDivElement;
+  const btnOpenUpload = document.getElementById('btn-open-upload') as HTMLButtonElement;
+  const btnUploadEmpty = document.getElementById('btn-upload-empty') as HTMLButtonElement;
+  const btnCloseUpload = document.getElementById('close-upload-modal-btn') as HTMLButtonElement;
+  const btnCancelUpload = document.getElementById('btn-cancel-upload') as HTMLButtonElement;
+  const uploadForm = document.getElementById('upload-form') as HTMLFormElement;
+  const dropzoneArea = document.getElementById('dropzone-area') as HTMLDivElement;
+  const fileInput = document.getElementById('file-input') as HTMLInputElement;
+  const selectedFilesList = document.getElementById('selected-files-list') as HTMLDivElement;
+  const uploadProgressContainer = document.getElementById('upload-progress-container') as HTMLDivElement;
+  const uploadProgressBar = document.getElementById('upload-progress-bar') as HTMLDivElement;
+  const uploadProgressText = document.getElementById('upload-progress-text') as HTMLSpanElement;
+  const uploadProgressPercent = document.getElementById('upload-progress-percent') as HTMLSpanElement;
+  const btnSubmitUpload = document.getElementById('btn-submit-upload') as HTMLButtonElement;
+  const uploadSaveIcon = document.getElementById('upload-save-icon');
+  const uploadSaveSpinner = document.getElementById('upload-save-spinner');
+  const uploadSaveCheck = document.getElementById('upload-save-check');
+  const uploadSaveText = document.getElementById('upload-save-text');
+
+  const folderModal = document.getElementById('folder-modal') as HTMLDivElement;
+  const btnAddFolder = document.getElementById('btn-add-folder') as HTMLButtonElement;
+  const closeFolderModalBtn = document.getElementById('close-folder-modal-btn') as HTMLButtonElement;
+  const cancelFolderBtn = document.getElementById('cancel-folder-btn') as HTMLButtonElement;
+  const folderForm = document.getElementById('folder-form') as HTMLFormElement;
+  const newFolderName = document.getElementById('new-folder-name') as HTMLInputElement;
+  const btnSubmitFolder = document.getElementById('btn-submit-folder') as HTMLButtonElement;
+  const folderSaveIcon = document.getElementById('folder-save-icon');
+  const folderSaveSpinner = document.getElementById('folder-save-spinner');
+  const folderSaveCheck = document.getElementById('folder-save-check');
+  const folderSaveText = document.getElementById('folder-save-text');
+
+  // Detail Modal
+  const detailModal = document.getElementById('detail-modal') as HTMLDivElement;
+  const btnCloseDetail = document.getElementById('close-detail-modal-btn') as HTMLButtonElement;
+  const detailFilenameSubtitle = document.getElementById('detail-filename-subtitle') as HTMLParagraphElement;
+  const detailPreviewImg = document.getElementById('detail-preview-img') as HTMLImageElement;
+  const detailPreviewFallback = document.getElementById('detail-preview-fallback') as HTMLDivElement;
+  const detailCopyUrl = document.getElementById('detail-copy-url') as HTMLInputElement;
+  const btnCopyUrl = document.getElementById('btn-copy-url') as HTMLButtonElement;
+  const metaSize = document.getElementById('meta-size') as HTMLSpanElement;
+  const metaDimensions = document.getElementById('meta-dimensions') as HTMLSpanElement;
+  const metaDate = document.getElementById('meta-date') as HTMLSpanElement;
+  const metaFormat = document.getElementById('meta-format') as HTMLSpanElement;
+  const btnDeleteMedia = document.getElementById('btn-delete-media') as HTMLButtonElement;
+
+  // Tabs
+  const tabBtnDetails = document.getElementById('tab-btn-details');
+  const tabBtnCrop = document.getElementById('tab-btn-crop');
+  const tabContentDetails = document.getElementById('tab-content-details');
+  const tabContentCrop = document.getElementById('tab-content-crop');
+
+  // Replace
+  const btnTriggerReplace = document.getElementById('btn-trigger-replace') as HTMLButtonElement;
+  const replaceFileInput = document.getElementById('replace-file-input') as HTMLInputElement;
+
+  // Cropper
+  const aspectRatioSelect = document.getElementById('aspect-ratio-select') as HTMLSelectElement;
+  const cropperImg = document.getElementById('cropper-img') as HTMLImageElement;
+  const cropperBox = document.getElementById('cropper-box') as HTMLDivElement;
+  const cropperDimBadge = document.getElementById('cropper-dim-badge') as HTMLSpanElement;
+  const btnResetCrop = document.getElementById('btn-reset-crop') as HTMLButtonElement;
+  const btnSaveCropNew = document.getElementById('btn-save-crop-new') as HTMLButtonElement;
+  const btnSaveCropOverwrite = document.getElementById('btn-save-crop-overwrite') as HTMLButtonElement;
+
+  // Toast
+  function showToast(msg: string) {
+    const t = document.getElementById('toast');
+    if (!t) return;
+    t.innerText = msg;
+    t.classList.remove('hidden');
+    setTimeout(() => { t.classList.add('hidden'); }, 2000);
+  }
+
+  function formatBytes(bytes: number): string {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
+  function getBadgeFormat(ext: string, mime: string): string {
+    const e = (ext || '').toUpperCase();
+    if (e === 'JPG' || e === 'JPEG') return 'JPEG';
+    if (e === 'PNG') return 'PNG';
+    if (e === 'WEBP') return 'WEBP';
+    if (e === 'PDF') return 'PDF';
+    if (e === 'MP4') return 'MP4';
+    return e || 'FILE';
+  }
+
+  // Type Dropdown Toggle
+  typeDropdownBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isClosed = typeDropdownMenu.classList.contains('hidden');
+    if (isClosed) {
+      typeDropdownMenu.classList.remove('hidden');
+      typeCaret.classList.add('rotate-180');
+    } else {
+      typeDropdownMenu.classList.add('hidden');
+      typeCaret.classList.remove('rotate-180');
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!typeDropdownBtn.contains(e.target as Node) && !typeDropdownMenu.contains(e.target as Node)) {
+      typeDropdownMenu.classList.add('hidden');
+      typeCaret.classList.remove('rotate-180');
+    }
+  });
+
+  document.querySelectorAll('.type-opt-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const type = (btn as HTMLElement).dataset.type || 'all';
+      selectedType = type;
+      const label = btn.querySelector('span')?.innerText || 'All types';
+      selectedTypeLabel.innerText = label;
+
+      document.querySelectorAll('.type-opt-btn').forEach((b) => {
+        b.classList.remove('font-semibold', 'text-heading');
+        b.classList.add('text-muted');
+        b.querySelector('.type-check')?.classList.add('hidden');
+      });
+
+      btn.classList.add('font-semibold', 'text-heading');
+      btn.classList.remove('text-muted');
+      btn.querySelector('.type-check')?.classList.remove('hidden');
+
+      typeDropdownMenu.classList.add('hidden');
+      typeCaret.classList.remove('rotate-180');
+      currentPage = 1;
+      loadMedia();
+    });
+  });
+
+  // Reset Folder Breadcrumb
+  btnResetFolder.addEventListener('click', () => {
+    selectedFolder = 'all';
+    folderBreadcrumb.classList.add('hidden');
+    currentPage = 1;
+    loadMedia();
+  });
+
+  // Search Input
+  let searchTimer: any;
+  searchInput.addEventListener('input', () => {
+    const val = searchInput.value.trim();
+    if (val.length > 0) {
+      btnClearSearch.classList.remove('hidden');
+    } else {
+      btnClearSearch.classList.add('hidden');
+    }
+
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      searchQuery = val;
+      currentPage = 1;
+      loadMedia();
+    }, 250);
+  });
+
+  btnClearSearch.addEventListener('click', () => {
+    searchInput.value = '';
+    searchQuery = '';
+    btnClearSearch.classList.add('hidden');
+    currentPage = 1;
+    loadMedia();
+  });
+
+  // View Switchers
+  btnViewGrid.addEventListener('click', () => {
+    viewMode = 'grid';
+    btnViewGrid.classList.add('bg-surface', 'text-heading', 'shadow-2xs');
+    btnViewGrid.classList.remove('text-muted');
+    btnViewList.classList.remove('bg-surface', 'text-heading', 'shadow-2xs');
+    btnViewList.classList.add('text-muted');
+    render();
+  });
+
+  btnViewList.addEventListener('click', () => {
+    viewMode = 'list';
+    btnViewList.classList.add('bg-surface', 'text-heading', 'shadow-2xs');
+    btnViewList.classList.remove('text-muted');
+    btnViewGrid.classList.remove('bg-surface', 'text-heading', 'shadow-2xs');
+    btnViewGrid.classList.add('text-muted');
+    render();
+  });
+
+  // Load Data
+  async function loadMedia() {
+    loadingState.classList.remove('hidden');
+    emptyState.classList.add('hidden');
+
+    const params = new URLSearchParams();
+    if (selectedFolder !== 'all') params.set('category', selectedFolder);
+    if (selectedType !== 'all') params.set('type', selectedType);
+    if (searchQuery) params.set('search', searchQuery);
+    params.set('page', String(currentPage));
+    params.set('limit', String(PAGE_SIZE));
+
+    try {
+      const res = await fetch(`/api/admin/media?${params.toString()}`);
+      const d = await res.json();
+      loadingState.classList.add('hidden');
+
+      if (!d.success) return;
+
+      currentItems = d.data || [];
+      totalItems = Number(d.total || 0);
+      totalPages = Number(d.totalPages || 1);
+      currentPage = Number(d.page || currentPage);
+      render();
+    } catch {
+      loadingState.classList.add('hidden');
+    }
+  }
+
+  // Render Grid (Exact match to reference screenshot)
+  function render() {
+    if (currentItems.length === 0) {
+      mediaGrid.classList.add('hidden');
+      mediaList.classList.add('hidden');
+      emptyState.classList.remove('hidden');
+      updatePaginationUi();
+      return;
+    }
+
+    emptyState.classList.add('hidden');
+
+    if (viewMode === 'grid') {
+      mediaGrid.classList.remove('hidden');
+      mediaList.classList.add('hidden');
+      renderGrid();
+    } else {
+      mediaGrid.classList.add('hidden');
+      mediaList.classList.remove('hidden');
+      renderList();
+    }
+
+    updatePaginationUi();
+  }
+
+  function renderGrid() {
+    mediaGrid.innerHTML = currentItems.map((item, index) => {
+      const isImg = item.fileType?.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp', 'avif'].includes(item.fileExtension);
+      const displayUrl = item.thumbnailUrl || item.mediumUrl || item.fileUrl;
+      const fileUrl = item.fileUrl || displayUrl;
+      const badgeFormat = getBadgeFormat(item.fileExtension, item.fileType);
+      const isAboveFold = index < 4;
+
+      return `
+        <a
+          href="${fileUrl}"
+          class="media-card group rounded-[10px] border border-border bg-surface overflow-hidden shadow-2xs hover:shadow-md transition-all cursor-pointer flex flex-col justify-between block no-underline text-inherit"
+          data-id="${item.id}"
+        >
+          <!-- Image Container: Aspect 16/10 rounded image -->
+          <div class="w-full aspect-[16/10] bg-surface-subtle overflow-hidden relative flex items-center justify-center">
+            ${isImg ? `
+              <img
+                src="${displayUrl}"
+                alt="${item.originalName || item.fileName}"
+                loading="${isAboveFold ? 'eager' : 'lazy'}"
+                fetchpriority="${index === 0 ? 'high' : 'auto'}"
+                decoding="${isAboveFold ? 'sync' : 'async'}"
+                class="w-full h-full object-cover group-hover:scale-102 transition-transform duration-200"
+              />
+            ` : `
+              <div class="flex flex-col items-center justify-center text-muted">
+                <span class="text-3xl mb-1">📄</span>
+              </div>
+            `}
+          </div>
+
+          <!-- Bottom Row: filename on left, JPEG badge on right -->
+          <div class="px-3.5 py-2.5 flex items-center justify-between gap-2 bg-surface">
+            <span class="text-xs font-semibold text-heading truncate" title="${item.originalName || item.fileName}">
+              ${item.originalName || item.fileName}
+            </span>
+            <span class="text-[10px] font-bold text-muted bg-surface-subtle px-1.5 py-0.5 rounded uppercase shrink-0 font-mono">
+              ${badgeFormat}
+            </span>
+          </div>
+        </a>
+      `;
+    }).join('');
+
+    bindCardClicks();
+  }
+
+  function renderList() {
+    mediaTableBody.innerHTML = currentItems.map((item) => {
+      const isImg = item.fileType?.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp'].includes(item.fileExtension);
+      const displayUrl = item.thumbnailUrl || item.mediumUrl || item.fileUrl;
+      const fileUrl = item.fileUrl || displayUrl;
+      const badgeFormat = getBadgeFormat(item.fileExtension, item.fileType);
+      const sizeStr = formatBytes(item.fileSize);
+      const dateStr = item.createdAt ? new Date(item.createdAt).toLocaleDateString('id-ID') : '-';
+
+      return `
+        <tr class="hover:bg-surface-subtle transition-colors cursor-pointer" data-id="${item.id}">
+          <td class="py-2.5 px-4 w-14">
+            <a href="${fileUrl}" class="w-10 h-10 rounded-[6px] bg-surface-subtle border border-border overflow-hidden flex items-center justify-center block" data-id="${item.id}">
+              ${isImg ? `<img src="${displayUrl}" class="w-full h-full object-cover" />` : `📄`}
+            </a>
+          </td>
+          <td class="py-2.5 px-4 max-w-xs truncate">
+            <a href="${fileUrl}" class="font-semibold text-heading text-xs truncate hover:underline block" data-id="${item.id}">${item.originalName || item.fileName}</a>
+          </td>
+          <td class="py-2.5 px-4 text-muted text-xs">
+            ${item.category || 'Umum'}
+          </td>
+          <td class="py-2.5 px-4 font-mono text-[11px] text-muted">
+            <span class="font-bold text-heading">${badgeFormat}</span> &bull; ${sizeStr}
+          </td>
+          <td class="py-2.5 px-4 text-xs font-mono text-muted">
+            ${dateStr}
+          </td>
+          <td class="py-2.5 px-4 text-right">
+            <button
+              type="button"
+              class="inline-flex h-7 w-7 items-center justify-center rounded-[6px] border border-border bg-surface text-muted hover:border-primary/50 hover:bg-surface-subtle hover:text-primary transition-colors cursor-pointer"
+              title="Inspect File"
+              aria-label="Inspect File"
+            >
+              <svg class="h-3.5 w-3.5 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+            </button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    mediaTableBody.querySelectorAll('tr').forEach((row) => {
+      row.addEventListener('click', (e) => {
+        if ((e.target as HTMLElement).closest('button, a')) return;
+        const id = Number((row as HTMLElement).dataset.id);
+        const item = currentItems.find((m) => m.id === id);
+        if (item) openDetail(item);
+      });
+    });
+  }
+
+  function bindCardClicks() {
+    document.querySelectorAll('.media-card, #media-list a[data-id]').forEach((card) => {
+      card.addEventListener('click', (e) => {
+        const mouseEvent = e as MouseEvent;
+        if (mouseEvent.ctrlKey || mouseEvent.metaKey || mouseEvent.button === 1) return;
+        e.preventDefault();
+        const id = Number((card as HTMLElement).dataset.id);
+        const item = currentItems.find((m) => m.id === id);
+        if (item) openDetail(item);
+      });
+    });
+  }
+
+  // Bind initial SSR cards
+  bindCardClicks();
+
+  // Pagination Helper Functions
+  function renderPaginationButtons(validPage: number, pages: number) {
+    let html = '';
+    for (let i = 1; i <= pages; i++) {
+      if (i === 1 || i === pages || (i >= validPage - 1 && i <= validPage + 1)) {
+        const isActive = i === validPage;
+        html += `<button type="button" data-page="${i}" class="pagination-btn ${isActive ? 'bg-primary text-white font-semibold shadow-xs' : 'border border-border bg-surface text-heading hover:bg-surface-subtle'}">${i}</button>`;
+      } else if (i === validPage - 2 || i === validPage + 2) {
+        html += `<span class="px-1 text-muted text-xs select-none">...</span>`;
+      }
+    }
+    return html;
+  }
+
+  function updatePaginationUi() {
+    const paginationContainer = document.getElementById('media-pagination');
+    if (!paginationContainer) return;
+
+    if (totalItems === 0) {
+      paginationContainer.innerHTML = `
+        <div class="flex items-center justify-between px-4 py-3 bg-surface text-xs text-muted">
+          <span>Tidak ada berkas media untuk ditampilkan</span>
+        </div>
+      `;
+      return;
+    }
+
+    const fromIdx = (currentPage - 1) * PAGE_SIZE + 1;
+    const toIdx = Math.min(currentPage * PAGE_SIZE, totalItems);
+
+    let html = `
+      <div class="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 bg-surface text-xs text-muted">
+        <div>
+          Menampilkan <span class="font-semibold text-heading">${fromIdx}</span>–<span class="font-semibold text-heading">${toIdx}</span> dari <span class="font-semibold text-heading">${totalItems}</span> berkas media
+        </div>
+    `;
+
+    if (totalPages > 1) {
+      html += `
+        <div class="flex items-center gap-1.5 *:inline-flex *:h-[30px] *:items-center *:justify-center *:rounded-[6px] *:font-medium *:transition-colors *:text-xs">
+          <button
+            type="button"
+            data-page="${currentPage - 1}"
+            class="pagination-btn border border-border px-2.5 ${currentPage <= 1 ? 'pointer-events-none opacity-40 bg-surface-subtle text-muted' : 'bg-surface text-heading hover:bg-surface-subtle cursor-pointer'}"
+            ${currentPage <= 1 ? 'disabled' : ''}
+          >
+            Sebelumnya
+          </button>
+          <div class="flex items-center gap-1 *:inline-flex *:h-[30px] *:min-w-[30px] *:px-2 *:items-center *:justify-center *:rounded-[6px] *:font-medium *:transition-colors *:text-xs *:cursor-pointer">
+            ${renderPaginationButtons(currentPage, totalPages)}
+          </div>
+          <button
+            type="button"
+            data-page="${currentPage + 1}"
+            class="pagination-btn border border-border px-2.5 ${currentPage >= totalPages ? 'pointer-events-none opacity-40 bg-surface-subtle text-muted' : 'bg-surface text-heading hover:bg-surface-subtle cursor-pointer'}"
+            ${currentPage >= totalPages ? 'disabled' : ''}
+          >
+            Selanjutnya
+          </button>
+        </div>
+      `;
+    }
+
+    html += `</div>`;
+    paginationContainer.innerHTML = html;
+  }
+
+  // Pagination click delegation
+  document.getElementById('media-pagination')?.addEventListener('click', (e) => {
+    const target = (e.target as HTMLElement).closest('.pagination-btn') as HTMLElement;
+    if (!target || target.hasAttribute('disabled')) return;
+    const p = Number(target.getAttribute('data-page'));
+    if (p && p !== currentPage && p >= 1 && p <= totalPages) {
+      currentPage = p;
+      loadMedia();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  });
+
+  // ============================================================
+  // TAB SWITCHING & MODAL CONTROLS
+  // ============================================================
+  function switchTab(tab: 'details' | 'crop') {
+    const tabs: ('details' | 'crop')[] = ['details', 'crop'];
+    tabs.forEach((t) => {
+      const btn = document.getElementById(`tab-btn-${t}`);
+      const content = document.getElementById(`tab-content-${t}`);
+      if (t === tab) {
+        btn?.classList.add('bg-surface', 'text-heading', 'font-semibold', 'shadow-2xs');
+        btn?.classList.remove('text-muted');
+        content?.classList.remove('hidden');
+      } else {
+        btn?.classList.remove('bg-surface', 'text-heading', 'font-semibold', 'shadow-2xs');
+        btn?.classList.add('text-muted');
+        content?.classList.add('hidden');
+      }
+    });
+
+    if (tab === 'crop') {
+      setTimeout(() => initCropper(currentAspectRatio), 40);
+    }
+  }
+
+  document.querySelectorAll('.tab-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tab = (btn as HTMLElement).dataset.tab as any;
+      if (tab) switchTab(tab);
+    });
+  });
+
+  // ============================================================
+  // OPEN DETAIL MODAL
+  // ============================================================
+  function openDetail(item: any) {
+    currentDetailItem = item;
+    const isImg = item.fileType?.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp', 'avif'].includes(item.fileExtension);
+
+    const displayName = item.originalName || item.fileName;
+    if (detailFilenameSubtitle) detailFilenameSubtitle.innerText = displayName;
+
+    if (isImg) {
+      detailPreviewImg.src = item.mediumUrl || item.fileUrl;
+      detailPreviewImg.classList.remove('hidden');
+      detailPreviewFallback.classList.add('hidden');
+      tabBtnCrop?.classList.remove('opacity-40', 'pointer-events-none');
+    } else {
+      detailPreviewImg.classList.add('hidden');
+      detailPreviewFallback.classList.remove('hidden');
+      tabBtnCrop?.classList.add('opacity-40', 'pointer-events-none');
+    }
+
+    if (detailCopyUrl) detailCopyUrl.value = item.fileUrl;
+
+    if (metaSize) metaSize.innerText = formatBytes(item.fileSize);
+    if (metaDimensions) metaDimensions.innerText = item.width && item.height ? `${item.width} × ${item.height}` : '-';
+    if (metaDate) {
+      metaDate.innerText = item.createdAt
+        ? new Date(item.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })
+        : '-';
+    }
+    if (metaFormat) metaFormat.innerText = getBadgeFormat(item.fileExtension, item.fileType);
+    if (aspectRatioSelect) aspectRatioSelect.value = 'free';
+    currentAspectRatio = null;
+
+    switchTab('details');
+    detailModal.classList.remove('hidden');
+  }
+
+  btnCopyUrl.addEventListener('click', () => {
+    navigator.clipboard.writeText(detailCopyUrl.value);
+    showToast('File URL copied to clipboard');
+  });
+
+  // ============================================================
+  // REPLACE IMAGE (IN DETAILS TAB)
+  // ============================================================
+  btnTriggerReplace?.addEventListener('click', () => {
+    replaceFileInput?.click();
+  });
+
+  replaceFileInput?.addEventListener('change', async () => {
+    const file = replaceFileInput.files?.[0];
+    if (!file || !currentDetailItem) return;
+
+    const originalName = currentDetailItem.originalName || currentDetailItem.fileName;
+    const confirmedReplace = await (window as any).confirmDialog({
+      title: 'Ganti Berkas Media',
+      message: `Apakah Anda yakin ingin mengganti berkas "${originalName}" dengan "${file.name}"?`,
+      confirmText: 'Ya, Ganti Berkas',
+      cancelText: 'Batal',
+      type: 'warning',
+    });
+    if (!confirmedReplace) {
+      replaceFileInput.value = '';
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      showToast('Mengunggah berkas pengganti...');
+      const res = await fetch(`/api/admin/media/${currentDetailItem.id}/replace`, {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      replaceFileInput.value = '';
+
+      if (data.success) {
+        showToast('Berkas berhasil diganti!');
+        currentDetailItem = data.data;
+        openDetail(data.data);
+        loadMedia();
+      } else {
+        alert(data.error || 'Gagal mengganti berkas');
+      }
+    } catch {
+      replaceFileInput.value = '';
+      alert('Terjadi kesalahan jaringan');
+    }
+  });
+
+  // ============================================================
+  // INTERACTIVE IMAGE CROPPER (WITH ASPECT RATIO)
+  // ============================================================
+  let currentAspectRatio: number | null = null; // null = free
+  let cropState = {
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+  };
+  let imgNaturalW = 0;
+  let imgNaturalH = 0;
+  let imgRenderW = 0;
+  let imgRenderH = 0;
+  let activeDrag: 'move' | 'nw' | 'ne' | 'sw' | 'se' | null = null;
+  let dragOrigin = { clientX: 0, clientY: 0, boxX: 0, boxY: 0, boxW: 0, boxH: 0 };
+
+  function initCropper(aspectRatio: number | null = null) {
+    if (!currentDetailItem) return;
+    currentAspectRatio = aspectRatio;
+
+    cropperImg.crossOrigin = 'anonymous';
+    cropperImg.src = currentDetailItem.fileUrl;
+
+    const handleLoaded = () => {
+      imgNaturalW = cropperImg.naturalWidth;
+      imgNaturalH = cropperImg.naturalHeight;
+      imgRenderW = cropperImg.clientWidth;
+      imgRenderH = cropperImg.clientHeight;
+      resetCropBox(currentAspectRatio);
+    };
+
+    cropperImg.onload = handleLoaded;
+    if (cropperImg.complete && cropperImg.naturalWidth) {
+      handleLoaded();
+    }
+  }
+
+  function resetCropBox(ratio: number | null = null) {
+    if (!imgRenderW || !imgRenderH) return;
+    currentAspectRatio = ratio;
+
+    let targetW = imgRenderW * 0.85;
+    let targetH = imgRenderH * 0.85;
+
+    if (ratio) {
+      if (targetW / targetH > ratio) {
+        targetW = targetH * ratio;
+      } else {
+        targetH = targetW / ratio;
+      }
+    }
+
+    cropState.w = Math.max(30, targetW);
+    cropState.h = Math.max(30, targetH);
+    cropState.x = (imgRenderW - cropState.w) / 2;
+    cropState.y = (imgRenderH - cropState.h) / 2;
+
+    updateCropBoxDom();
+  }
+
+  function updateCropBoxDom() {
+    cropperBox.style.left = `${cropState.x}px`;
+    cropperBox.style.top = `${cropState.y}px`;
+    cropperBox.style.width = `${cropState.w}px`;
+    cropperBox.style.height = `${cropState.h}px`;
+
+    if (imgRenderW && imgNaturalW) {
+      const scale = imgNaturalW / imgRenderW;
+      const realW = Math.round(cropState.w * scale);
+      const realH = Math.round(cropState.h * scale);
+      if (cropperDimBadge) {
+        cropperDimBadge.innerText = `${realW} × ${realH} px`;
+      }
+    }
+  }
+
+  // Pointer drag on cropper box
+  cropperBox.addEventListener('pointerdown', (e: PointerEvent) => {
+    const handle = (e.target as HTMLElement).dataset.handle as any;
+    activeDrag = handle || 'move';
+
+    dragOrigin = {
+      clientX: e.clientX,
+      clientY: e.clientY,
+      boxX: cropState.x,
+      boxY: cropState.y,
+      boxW: cropState.w,
+      boxH: cropState.h,
+    };
+    try { cropperBox.setPointerCapture(e.pointerId); } catch {}
+    e.stopPropagation();
+    e.preventDefault();
+  });
+
+  cropperBox.addEventListener('pointermove', (e: PointerEvent) => {
+    if (!activeDrag || !imgRenderW || !imgRenderH) return;
+    const dx = e.clientX - dragOrigin.clientX;
+    const dy = e.clientY - dragOrigin.clientY;
+
+    if (activeDrag === 'move') {
+      cropState.x = Math.max(0, Math.min(imgRenderW - cropState.w, dragOrigin.boxX + dx));
+      cropState.y = Math.max(0, Math.min(imgRenderH - cropState.h, dragOrigin.boxY + dy));
+    } else if (activeDrag === 'se') {
+      let newW = Math.max(30, Math.min(imgRenderW - dragOrigin.boxX, dragOrigin.boxW + dx));
+      let newH = currentAspectRatio ? newW / currentAspectRatio : Math.max(30, Math.min(imgRenderH - dragOrigin.boxY, dragOrigin.boxH + dy));
+      if (currentAspectRatio && (dragOrigin.boxY + newH > imgRenderH)) {
+        newH = imgRenderH - dragOrigin.boxY;
+        newW = newH * currentAspectRatio;
+      }
+      cropState.w = newW;
+      cropState.h = newH;
+    } else if (activeDrag === 'sw') {
+      let newW = Math.max(30, Math.min(dragOrigin.boxX + dragOrigin.boxW, dragOrigin.boxW - dx));
+      let newX = dragOrigin.boxX + dragOrigin.boxW - newW;
+      let newH = currentAspectRatio ? newW / currentAspectRatio : Math.max(30, Math.min(imgRenderH - dragOrigin.boxY, dragOrigin.boxH + dy));
+      if (currentAspectRatio && (dragOrigin.boxY + newH > imgRenderH)) {
+        newH = imgRenderH - dragOrigin.boxY;
+        newW = newH * currentAspectRatio;
+        newX = dragOrigin.boxX + dragOrigin.boxW - newW;
+      }
+      cropState.x = newX;
+      cropState.w = newW;
+      cropState.h = newH;
+    } else if (activeDrag === 'ne') {
+      let newW = Math.max(30, Math.min(imgRenderW - dragOrigin.boxX, dragOrigin.boxW + dx));
+      let newH = currentAspectRatio ? newW / currentAspectRatio : Math.max(30, Math.min(dragOrigin.boxY + dragOrigin.boxH, dragOrigin.boxH - dy));
+      let newY = dragOrigin.boxY + dragOrigin.boxH - newH;
+      if (currentAspectRatio && newY < 0) {
+        newY = 0;
+        newH = dragOrigin.boxY + dragOrigin.boxH;
+        newW = newH * currentAspectRatio;
+      }
+      cropState.y = newY;
+      cropState.w = newW;
+      cropState.h = newH;
+    } else if (activeDrag === 'nw') {
+      let newW = Math.max(30, Math.min(dragOrigin.boxX + dragOrigin.boxW, dragOrigin.boxW - dx));
+      let newX = dragOrigin.boxX + dragOrigin.boxW - newW;
+      let newH = currentAspectRatio ? newW / currentAspectRatio : Math.max(30, Math.min(dragOrigin.boxY + dragOrigin.boxH, dragOrigin.boxH - dy));
+      let newY = dragOrigin.boxY + dragOrigin.boxH - newH;
+      if (currentAspectRatio && newY < 0) {
+        newY = 0;
+        newH = dragOrigin.boxY + dragOrigin.boxH;
+        newW = newH * currentAspectRatio;
+        newX = dragOrigin.boxX + dragOrigin.boxW - newW;
+      }
+      cropState.x = newX;
+      cropState.w = newW;
+      cropState.h = newH;
+      cropState.y = newY;
+    }
+
+    updateCropBoxDom();
+  });
+
+  cropperBox.addEventListener('pointerup', (e: PointerEvent) => {
+    activeDrag = null;
+    try { cropperBox.releasePointerCapture(e.pointerId); } catch {}
+  });
+
+  cropperBox.addEventListener('pointercancel', (e: PointerEvent) => {
+    activeDrag = null;
+    try { cropperBox.releasePointerCapture(e.pointerId); } catch {}
+  });
+
+  // Aspect ratio select dropdown
+  aspectRatioSelect?.addEventListener('change', () => {
+    const ratioStr = aspectRatioSelect.value;
+    let ratio: number | null = null;
+    if (ratioStr === '16:9') ratio = 16 / 9;
+    else if (ratioStr === '4:3') ratio = 4 / 3;
+    else if (ratioStr === '1:1') ratio = 1;
+    else if (ratioStr === '3:2') ratio = 3 / 2;
+    else if (ratioStr === '9:16') ratio = 9 / 16;
+    else ratio = null; // free
+
+    resetCropBox(ratio);
+  });
+
+  btnResetCrop?.addEventListener('click', () => {
+    resetCropBox(currentAspectRatio);
+  });
+
+  async function getCroppedBlob(): Promise<{ blob: Blob; fileName: string } | null> {
+    if (!currentDetailItem || !imgRenderW || !imgRenderH || !imgNaturalW) return null;
+    const scale = imgNaturalW / imgRenderW;
+    const sx = Math.max(0, Math.round(cropState.x * scale));
+    const sy = Math.max(0, Math.round(cropState.y * scale));
+    const sw = Math.min(imgNaturalW - sx, Math.round(cropState.w * scale));
+    const sh = Math.min(imgNaturalH - sy, Math.round(cropState.h * scale));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = sw;
+    canvas.height = sh;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    ctx.drawImage(cropperImg, sx, sy, sw, sh, 0, 0, sw, sh);
+
+    return new Promise((resolve) => {
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          resolve(null);
+          return;
+        }
+        const originalName = currentDetailItem.originalName || currentDetailItem.fileName;
+        const baseName = originalName.replace(/\.[^/.]+$/, "");
+        resolve({
+          blob,
+          fileName: `${baseName}-cropped.webp`,
+        });
+      }, 'image/webp', 0.92);
+    });
+  }
+
+  // Save Crop Changes (Overwrite)
+  btnSaveCropOverwrite?.addEventListener('click', async () => {
+    const cropped = await getCroppedBlob();
+    if (!cropped || !currentDetailItem) return;
+
+    btnSaveCropOverwrite.disabled = true;
+    btnSaveCropOverwrite.innerHTML = `<span>Menyimpan...</span>`;
+
+    try {
+      const formData = new FormData();
+      formData.append('file', cropped.blob, cropped.fileName);
+
+      const res = await fetch(`/api/admin/media/${currentDetailItem.id}/replace`, {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      btnSaveCropOverwrite.disabled = false;
+      btnSaveCropOverwrite.innerHTML = `<svg class="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg><span>Simpan Perubahan</span>`;
+
+      if (data.success) {
+        showToast('Gambar berhasil diperbarui!');
+        currentDetailItem = data.data;
+        openDetail(data.data);
+        loadMedia();
+      } else {
+        alert(data.error || 'Gagal menyimpan perubahan gambar');
+      }
+    } catch {
+      btnSaveCropOverwrite.disabled = false;
+      btnSaveCropOverwrite.innerHTML = `<span>Simpan Perubahan</span>`;
+      alert('Terjadi kesalahan jaringan');
+    }
+  });
+
+  // Save Crop As New Item
+  btnSaveCropNew?.addEventListener('click', async () => {
+    const cropped = await getCroppedBlob();
+    if (!cropped || !currentDetailItem) return;
+
+    btnSaveCropNew.disabled = true;
+    btnSaveCropNew.innerHTML = `<span>Menyimpan...</span>`;
+
+    try {
+      const formData = new FormData();
+      formData.append('file', cropped.blob, cropped.fileName);
+      formData.append('category', currentDetailItem.category || 'Umum');
+      formData.append('title', `${currentDetailItem.title || 'Foto'} (Cropped)`);
+
+      const res = await fetch('/api/admin/media/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      btnSaveCropNew.disabled = false;
+      btnSaveCropNew.innerHTML = `<span>Simpan Gambar Baru</span>`;
+
+      if (data.success) {
+        showToast('Gambar baru hasil crop berhasil disimpan!');
+        loadMedia();
+        switchTab('details');
+      } else {
+        alert(data.error || 'Gagal menyimpan gambar baru');
+      }
+    } catch {
+      btnSaveCropNew.disabled = false;
+      btnSaveCropNew.innerHTML = `<span>Simpan Gambar Baru</span>`;
+      alert('Terjadi kesalahan jaringan');
+    }
+  });
+
+
+
+  // ============================================================
+  // DELETE WITH ASSET USAGE DETECTION
+  // ============================================================
+  btnDeleteMedia.addEventListener('click', async () => {
+    if (!currentDetailItem) return;
+
+    const fileName = currentDetailItem.originalName || currentDetailItem.fileName;
+
+    // 1) Check asset usage first via /api/admin/media/:id/usage
+    try {
+      btnDeleteMedia.disabled = true;
+      btnDeleteMedia.innerText = 'Checking usage...';
+
+      const usageRes = await fetch(`/api/admin/media/${currentDetailItem.id}/usage`);
+      const usageData = await usageRes.json();
+
+      btnDeleteMedia.disabled = false;
+      btnDeleteMedia.innerText = 'Delete';
+
+      if (usageData.success && usageData.isUsed) {
+        const parts: string[] = [];
+        const u = usageData.usage;
+        if (u.articles?.length) parts.push(`${u.articles.length} artikel (${u.articles.map((a: any) => `"${a.title}"`).join(', ')})`);
+        if (u.galleries?.length) parts.push(`${u.galleries.length} galeri (${u.galleries.map((g: any) => `"${g.title}"`).join(', ')})`);
+        if (u.teachers?.length) parts.push(`${u.teachers.length} profil guru (${u.teachers.map((t: any) => t.name).join(', ')})`);
+        if (u.documents?.length) parts.push(`${u.documents.length} dokumen (${u.documents.map((d: any) => `"${d.title}"`).join(', ')})`);
+
+        const warningMsg =
+          `⚠️ PERHATIAN: Berkas "${fileName}" masih digunakan di:\n\n` +
+          parts.join('\n') +
+          `\n\nTotal ${usageData.totalUsage} penggunaan aktif.\n` +
+          `Menghapus berkas ini akan menyebabkan broken link/gambar rusak.\n\n` +
+          `Apakah Anda TETAP yakin ingin menghapus?`;
+
+        const confirmedWarn = await (window as any).confirmDialog({
+          title: 'Berkas Sedang Digunakan',
+          message: warningMsg,
+          confirmText: 'Tetap Hapus (Paksa)',
+          cancelText: 'Batal',
+          type: 'danger',
+        });
+        if (!confirmedWarn) return;
+
+        // Force delete
+        const res = await fetch(`/api/admin/media/${currentDetailItem.id}?force=true`, { method: 'DELETE' });
+        const d = await res.json();
+        if (d.success) {
+          detailModal.classList.add('hidden');
+          showToast('File deleted (force)');
+          loadMedia();
+        } else {
+          alert(d.error || 'Gagal menghapus');
+        }
+        return;
+      }
+    } catch {
+      btnDeleteMedia.disabled = false;
+      btnDeleteMedia.innerText = 'Delete';
+    }
+
+    // 2) No usage found or usage check unavailable — normal confirm
+    const confirmedNormal = await (window as any).confirmDialog({
+      title: 'Hapus Berkas Media',
+      message: `Hapus "${fileName}" secara permanen?\nTindakan ini tidak dapat dibatalkan.`,
+      confirmText: 'Ya, Hapus Permanen',
+      cancelText: 'Batal',
+      type: 'danger',
+    });
+    if (!confirmedNormal) return;
+
+    try {
+      const res = await fetch(`/api/admin/media/${currentDetailItem.id}`, { method: 'DELETE' });
+      const d = await res.json();
+      if (d.success) {
+        detailModal.classList.add('hidden');
+        showToast('File deleted successfully');
+        loadMedia();
+      } else if (d.requiresConfirmation) {
+        const confirmedRetry = await (window as any).confirmDialog({
+          title: 'Konfirmasi Penghapusan',
+          message: `${d.error}\n\nTetap hapus berkas ini?`,
+          confirmText: 'Ya, Tetap Hapus',
+          cancelText: 'Batal',
+          type: 'danger',
+        });
+        if (confirmedRetry) {
+          const forceRes = await fetch(`/api/admin/media/${currentDetailItem.id}?force=true`, { method: 'DELETE' });
+          const forceD = await forceRes.json();
+          if (forceD.success) {
+            detailModal.classList.add('hidden');
+            showToast('File deleted (force)');
+            loadMedia();
+          } else {
+            alert(forceD.error || 'Gagal menghapus');
+          }
+        }
+      } else {
+        alert(d.error || 'Failed to delete');
+      }
+    } catch {
+      alert('Network error');
+    }
+  });
+
+  btnCloseDetail.addEventListener('click', () => detailModal.classList.add('hidden'));
+
+  // Close when clicking modal backdrop
+  detailModal.addEventListener('click', (e) => {
+    if (e.target === detailModal) {
+      detailModal.classList.add('hidden');
+    }
+  });
+
+  // ============================================================
+  // PRE-VALIDATION CONSTANTS (ALLOWLIST — same as server)
+  // ============================================================
+  const ALLOWED_EXTS = new Set([
+    'jpg', 'jpeg', 'png', 'webp', 'avif', 'gif', 'svg', 'bmp', 'tiff',
+    'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+    'mp4', 'webm', 'mp3', 'wav', 'ogg', 'flac', 'aac',
+  ]);
+  const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15 MB
+
+  /**
+   * Pre-validate files on client side before uploading.
+   * Uses ALLOWLIST approach — only known-safe formats pass.
+   */
+  function preValidateFiles(files: File[]): { valid: File[]; rejected: string[] } {
+    const valid: File[] = [];
+    const rejected: string[] = [];
+
+    for (const f of files) {
+      const ext = (f.name.split('.').pop() || '').toLowerCase().trim();
+
+      if (!ext || !ALLOWED_EXTS.has(ext)) {
+        rejected.push(`❌ ${f.name} — format .${ext || '?'} tidak diizinkan (hanya gambar, dokumen, video, audio)`);
+        continue;
+      }
+
+      if (f.size > MAX_FILE_SIZE) {
+        rejected.push(`❌ ${f.name} — ukuran ${formatBytes(f.size)} melebihi batas 15 MB`);
+        continue;
+      }
+
+      if (f.size === 0) {
+        rejected.push(`❌ ${f.name} — berkas kosong (0 B)`);
+        continue;
+      }
+
+      valid.push(f);
+    }
+
+    return { valid, rejected };
+  }
+
+  /**
+   * Render the selected files list inside the dropzone, with validation status.
+   */
+  let pendingFiles: File[] = [];
+
+  function renderFileList(files: File[]) {
+    const { valid, rejected } = preValidateFiles(files);
+    pendingFiles = valid;
+
+    let html = '';
+
+    for (const f of valid) {
+      html += `
+        <div class="flex items-center justify-between text-[11px] rounded bg-surface border border-border px-2.5 py-1.5">
+          <span class="truncate font-medium text-heading">✅ ${f.name}</span>
+          <span class="font-mono text-muted">${formatBytes(f.size)}</span>
+        </div>`;
+    }
+
+    for (const msg of rejected) {
+      html += `
+        <div class="flex items-center text-[11px] rounded bg-error-light border border-error/20 px-2.5 py-1.5 text-error-text">
+          <span class="truncate font-medium">${msg}</span>
+        </div>`;
+    }
+
+    selectedFilesList.innerHTML = html;
+    selectedFilesList.classList.remove('hidden');
+
+    // Disable upload button if no valid files
+    const submitBtn = document.getElementById('btn-submit-upload') as HTMLButtonElement;
+    if (submitBtn) {
+      submitBtn.disabled = valid.length === 0;
+      submitBtn.classList.toggle('opacity-40', valid.length === 0);
+      submitBtn.classList.toggle('cursor-not-allowed', valid.length === 0);
+    }
+  }
+
+  // Upload Modal Open
+  function openUpload() {
+    uploadForm.reset();
+    pendingFiles = [];
+    selectedFilesList.innerHTML = '';
+    selectedFilesList.classList.add('hidden');
+    uploadProgressContainer.classList.add('hidden');
+    if (btnSubmitUpload) {
+      btnSubmitUpload.disabled = false;
+      btnSubmitUpload.classList.remove('opacity-40', 'cursor-not-allowed');
+    }
+    uploadSaveIcon?.classList.remove('hidden');
+    uploadSaveSpinner?.classList.add('hidden');
+    uploadSaveCheck?.classList.add('hidden');
+    if (uploadSaveText) uploadSaveText.innerText = 'Upload';
+    uploadModal.classList.remove('hidden');
+  }
+
+  btnOpenUpload.addEventListener('click', openUpload);
+  btnUploadEmpty?.addEventListener('click', openUpload);
+  btnCloseUpload.addEventListener('click', () => uploadModal.classList.add('hidden'));
+  btnCancelUpload.addEventListener('click', () => uploadModal.classList.add('hidden'));
+
+  // ============================================================
+  // DRAG & DROP + CLICK TO BROWSE
+  // ============================================================
+  dropzoneArea.addEventListener('click', (e) => {
+    // Prevent click from triggering when clicking on the file list items
+    if ((e.target as HTMLElement).closest('#selected-files-list')) return;
+    fileInput.click();
+  });
+
+  // File input change: validate and render
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files && fileInput.files.length > 0) {
+      renderFileList(Array.from(fileInput.files));
+    }
+  });
+
+  // Drag events on dropzone
+  dropzoneArea.addEventListener('dragenter', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropzoneArea.classList.add('border-primary', 'bg-primary-light');
+    dropzoneArea.classList.remove('border-border/80');
+  });
+
+  dropzoneArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropzoneArea.classList.add('border-primary', 'bg-primary-light');
+    dropzoneArea.classList.remove('border-border/80');
+  });
+
+  dropzoneArea.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropzoneArea.classList.remove('border-primary', 'bg-primary-light');
+    dropzoneArea.classList.add('border-border/80');
+  });
+
+  dropzoneArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropzoneArea.classList.remove('border-primary', 'bg-primary-light');
+    dropzoneArea.classList.add('border-border/80');
+
+    const dt = e.dataTransfer;
+    if (!dt || dt.files.length === 0) return;
+
+    // Transfer dropped files to fileInput and render
+    const droppedFiles = Array.from(dt.files);
+    renderFileList(droppedFiles);
+  });
+
+  // Prevent browser default drop behavior on the whole modal
+  uploadModal.addEventListener('dragover', (e) => e.preventDefault());
+  uploadModal.addEventListener('drop', (e) => e.preventDefault());
+
+  // ============================================================
+  // UPLOAD SUBMIT WITH VALIDATION
+  // ============================================================
+  uploadForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    // Use pendingFiles (from drag & drop or file input, already pre-validated)
+    const filesToUpload = pendingFiles.length > 0
+      ? pendingFiles
+      : (fileInput.files ? Array.from(fileInput.files) : []);
+
+    if (filesToUpload.length === 0) {
+      showToast('Tidak ada berkas yang valid untuk diunggah');
+      return;
+    }
+
+    // Final pre-validation check
+    const { valid, rejected } = preValidateFiles(filesToUpload);
+    if (valid.length === 0) {
+      showToast('Semua berkas ditolak oleh validasi');
+      return;
+    }
+
+    if (rejected.length > 0) {
+      showToast(`${rejected.length} berkas ditolak, mengunggah ${valid.length} berkas valid...`);
+    }
+
+    const folder = (document.getElementById('upload-folder-select') as HTMLSelectElement).value;
+    uploadProgressContainer.classList.remove('hidden');
+    if (btnSubmitUpload) btnSubmitUpload.disabled = true;
+    uploadSaveIcon?.classList.add('hidden');
+    uploadSaveSpinner?.classList.remove('hidden');
+    uploadSaveCheck?.classList.add('hidden');
+    if (uploadSaveText) uploadSaveText.innerText = 'Uploading...';
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < valid.length; i++) {
+      const f = valid[i];
+      const percent = Math.round(((i + 1) / valid.length) * 100);
+      uploadProgressText.innerText = `Uploading ${i + 1}/${valid.length}: ${f.name}...`;
+      uploadProgressBar.style.width = `${percent}%`;
+      uploadProgressPercent.innerText = `${percent}%`;
+
+      const fd = new FormData();
+      fd.append('file', f);
+      fd.append('category', folder);
+
+      try {
+        const res = await fetch('/api/admin/media/upload', { method: 'POST', body: fd });
+        const d = await res.json();
+        if (d.success) {
+          successCount++;
+        } else {
+          failCount++;
+          console.warn(`Upload failed for ${f.name}:`, d.error);
+        }
+      } catch (err) {
+        failCount++;
+        console.warn(`Upload error for ${f.name}:`, err);
+      }
+    }
+
+    uploadSaveSpinner?.classList.add('hidden');
+    uploadSaveCheck?.classList.remove('hidden');
+    if (uploadSaveText) uploadSaveText.innerText = 'Selesai';
+
+    setTimeout(() => {
+      uploadModal.classList.add('hidden');
+      uploadSaveIcon?.classList.remove('hidden');
+      uploadSaveCheck?.classList.add('hidden');
+      if (uploadSaveText) uploadSaveText.innerText = 'Upload';
+      if (btnSubmitUpload) btnSubmitUpload.disabled = false;
+
+      if (failCount > 0) {
+        showToast(`${successCount} berhasil, ${failCount} gagal`);
+      } else {
+        showToast(`${successCount} berkas berhasil diunggah`);
+      }
+
+      pendingFiles = [];
+      currentPage = 1;
+      loadMedia();
+    }, 600);
+  });
+
+  // ============================================================
+  // ADD FOLDER MODAL
+  // ============================================================
+  btnAddFolder.addEventListener('click', () => {
+    folderForm.reset();
+    if (btnSubmitFolder) btnSubmitFolder.disabled = false;
+    folderSaveIcon?.classList.remove('hidden');
+    folderSaveSpinner?.classList.add('hidden');
+    folderSaveCheck?.classList.add('hidden');
+    if (folderSaveText) folderSaveText.innerText = 'Create folder';
+    folderModal.classList.remove('hidden');
+  });
+
+  closeFolderModalBtn.addEventListener('click', () => folderModal.classList.add('hidden'));
+  cancelFolderBtn.addEventListener('click', () => folderModal.classList.add('hidden'));
+
+  folderForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = newFolderName.value.trim();
+    if (!name) return;
+
+    if (btnSubmitFolder) btnSubmitFolder.disabled = true;
+    folderSaveIcon?.classList.add('hidden');
+    folderSaveSpinner?.classList.remove('hidden');
+    folderSaveCheck?.classList.add('hidden');
+    if (folderSaveText) folderSaveText.innerText = 'Membuat...';
+
+    // Show active folder breadcrumb
+    selectedFolder = name;
+    activeFolderName.innerText = name;
+    folderBreadcrumb.classList.remove('hidden');
+    folderBreadcrumb.classList.add('flex');
+
+    // Add to upload select dropdown
+    const uploadSelect = document.getElementById('upload-folder-select') as HTMLSelectElement;
+    if (uploadSelect) {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.innerText = name;
+      opt.selected = true;
+      uploadSelect.appendChild(opt);
+    }
+
+    folderSaveSpinner?.classList.add('hidden');
+    folderSaveCheck?.classList.remove('hidden');
+    if (folderSaveText) folderSaveText.innerText = 'Tersimpan';
+
+    setTimeout(() => {
+      folderModal.classList.add('hidden');
+      if (btnSubmitFolder) btnSubmitFolder.disabled = false;
+      folderSaveIcon?.classList.remove('hidden');
+      folderSaveCheck?.classList.add('hidden');
+      if (folderSaveText) folderSaveText.innerText = 'Create folder';
+      showToast(`Folder "${name}" created`);
+      loadMedia();
+    }, 500);
+  });
+</script>
+</AdminLayout>

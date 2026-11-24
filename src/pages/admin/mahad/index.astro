@@ -1,0 +1,798 @@
+---
+import AdminLayout from "../../../layouts/AdminLayout.astro";
+import MediaPickerModal from "../../../components/MediaPickerModal.astro";
+import Icon from "../../../components/Icon.astro";
+import { db, mahadPrograms, settings } from "../../../db";
+import { asc, desc, eq, and, or, like, sql } from "drizzle-orm";
+
+export const prerender = false;
+
+// Cek tipe sekolah
+const allSettings = await db.select().from(settings);
+const settingMap = allSettings.reduce(
+  (acc, curr) => {
+    acc[curr.key] = curr.value;
+    return acc;
+  },
+  {} as Record<string, string>,
+);
+
+const schoolType = (
+  settingMap["school_type"] ||
+  settingMap["school_level"] ||
+  "SMA"
+).toUpperCase();
+
+// Query parameter filter & pagination
+const currentCategory = Astro.url.searchParams.get("kategori") || "all";
+const searchQuery = Astro.url.searchParams.get("q") || "";
+const currentPage = Math.max(
+  1,
+  parseInt(Astro.url.searchParams.get("page") || "1", 10) || 1,
+);
+const pageSize = 10;
+
+// Hitung total keseluruhan
+const totalCount = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(mahadPrograms)
+  .then((r) => Number(r[0]?.count || 0));
+
+const tahfidzCount = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(mahadPrograms)
+  .where(eq(mahadPrograms.category, "Tahfidz"))
+  .then((r) => Number(r[0]?.count || 0));
+
+const kitabCount = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(mahadPrograms)
+  .where(eq(mahadPrograms.category, "Kajian Kitab"))
+  .then((r) => Number(r[0]?.count || 0));
+
+const asramaCount = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(mahadPrograms)
+  .where(eq(mahadPrograms.category, "Keasramaan"))
+  .then((r) => Number(r[0]?.count || 0));
+
+// Filter conditions
+const conditions: any[] = [];
+if (currentCategory && currentCategory !== "all") {
+  conditions.push(eq(mahadPrograms.category, currentCategory));
+}
+
+if (searchQuery) {
+  const queryPattern = `%${searchQuery.trim()}%`;
+  conditions.push(
+    or(
+      like(mahadPrograms.name, queryPattern),
+      like(mahadPrograms.mentor, queryPattern),
+      like(mahadPrograms.target, queryPattern),
+      like(mahadPrograms.description, queryPattern),
+    ),
+  );
+}
+
+const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+const totalFiltered = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(mahadPrograms)
+  .where(whereClause)
+  .then((r) => Number(r[0]?.count || 0));
+
+const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
+const validPage = Math.min(currentPage, totalPages);
+const offset = (validPage - 1) * pageSize;
+
+const mahadList = await db
+  .select()
+  .from(mahadPrograms)
+  .where(whereClause)
+  .orderBy(asc(mahadPrograms.orderNumber), desc(mahadPrograms.id))
+  .limit(pageSize)
+  .offset(offset);
+
+function getPageUrl(p: number) {
+  const params = new URLSearchParams();
+  if (currentCategory && currentCategory !== "all")
+    params.set("kategori", currentCategory);
+  if (searchQuery) params.set("q", searchQuery);
+  if (p > 1) params.set("page", String(p));
+  const qs = params.toString();
+  return `/admin/mahad${qs ? `?${qs}` : ""}`;
+}
+---
+
+<AdminLayout
+  title="Ma'had & Tahfidz"
+  activeNav="mahad"
+  settingsMap={settingMap}
+>
+  <div class="space-y-6">
+    <!-- Header Halaman -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-5">
+      <div>
+        <div class="flex items-center gap-2.5">
+          <h1 class="font-display text-xl font-bold tracking-tight text-heading">
+            Ma'had & Kepesantrenan
+          </h1>
+        </div>
+        <p class="font-body text-xs text-muted mt-1">
+          Kelola program pembinaan santri dan pembiasaan ibadah asrama
+        </p>
+      </div>
+
+      <div class="flex items-center gap-2.5 shrink-0">
+        <a
+          href="/mahad"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex h-[38px] items-center justify-center gap-1.5 rounded-[6px] border border-border bg-surface px-3.5 font-body text-xs font-semibold text-heading transition-colors hover:bg-surface-subtle shadow-xs"
+        >
+          <svg
+            class="h-3.5 w-3.5 text-primary"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+            />
+          </svg>
+          <span>Halaman Publik</span>
+        </a>
+
+        <button
+          type="button"
+          id="btn-add-mahad"
+          class="inline-flex h-[38px] items-center justify-center gap-2 rounded-[6px] bg-primary px-4 font-body text-sm font-medium text-white transition-all duration-200 hover:-translate-y-[1px] hover:bg-primary-hover shadow-xs cursor-pointer"
+        >
+          <Icon name="plus" class="h-4 w-4" />
+          <span>Tambah Program Baru</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Ringkasan Statistik -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+      <div class="rounded-[10px] border border-border bg-surface p-4 shadow-hairline">
+        <span class="block font-body text-xs text-muted">
+          Total Program Ma'had
+        </span>
+        <div class="mt-1 flex items-baseline gap-2">
+          <span class="font-display text-2xl font-bold text-heading">
+            {totalCount}
+          </span>
+          <span class="font-body text-xs text-muted">program</span>
+        </div>
+      </div>
+
+      <div class="rounded-[10px] border border-border bg-surface p-4 shadow-hairline">
+        <span class="block font-body text-xs text-muted">Program Tahfidz</span>
+        <div class="mt-1 flex items-baseline gap-2">
+          <span class="font-display text-2xl font-bold text-heading">
+            {tahfidzCount}
+          </span>
+          <span class="font-body text-xs text-muted">halaqah</span>
+        </div>
+      </div>
+
+      <div class="rounded-[10px] border border-border bg-surface p-4 shadow-hairline">
+        <span class="block font-body text-xs text-muted">
+          Kajian Kitab Kuning
+        </span>
+        <div class="mt-1 flex items-baseline gap-2">
+          <span class="font-display text-2xl font-bold text-heading">
+            {kitabCount}
+          </span>
+          <span class="font-body text-xs text-muted">kajian</span>
+        </div>
+      </div>
+
+      <div class="rounded-[10px] border border-border bg-surface p-4 shadow-hairline">
+        <span class="block font-body text-xs text-muted">
+          Pembinaan Keasramaan
+        </span>
+        <div class="mt-1 flex items-baseline gap-2">
+          <span class="font-display text-2xl font-bold text-heading">
+            {asramaCount}
+          </span>
+          <span class="font-body text-xs text-muted">kegiatan</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Filter Tab & Pencarian -->
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 pt-1">
+      <div class="flex flex-wrap items-center gap-1.5">
+        <a
+          href="/admin/mahad"
+          class:list={[
+            "rounded-[6px] px-3 py-1.5 font-body text-xs font-medium transition-colors",
+            currentCategory === "all"
+              ? "bg-primary text-white"
+              : "border border-border bg-surface text-muted hover:bg-surface-subtle hover:text-heading",
+          ]}
+        >
+          Semua ({totalCount})
+        </a>
+        <a
+          href="/admin/mahad?kategori=Tahfidz"
+          class:list={[
+            "rounded-[6px] px-3 py-1.5 font-body text-xs font-medium transition-colors",
+            currentCategory === "Tahfidz"
+              ? "bg-primary text-white"
+              : "border border-border bg-surface text-muted hover:bg-surface-subtle hover:text-heading",
+          ]}
+        >
+          Tahfidz ({tahfidzCount})
+        </a>
+        <a
+          href="/admin/mahad?kategori=Kajian Kitab"
+          class:list={[
+            "rounded-[6px] px-3 py-1.5 font-body text-xs font-medium transition-colors",
+            currentCategory === "Kajian Kitab"
+              ? "bg-primary text-white"
+              : "border border-border bg-surface text-muted hover:bg-surface-subtle hover:text-heading",
+          ]}
+        >
+          Kajian Kitab ({kitabCount})
+        </a>
+        <a
+          href="/admin/mahad?kategori=Keasramaan"
+          class:list={[
+            "rounded-[6px] px-3 py-1.5 font-body text-xs font-medium transition-colors",
+            currentCategory === "Keasramaan"
+              ? "bg-primary text-white"
+              : "border border-border bg-surface text-muted hover:bg-surface-subtle hover:text-heading",
+          ]}
+        >
+          Keasramaan ({asramaCount})
+        </a>
+      </div>
+
+      <form method="GET" action="/admin/mahad" class="relative w-full md:w-64">
+        {currentCategory !== "all" && (
+          <input type="hidden" name="kategori" value={currentCategory} />
+        )}
+        <input
+          type="text"
+          name="q"
+          value={searchQuery}
+          placeholder="Cari program, pembina, target..."
+          class="h-[36px] w-full rounded-[6px] border border-border bg-surface pl-8 pr-3 font-body text-xs text-heading placeholder:text-muted/60"
+        />
+        <Icon
+          name="search"
+          class="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted"
+        />
+      </form>
+    </div>
+
+    <!-- Tabel Data Ma'had -->
+    <div class="rounded-[10px] border border-border bg-surface overflow-hidden shadow-hairline">
+      <div class="overflow-x-auto">
+        <table class="w-full text-left font-body text-xs">
+          <thead class="border-b border-border bg-surface-subtle text-[11px] font-semibold uppercase tracking-wider text-muted">
+            <tr>
+              <th class="px-4 py-3">Nama Program</th>
+              <th class="px-4 py-3">Kategori</th>
+              <th class="px-4 py-3">Target Capaian</th>
+              <th class="px-4 py-3">Jadwal</th>
+              <th class="px-4 py-3">Ustadz / Pembina</th>
+              <th class="px-4 py-3 text-center w-20">Tampil</th>
+              <th class="px-4 py-3 text-right w-24">Aksi</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-border text-body">
+            {mahadList.length === 0 ? (
+              <tr>
+                <td colspan="7" class="px-4 py-12 text-center text-muted">
+                  <div class="mx-auto max-w-xs space-y-2">
+                    <p class="font-semibold text-heading">
+                      Belum ada program ma'had terdata
+                    </p>
+                    <p class="text-[11px]">
+                      Silakan klik tombol "Tambah Program Baru" untuk memasukkan
+                      program Tahfidz, kajian kitab, atau pembiasaan asrama.
+                    </p>
+                  </div>
+                </td>
+              </tr>
+            ) : (
+              mahadList.map((item) => (
+                <tr class="hover:bg-surface-subtle transition-colors">
+                  <td class="px-4 py-3 font-semibold text-heading">
+                    <div class="text-sm">{item.name}</div>
+                    {item.description && (
+                      <p class="text-[11px] text-muted font-normal line-clamp-1 mt-0.5">
+                        {item.description}
+                      </p>
+                    )}
+                  </td>
+                  <td class="px-4 py-3">
+                    <span class="inline-block rounded-[4px] bg-primary-light border border-primary/20 px-2 py-0.5 text-[10px] font-semibold text-primary uppercase tracking-wider">
+                      {item.category}
+                    </span>
+                  </td>
+                  <td class="px-4 py-3 text-heading font-medium">
+                    {item.target || "-"}
+                  </td>
+                  <td class="px-4 py-3 text-muted">{item.schedule || "-"}</td>
+                  <td class="px-4 py-3 text-heading font-medium">
+                    {item.mentor || "-"}
+                  </td>
+                  <td class="px-4 py-3 text-center whitespace-nowrap">
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={item.isActive ? "true" : "false"}
+                      class:list={[
+                        "btn-toggle-active relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden",
+                        item.isActive ? "bg-primary" : "bg-border",
+                      ]}
+                      data-id={item.id}
+                      data-name={item.name}
+                      data-active={item.isActive ? "true" : "false"}
+                      title={
+                        item.isActive
+                          ? "Aktif (Klik untuk nonaktifkan)"
+                          : "Nonaktif (Klik untuk aktifkan)"
+                      }
+                      aria-label={`Status publikasi ${item.name}`}
+                    >
+                      <span class="sr-only">
+                        {item.isActive ? "Aktif" : "Nonaktif"}
+                      </span>
+                      <span
+                        aria-hidden="true"
+                        class:list={[
+                          "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out",
+                          item.isActive ? "translate-x-4" : "translate-x-0",
+                        ]}
+                      />
+                    </button>
+                  </td>
+                  <td class="px-4 py-3 text-right">
+                    <div class="inline-flex items-center gap-1.5 justify-end">
+                      <button
+                        type="button"
+                        class="btn-edit-mahad inline-flex h-7 w-7 items-center justify-center rounded-[6px] bg-primary text-white hover:bg-primary-hover transition-colors shadow-xs cursor-pointer"
+                        data-item={JSON.stringify(item)}
+                        title="Edit Program Ini"
+                      >
+                        <svg
+                          class="h-3.5 w-3.5"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                          />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        class="btn-delete-mahad inline-flex h-7 w-7 items-center justify-center rounded-[6px] bg-error text-white hover:bg-error-hover transition-colors shadow-xs cursor-pointer"
+                        data-id={item.id}
+                        data-name={item.name}
+                        title="Hapus Program Ini"
+                      >
+                        <svg
+                          class="h-3.5 w-3.5"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination -->
+      {totalPages > 1 && (
+        <div class="border-t border-border px-4 py-3 flex items-center justify-between text-xs text-muted">
+          <span>
+            Halaman {validPage} dari {totalPages} ({totalFiltered} total data)
+          </span>
+          <div class="flex items-center gap-1.5">
+            {validPage > 1 && (
+              <a
+                href={getPageUrl(validPage - 1)}
+                class="rounded-[4px] border border-border px-2.5 py-1 hover:bg-surface-subtle text-heading font-medium"
+              >
+                &larr; Sebelumnya
+              </a>
+            )}
+            {validPage < totalPages && (
+              <a
+                href={getPageUrl(validPage + 1)}
+                class="rounded-[4px] border border-border px-2.5 py-1 hover:bg-surface-subtle text-heading font-medium"
+              >
+                Selanjutnya &rarr;
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  </div>
+
+  <!-- Modal Tambah / Edit Program Ma'had -->
+  <div
+    id="modal-mahad"
+    class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+  >
+    <div class="w-full max-w-xl rounded-[12px] border border-border bg-surface p-5 sm:p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b border-border pb-3">
+        <h3
+          id="modal-mahad-title"
+          class="font-display text-base font-bold text-heading"
+        >
+          Tambah Program Ma'had Baru
+        </h3>
+        <button
+          type="button"
+          id="btn-close-modal"
+          class="text-muted hover:text-heading cursor-pointer text-xl leading-none"
+        >
+          &times;
+        </button>
+      </div>
+
+      <form id="form-mahad" class="space-y-4 text-xs font-body">
+        <input type="hidden" id="mahad-id" value="" />
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+          <div class="sm:col-span-2">
+            <label class="block font-semibold text-heading mb-1">
+              Nama Program <span class="text-error">*</span>
+            </label>
+            <input
+              type="text"
+              id="mahad-name-input"
+              required
+              placeholder="Contoh: Tahfidz Al-Qur'an 30 Juz / Kajian Kitab Fathul Qorib"
+              class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 text-heading"
+            />
+          </div>
+
+          <div>
+            <label class="block font-semibold text-heading mb-1">
+              Kategori Program <span class="text-error">*</span>
+            </label>
+            <select
+              id="mahad-category-input"
+              class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 text-heading"
+            >
+              <option value="Tahfidz">Tahfidz Al-Qur'an</option>
+              <option value="Kajian Kitab">
+                Kajian Kitab Kuning / Diniyah
+              </option>
+              <option value="Keasramaan">Keasramaan & Disiplin Santri</option>
+              <option value="Bahasa Arab/Inggris">
+                Pengembangan Bahasa Asing
+              </option>
+              <option value="Ibadah Praktis">
+                Pembiasaan Ibadah & Karakter
+              </option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block font-semibold text-heading mb-1">
+              Target Capaian Santri
+            </label>
+            <input
+              type="text"
+              id="mahad-target-input"
+              placeholder="Contoh: Minimal 5 Juz Mutqin per Tahun"
+              class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 text-heading"
+            />
+          </div>
+
+          <div>
+            <label class="block font-semibold text-heading mb-1">
+              Jadwal Pelaksanaan
+            </label>
+            <input
+              type="text"
+              id="mahad-schedule-input"
+              placeholder="Contoh: Ba'da Subuh & Ba'da Maghrib Setiap Hari"
+              class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 text-heading"
+            />
+          </div>
+
+          <div>
+            <label class="block font-semibold text-heading mb-1">
+              Ustadz / Pembina / Mudabbir
+            </label>
+            <input
+              type="text"
+              id="mahad-mentor-input"
+              placeholder="Contoh: Ustadz Ahmad Zaki, Lc., Al-Hafidz"
+              class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 text-heading"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-heading mb-1">
+            Uraian Program & Metode Pembelajaran
+          </label>
+          <textarea
+            id="mahad-description-input"
+            rows="3"
+            placeholder="Jelaskan metode pembelajaran (Sabaq, Sabqi, Manzil), kitab rujukan, serta sistem evaluasi berkala..."
+            class="w-full rounded-[6px] border border-border bg-surface p-2.5 text-heading leading-relaxed"
+          ></textarea>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-heading mb-1">
+            Foto Dokumentasi / Gedung Ma'had (URL / Media)
+          </label>
+          <div class="flex items-center gap-2">
+            <input
+              type="text"
+              id="mahad-image-input"
+              placeholder="/uploads/tahfidz-kegiatan.webp"
+              class="h-[38px] flex-1 rounded-[6px] border border-border bg-surface px-3 text-heading"
+            />
+            <button
+              type="button"
+              id="btn-pick-mahad-image"
+              class="h-[38px] px-3 rounded-[6px] border border-border bg-surface hover:bg-surface-subtle font-medium text-heading shrink-0 cursor-pointer"
+            >
+              Pilih Media
+            </button>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-2.5 pt-3 border-t border-border">
+          <button
+            type="button"
+            id="btn-cancel-modal"
+            class="inline-flex h-8 items-center justify-center rounded-[6px] border border-border bg-surface px-3.5 text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+          >
+            Batal
+          </button>
+          <button
+            type="submit"
+            id="btn-save-mahad"
+            class="inline-flex h-8 items-center justify-center rounded-[6px] bg-primary px-4 font-medium text-white hover:bg-primary-hover transition-colors shadow-xs cursor-pointer"
+          >
+            Simpan Program
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <MediaPickerModal />
+
+  <script is:inline>
+    function initMahad() {
+      const modal = document.getElementById("modal-mahad");
+      const modalTitle = document.getElementById("modal-mahad-title");
+      const form = document.getElementById("form-mahad");
+      const btnAdd = document.getElementById("btn-add-mahad");
+      const btnClose = document.getElementById("btn-close-modal");
+      const btnCancel = document.getElementById("btn-cancel-modal");
+
+      const idInput = document.getElementById("mahad-id");
+      const nameInput = document.getElementById("mahad-name-input");
+      const categoryInput = document.getElementById("mahad-category-input");
+      const targetInput = document.getElementById("mahad-target-input");
+      const scheduleInput = document.getElementById("mahad-schedule-input");
+      const mentorInput = document.getElementById("mahad-mentor-input");
+      const descriptionInput = document.getElementById(
+        "mahad-description-input",
+      );
+      const imageInput = document.getElementById("mahad-image-input");
+      const btnPickImage = document.getElementById("btn-pick-mahad-image");
+
+      function openModal(item = null) {
+        if (item) {
+          modalTitle.innerText = "Edit Program Ma'had";
+          idInput.value = item.id;
+          nameInput.value = item.name || "";
+          categoryInput.value = item.category || "Tahfidz";
+          targetInput.value = item.target || "";
+          scheduleInput.value = item.schedule || "";
+          mentorInput.value = item.mentor || "";
+          descriptionInput.value = item.description || "";
+          imageInput.value = item.imageUrl || "";
+        } else {
+          modalTitle.innerText = "Tambah Program Ma'had Baru";
+          form.reset();
+          idInput.value = "";
+        }
+        modal?.classList.remove("hidden");
+      }
+
+      function closeModal() {
+        modal?.classList.add("hidden");
+      }
+
+      btnAdd?.addEventListener("click", () => openModal(null));
+      btnClose?.addEventListener("click", closeModal);
+      btnCancel?.addEventListener("click", closeModal);
+
+      // Edit buttons
+      document.querySelectorAll(".btn-edit-mahad").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          try {
+            const data = JSON.parse(btn.getAttribute("data-item") || "{}");
+            openModal(data);
+          } catch (e) {}
+        });
+      });
+
+      // Toggle active status
+      document.querySelectorAll(".btn-toggle-active").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const id = btn.getAttribute("data-id");
+          const name = btn.getAttribute("data-name") || "Program Ma'had";
+          const isCurrentlyActive = btn.getAttribute("data-active") === "true";
+          if (!id) return;
+
+          btn.disabled = true;
+          try {
+            const res = await fetch(`/api/admin/mahad/${id}/toggle`, {
+              method: "PUT",
+            });
+            const data = await res.json();
+            if (data.success) {
+              const nextActive = !isCurrentlyActive;
+              btn.setAttribute("data-active", String(nextActive));
+              btn.setAttribute("aria-checked", String(nextActive));
+              btn.className = `btn-toggle-active relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${nextActive ? "bg-primary" : "bg-border"}`;
+              btn.setAttribute(
+                "title",
+                nextActive
+                  ? "Aktif (Klik untuk nonaktifkan)"
+                  : "Nonaktif (Klik untuk aktifkan)",
+              );
+              const thumb = btn.querySelector('span[aria-hidden="true"]');
+              if (thumb) {
+                thumb.className = `pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${nextActive ? "translate-x-4" : "translate-x-0"}`;
+              }
+              if (typeof window.showToast === "function") {
+                window.showToast(
+                  `Status "${name}" berhasil diubah menjadi ${nextActive ? "Aktif" : "Nonaktif"}.`,
+                  "success",
+                );
+              }
+            } else {
+              if (typeof window.showToast === "function") {
+                window.showToast(
+                  data.error || "Gagal mengubah status",
+                  "error",
+                );
+              }
+            }
+          } catch {
+            if (typeof window.showToast === "function") {
+              window.showToast(
+                "Gangguan jaringan saat mengubah status",
+                "error",
+              );
+            }
+          } finally {
+            btn.disabled = false;
+          }
+        });
+      });
+
+      // Delete buttons
+      document.querySelectorAll(".btn-delete-mahad").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const id = btn.getAttribute("data-id");
+          const name = btn.getAttribute("data-name");
+          if (!id) return;
+
+          const confirmed = await window.confirmDialog({
+            title: "Hapus Program Ma'had",
+            message: `Apakah Anda yakin ingin menghapus program "${name}"?\nTindakan ini tidak dapat dibatalkan.`,
+            confirmText: "Ya, Hapus",
+            cancelText: "Batal",
+            type: "danger",
+          });
+          if (!confirmed) return;
+
+          try {
+            const res = await fetch(`/api/admin/mahad/${id}`, {
+              method: "DELETE",
+            });
+            const data = await res.json();
+            if (data.success) {
+              window.showToast("Program Ma'had berhasil dihapus.", "success");
+              setTimeout(() => window.location.reload(), 400);
+            } else {
+              window.showToast(data.error || "Gagal menghapus", "error");
+            }
+          } catch {
+            window.showToast("Kesalahan jaringan", "error");
+          }
+        });
+      });
+
+      // Media Picker image
+      btnPickImage?.addEventListener("click", () => {
+        if (typeof window.openMediaPicker === "function") {
+          window.openMediaPicker(
+            (item) => {
+              const url =
+                item.fileUrl || item.mediumUrl || item.thumbnailUrl || item.url;
+              if (url && imageInput) imageInput.value = url;
+            },
+            { type: "image" },
+          );
+        }
+      });
+
+      // Form Submit
+      form?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const id = idInput.value;
+        const payload = {
+          name: nameInput.value,
+          category: categoryInput.value,
+          target: targetInput.value,
+          schedule: scheduleInput.value,
+          mentor: mentorInput.value,
+          description: descriptionInput.value,
+          imageUrl: imageInput.value,
+        };
+
+        try {
+          const url = id ? `/api/admin/mahad/${id}` : "/api/admin/mahad";
+          const method = id ? "PUT" : "POST";
+
+          const res = await fetch(url, {
+            method,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          const data = await res.json();
+          if (data.success) {
+            window.location.reload();
+          } else {
+            alert(data.error || "Gagal menyimpan program ma'had");
+          }
+        } catch {
+          alert("Terjadi kesalahan jaringan saat menyimpan data");
+        }
+      });
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", initMahad);
+    } else {
+      initMahad();
+    }
+  </script>
+</AdminLayout>

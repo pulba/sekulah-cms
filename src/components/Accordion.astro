@@ -1,0 +1,81 @@
+---
+interface AccordionItem {
+  id?: string | number;
+  title: string;
+  content: string;
+  isOpen?: boolean;
+}
+
+interface Props {
+  items?: AccordionItem[];
+  class?: string;
+  id?: string;
+}
+
+const { items = [], class: className = '', id } = Astro.props;
+---
+
+<div class:list={["space-y-3", className]} id={id}>
+  {items.map((item, index) => {
+    const itemId = item.id ? String(item.id) : `accordion-item-${index}`;
+    return (
+      <details
+        class="accordion-item accordion-wrapper group select-none"
+        open={item.isOpen}
+        id={itemId}
+      >
+        <summary class="accordion-header list-none flex items-center justify-between">
+          <span class="font-display text-sm font-semibold text-heading group-hover:text-primary transition-colors pr-4">
+            {item.title}
+          </span>
+          <span class="accordion-icon flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-subtle text-muted group-hover:text-heading transition-transform">
+            <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </span>
+        </summary>
+        <div class="accordion-content">
+          <div class="accordion-inner px-5 pb-5 pt-1 text-xs text-muted font-body leading-relaxed">
+            <div set:html={item.content} />
+          </div>
+        </div>
+      </details>
+    );
+  })}
+  <slot />
+</div>
+
+<script is:inline>
+  (function () {
+    function initAccordionSmoothClose() {
+      document.querySelectorAll('details.accordion-item').forEach(function (details) {
+        if (details.dataset.accordionSmoothInit) return;
+        details.dataset.accordionSmoothInit = '1';
+
+        var summary = details.querySelector('summary');
+        var content = details.querySelector('.accordion-content');
+        if (!summary || !content) return;
+
+        summary.addEventListener('click', function (e) {
+          if (details.open) {
+            e.preventDefault();
+            details.classList.add('is-closing');
+            content.style.gridTemplateRows = '0fr';
+            setTimeout(function () {
+              details.open = false;
+              details.classList.remove('is-closing');
+              content.style.gridTemplateRows = '';
+            }, 200);
+          }
+        });
+      });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initAccordionSmoothClose);
+    } else {
+      initAccordionSmoothClose();
+    }
+    document.addEventListener('astro:page-load', initAccordionSmoothClose);
+  })();
+</script>

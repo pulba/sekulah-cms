@@ -1,0 +1,441 @@
+---
+export const prerender = false;
+import Layout from "../layouts/Layout.astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import Breadcrumb from "../components/Breadcrumb.astro";
+import Icon from "../components/Icon.astro";
+import { db, settings } from "../db";
+
+let schoolSettings: Record<string, string> = {};
+try {
+  const allSettings = await db.select().from(settings);
+  schoolSettings = allSettings.reduce(
+    (acc, curr) => {
+      acc[curr.key] = curr.value;
+      return acc;
+    },
+    {} as Record<string, string>,
+  );
+} catch {
+  schoolSettings = {};
+}
+
+const schoolName = schoolSettings["school_name"] || "SMAN 1 Unggulan";
+const address =
+  schoolSettings["address"] ||
+  "Jl. Pendidikan No. 45, Kompleks Pendidikan Unggulan, Kota Pendidikan 12345";
+const phone = schoolSettings["phone"] || "(021) 555-0199";
+const email = schoolSettings["email"] || "info@sman1unggulan.sch.id";
+const operationalHours =
+  schoolSettings["operational_hours"] || "Senin – Jumat: 07.00 – 16.00 WIB";
+const operationalNotes =
+  schoolSettings["operational_notes"] ||
+  "Sabtu, Minggu & Hari Libur Nasional: Tutup (Layanan PTSP Online)";
+const mapsEmbed =
+  schoolSettings["maps_embed"] ||
+  "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d126922.385!2d106.78!3d-6.22!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2zNsKwMTMnMTIuMCJTIDEwNsKwNDYnNDguMCJF!5e0!3m2!1sid!2sid!4v1600000000000";
+
+// Saluran Media Sosial Resmi
+const rawSocials = [
+  {
+    key: "whatsapp",
+    name: "WhatsApp",
+    url: (schoolSettings["social_whatsapp"] || "").trim()
+      ? schoolSettings["social_whatsapp"].trim().startsWith("http")
+        ? schoolSettings["social_whatsapp"].trim()
+        : `https://wa.me/${schoolSettings["social_whatsapp"].replace(/[^0-9]/g, "")}`
+      : "https://wa.me/6281234567890",
+    iconColor: "text-[#25D366]",
+    hoverClass:
+      "hover:border-[#25D366] hover:bg-surface-subtle hover:text-[#25D366]",
+  },
+  {
+    key: "instagram",
+    name: "Instagram",
+    url: (schoolSettings["social_instagram"] || "").trim()
+      ? schoolSettings["social_instagram"].trim().startsWith("http")
+        ? schoolSettings["social_instagram"].trim()
+        : `https://instagram.com/${schoolSettings["social_instagram"].trim().replace("@", "")}`
+      : "https://instagram.com/sman1unggulan",
+    iconColor: "text-[#E4405F]",
+    hoverClass:
+      "hover:border-[#E4405F] hover:bg-surface-subtle hover:text-[#E4405F]",
+  },
+  {
+    key: "youtube",
+    name: "YouTube",
+    url:
+      (schoolSettings["social_youtube"] || "").trim() ||
+      "https://youtube.com/@sman1unggulan",
+    iconColor: "text-[#FF0000]",
+    hoverClass:
+      "hover:border-[#FF0000] hover:bg-surface-subtle hover:text-[#FF0000]",
+  },
+  {
+    key: "facebook",
+    name: "Facebook",
+    url:
+      (schoolSettings["social_facebook"] || "").trim() ||
+      "https://facebook.com/sman1unggulan",
+    iconColor: "text-[#1877F2]",
+    hoverClass:
+      "hover:border-[#1877F2] hover:bg-surface-subtle hover:text-[#1877F2]",
+  },
+  {
+    key: "twitter",
+    name: "X (Twitter)",
+    url: (schoolSettings["social_twitter"] || "").trim()
+      ? schoolSettings["social_twitter"].trim().startsWith("http")
+        ? schoolSettings["social_twitter"].trim()
+        : `https://x.com/${schoolSettings["social_twitter"].trim().replace("@", "")}`
+      : "https://x.com/sman1unggulan",
+    iconColor: "text-heading",
+    hoverClass:
+      "hover:border-heading hover:bg-surface-subtle hover:text-heading",
+  },
+  {
+    key: "tiktok",
+    name: "TikTok",
+    url: (schoolSettings["social_tiktok"] || "").trim()
+      ? schoolSettings["social_tiktok"].trim().startsWith("http")
+        ? schoolSettings["social_tiktok"].trim()
+        : `https://tiktok.com/@${schoolSettings["social_tiktok"].trim().replace("@", "")}`
+      : "",
+    iconColor: "text-heading",
+    hoverClass:
+      "hover:border-heading hover:bg-surface-subtle hover:text-heading",
+  },
+];
+
+const activeSocialChannels = rawSocials.filter((item) => Boolean(item.url));
+
+const bgContactImage =
+  schoolSettings["contact_bg_image"] ||
+  schoolSettings["school_hero_image"] ||
+  "https://images.unsplash.com/photo-1562774053-701939374585?auto=format&fit=crop&w=1920&q=80";
+---
+
+<Layout
+  title={`Kontak & Pelayanan Informasi Publik — ${schoolName}`}
+  description="Hubungi layanan tata usaha, posko informasi pendaftaran siswa baru, dan saluran pengaduan masyarakat SMA Negeri 1 Unggulan."
+>
+  <Header currentPath="/kontak" />
+
+  <main class="flex-1 bg-background">
+    <!-- Hero Section dengan Background Image ::before -->
+    <section
+      class="relative isolate overflow-hidden bg-surface py-12 sm:py-16 contact-hero-section"
+      style={`--contact-hero-bg: url('${bgContactImage}');`}
+    >
+      <div class="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+        <!-- Breadcrumb -->
+        <Breadcrumb
+          items={[
+            { label: "Beranda", href: "/" },
+            { label: "Kontak & Pengaduan" },
+          ]}
+        />
+
+        <div>
+          <h1
+            class="font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-heading"
+          >
+            Hubungi Kami
+          </h1>
+          <p
+            class="mt-2 font-body text-sm sm:text-base text-muted max-w-2xl leading-relaxed"
+          >
+            Kami siap melayani kebutuhan informasi akademis, administrasi
+            kesiswaan, kemitraan institusi, dan konsultasi pendaftaran.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Content Grid: Informasi Langsung & Formulir Pesan -->
+    <div class="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:px-8">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        <!-- Informasi Kontak Langsung (5 Kolom) -->
+        <div class="lg:col-span-5 space-y-6">
+          <div
+            class="rounded-[10px] border border-border bg-surface p-6 shadow-xs space-y-5"
+          >
+            <h2 class="font-display text-base font-bold text-heading">
+              Kantor Tata Usaha & Pelayanan
+            </h2>
+
+            <div class="space-y-4 font-body text-xs">
+              <div class="flex items-start gap-3">
+                <div
+                  class="h-8 w-8 rounded-[6px] bg-primary text-white flex items-center justify-center shrink-0"
+                >
+                  <Icon name="map-pin" class="h-4 w-4" />
+                </div>
+                <div>
+                  <p class="font-bold text-heading">Alamat Kampus</p>
+                  <p class="text-muted leading-relaxed mt-0.5">
+                    {address}
+                  </p>
+                </div>
+              </div>
+
+              <div class="flex items-start gap-3">
+                <div
+                  class="h-8 w-8 rounded-[6px] bg-primary text-white flex items-center justify-center shrink-0"
+                >
+                  <Icon name="phone" class="h-4 w-4" />
+                </div>
+                <div>
+                  <p class="font-bold text-heading">Telepon Resmi</p>
+                  <p class="font-mono text-muted mt-0.5">{phone}</p>
+                </div>
+              </div>
+
+              <div class="flex items-start gap-3">
+                <div
+                  class="h-8 w-8 rounded-[6px] bg-primary text-white flex items-center justify-center shrink-0"
+                >
+                  <Icon name="mail" class="h-4 w-4" />
+                </div>
+                <div>
+                  <p class="font-bold text-heading">Email Informasi Publik</p>
+                  <a
+                    href={`mailto:${email}`}
+                    class="font-mono text-primary hover:text-primary-hover hover:underline mt-0.5 block transition-colors"
+                  >
+                    {email}
+                  </a>
+                </div>
+              </div>
+
+              <div class="flex items-start gap-3">
+                <div
+                  class="h-8 w-8 rounded-[6px] bg-primary text-white flex items-center justify-center shrink-0"
+                >
+                  <Icon name="clock" class="h-4 w-4" />
+                </div>
+                <div>
+                  <p class="font-bold text-heading">
+                    Jam Operasional Pelayanan
+                  </p>
+                  <p class="text-muted mt-0.5">{operationalHours}</p>
+                  <p class="text-[11px] text-muted">{operationalNotes}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Saluran Media Sosial Resmi -->
+          {
+            activeSocialChannels.length > 0 && (
+              <div class="rounded-[10px] border border-border bg-surface p-6 shadow-xs space-y-4">
+                <div class="flex items-center justify-between">
+                  <h2 class="font-display text-base font-bold text-heading">
+                    Media Sosial Resmi
+                  </h2>
+                  <span class="rounded-[4px] border border-border/60 bg-surface-subtle px-2 py-0.5 text-[10px] font-mono text-muted uppercase">
+                    Saluran Publik
+                  </span>
+                </div>
+                <p class="font-body text-xs text-muted leading-relaxed">
+                  Ikuti publikasi berita, pengumuman akademis, dan liputan
+                  kegiatan sekolah melalui akun resmi:
+                </p>
+                <div class="grid grid-cols-2 gap-2.5">
+                  {activeSocialChannels.map((soc, idx) => {
+                    const isLastOdd =
+                      idx === activeSocialChannels.length - 1 &&
+                      activeSocialChannels.length % 2 === 1;
+                    return (
+                      <a
+                        href={soc.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={`Kunjungi ${soc.name} Resmi Sekolah`}
+                        aria-label={`Kunjungi ${soc.name} Resmi Sekolah`}
+                        class={`flex items-center gap-2.5 px-3 py-2.5 rounded-[6px] border border-border bg-surface text-heading transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xs group ${soc.hoverClass} ${isLastOdd ? "col-span-2" : ""}`}
+                      >
+                        <span
+                          class={`flex h-5 w-5 shrink-0 items-center justify-center transition-colors ${soc.iconColor} group-hover:text-current`}
+                        >
+                          <Icon
+                            name={soc.key}
+                            class="h-4 w-4 transition-transform duration-200 group-hover:scale-110"
+                          />
+                        </span>
+                        <span class="font-display text-xs font-semibold text-heading group-hover:text-current transition-colors truncate">
+                          {soc.name}
+                        </span>
+                      </a>
+                    );
+                  })}
+                </div>
+              </div>
+            )
+          }
+
+          <!-- Peta Kampus Interaktif (Google Maps) -->
+          {
+            mapsEmbed && (
+              <div class="rounded-[10px] border border-border bg-surface p-4 shadow-xs space-y-2.5">
+                <div class="flex items-center justify-between">
+                  <span class="font-display text-xs font-bold text-heading">
+                    Lokasi Kampus di Google Maps
+                  </span>
+                  <span class="rounded-[4px] border border-border/60 bg-surface-subtle px-2 py-0.5 text-[10px] font-mono text-muted uppercase">
+                    Peta Interaktif
+                  </span>
+                </div>
+                <div class="w-full h-56 rounded-[8px] border border-border overflow-hidden bg-surface-subtle">
+                  <iframe
+                    src={mapsEmbed}
+                    title={`Peta Lokasi Kampus ${schoolName}`}
+                    class="w-full h-full border-0"
+                    loading="lazy"
+                    referrerpolicy="no-referrer-when-downgrade"
+                  ></iframe>
+                </div>
+              </div>
+            )
+          }
+        </div>
+
+        <!-- Formulir Pengaduan & Pesan Publik (7 Kolom) -->
+        <div
+          class="lg:col-span-7 rounded-[10px] border border-border bg-surface p-6 sm:p-8 shadow-xs space-y-5"
+        >
+          <div>
+            <h2 class="font-display text-lg font-bold text-heading">
+              Kirim Pesan atau Pertanyaan
+            </h2>
+            <p class="font-body text-xs text-muted mt-1">
+              Pertanyaan umum, pengaduan pelayanan, atau saran peningkatan
+              fasilitas sekolah.
+            </p>
+          </div>
+
+          <div
+            id="contact-banner"
+            class="hidden rounded-[6px] p-3.5 text-xs font-medium"
+          >
+          </div>
+
+          <form id="contact-form" class="space-y-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div class="space-y-1.5">
+                <label
+                  for="name"
+                  class="block font-body text-xs font-semibold text-heading"
+                >
+                  Nama Lengkap <span class="text-error">*</span>
+                </label>
+                <input
+                  id="name"
+                  name="name"
+                  type="text"
+                  required
+                  placeholder="Nama Anda"
+                  class="h-10 w-full rounded-[4px] border border-border bg-surface px-3 font-body text-xs text-heading placeholder:text-muted/60 transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+
+              <div class="space-y-1.5">
+                <label
+                  for="email"
+                  class="block font-body text-xs font-semibold text-heading"
+                >
+                  Alamat Email <span class="text-error">*</span>
+                </label>
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  required
+                  placeholder="email@domain.com"
+                  class="h-10 w-full rounded-[4px] border border-border bg-surface px-3 font-body text-xs text-heading font-mono placeholder:text-muted/60 transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+            </div>
+
+            <div class="space-y-1.5">
+              <label
+                for="subject"
+                class="block font-body text-xs font-semibold text-heading"
+              >
+                Topik Pertanyaan / Pengaduan <span class="text-error">*</span>
+              </label>
+              <select
+                id="subject"
+                name="subject"
+                required
+                class="h-10 w-full rounded-[4px] border border-border bg-surface px-3 font-body text-xs text-heading transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                <option value="Informasi Umum Akademik"
+                  >Informasi Umum Akademik</option
+                >
+                <option value="Pendaftaran Siswa Baru"
+                  >Pendaftaran Calon Siswa Baru</option
+                >
+                <option value="Layanan Legalisir Ijazah"
+                  >Layanan Legalisir & Administrasi Ijazah</option
+                >
+                <option value="Saran & Pengaduan Fasilitas"
+                  >Saran & Pengaduan Fasilitas</option
+                >
+                <option value="Kerjasama Institusi"
+                  >Kemitraan & Kerjasama Institusi</option
+                >
+              </select>
+            </div>
+
+            <div class="space-y-1.5">
+              <label
+                for="message"
+                class="block font-body text-xs font-semibold text-heading"
+              >
+                Pesan Lengkap <span class="text-error">*</span>
+              </label>
+              <textarea
+                id="message"
+                name="message"
+                required
+                rows="4"
+                placeholder="Tuliskan secara jelas perihal yang ingin disampaikan..."
+                class="w-full rounded-[4px] border border-border bg-surface p-3 font-body text-xs text-heading placeholder:text-muted/60 transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              ></textarea>
+            </div>
+
+            <div class="flex items-center justify-end pt-2">
+              <button
+                type="submit"
+                id="submit-contact"
+                class="inline-flex h-10 items-center justify-center gap-2 rounded-[4px] bg-primary px-6 text-xs font-semibold text-white shadow-xs hover:bg-primary-hover hover:shadow-(--shadow-hover) active:translate-y-0.5 transition-all"
+              >
+                <Icon name="mail" class="h-4 w-4" />
+                <span>Kirim Pesan</span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <Footer />
+
+  <script>
+    const form = document.getElementById("contact-form") as HTMLFormElement;
+    const banner = document.getElementById("contact-banner") as HTMLDivElement;
+
+    form?.addEventListener("submit", (e) => {
+      e.preventDefault();
+      banner.classList.remove("hidden");
+      banner.className =
+        "rounded-[6px] border border-success/20 bg-success-light p-3.5 text-xs text-success-text font-medium block";
+      banner.innerText =
+        "Pesan Anda telah berhasil terkirim ke sistem layanan informasi SMAN 1 Unggulan. Petugas kami akan merespons melalui email dalam waktu maksimal 1x24 jam kerja.";
+      form.reset();
+    });
+  </script>
+</Layout>

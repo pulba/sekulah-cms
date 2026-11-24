@@ -1,0 +1,365 @@
+---
+import Icon from "./Icon.astro";
+
+/**
+ * Floating Action Button (FAB) Menu Component
+ * Editorial Precision Design System
+ * Features:
+ * - Hover on button trigger (fit content, no full-screen overlay)
+ * - Click X to close immediately
+ * - Pendaftaran (PSB/PPDB) pill card directly above trigger
+ * - Vertical social media icons stack above Pendaftaran
+ * - Interactive transitions with tooltips on the left
+ */
+
+interface Props {
+  ppdbLabel?: string;
+  ppdbUrl?: string;
+  whatsappNumber?: string;
+  whatsappMessage?: string;
+  instagramUrl?: string;
+  youtubeUrl?: string;
+  facebookUrl?: string;
+  twitterUrl?: string;
+  tiktokUrl?: string;
+}
+
+const {
+  ppdbLabel = "Pendaftaran (PSB)",
+  ppdbUrl = "/pendaftaran",
+  whatsappNumber = "6281234567890",
+  whatsappMessage = "Halo SMAN 1 Unggulan, saya ingin menanyakan informasi sekolah.",
+  instagramUrl = "https://instagram.com/sman1unggulan",
+  youtubeUrl = "https://youtube.com/@sman1unggulan",
+  facebookUrl = "https://facebook.com/sman1unggulan",
+  twitterUrl = "https://x.com/sman1unggulan",
+  tiktokUrl = "https://tiktok.com/@sman1unggulan",
+} = Astro.props;
+
+// Normalisasi URL WhatsApp
+const cleanPhone = whatsappNumber.replace(/[^0-9]/g, "");
+const waHref =
+  cleanPhone.length > 0
+    ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(whatsappMessage)}`
+    : `https://wa.me/6281234567890?text=${encodeURIComponent(whatsappMessage)}`;
+
+// Normalisasi URL Media Sosial
+const formatSocial = (url: string, prefix: string) => {
+  const trimmed = (url || "").trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://"))
+    return trimmed;
+  return `${prefix}${trimmed.replace(/^@/, "")}`;
+};
+
+const finalInstagram =
+  formatSocial(instagramUrl, "https://instagram.com/") ||
+  "https://instagram.com/sman1unggulan";
+const finalYoutube =
+  formatSocial(youtubeUrl, "https://youtube.com/@") ||
+  "https://youtube.com/@sman1unggulan";
+const finalFacebook =
+  formatSocial(facebookUrl, "https://facebook.com/") ||
+  "https://facebook.com/sman1unggulan";
+const finalTwitter =
+  formatSocial(twitterUrl, "https://x.com/") || "https://x.com/sman1unggulan";
+const finalTiktok =
+  formatSocial(tiktokUrl, "https://tiktok.com/@") ||
+  "https://tiktok.com/@sman1unggulan";
+
+// Urutan media sosial (disusun vertikal di atas Pendaftaran)
+const socials = [
+  {
+    name: "WhatsApp",
+    url: waHref,
+    colorClass:
+      "hover:border-[#25D366] hover:bg-[#25D366] hover:text-white text-[#25D366] dark:text-[#25D366]",
+    icon: "whatsapp",
+  },
+  {
+    name: "Instagram",
+    url: finalInstagram,
+    colorClass:
+      "hover:border-[#E4405F] hover:bg-[#E4405F] hover:text-white text-[#E4405F] dark:text-[#E4405F]",
+    icon: "instagram",
+  },
+  {
+    name: "YouTube",
+    url: finalYoutube,
+    colorClass:
+      "hover:border-[#FF0000] hover:bg-[#FF0000] hover:text-white text-[#FF0000] dark:text-[#FF0000]",
+    icon: "youtube",
+  },
+  {
+    name: "Facebook",
+    url: finalFacebook,
+    colorClass:
+      "hover:border-[#1877F2] hover:bg-[#1877F2] hover:text-white text-[#1877F2] dark:text-[#1877F2]",
+    icon: "facebook",
+  },
+  {
+    name: "TikTok",
+    url: finalTiktok,
+    colorClass:
+      "hover:border-black hover:bg-black hover:text-white text-heading dark:hover:border-white dark:hover:bg-white dark:hover:text-black",
+    icon: "tiktok",
+  },
+  {
+    name: "X (Twitter)",
+    url: finalTwitter,
+    colorClass:
+      "hover:border-black hover:bg-black hover:text-white text-heading dark:hover:border-white dark:hover:bg-white dark:hover:text-black",
+    icon: "x",
+  },
+];
+---
+
+<!-- FAB Root: Fit Content (bukan full layar), diletakkan di sudut kanan bawah dengan safe area -->
+<aside
+  class="fab-root fixed z-50 flex flex-col items-end pointer-events-none bottom-[calc(1.25rem+env(safe-area-inset-bottom,0px))] right-[calc(1.25rem+env(safe-area-inset-right,0px))] sm:bottom-[calc(1.75rem+env(safe-area-inset-bottom,0px))] sm:right-[calc(1.75rem+env(safe-area-inset-right,0px))] w-fit h-fit"
+  data-fab-root
+  aria-label="Aksi Cepat & Saluran Resmi Sekolah"
+>
+  <!-- Floating Menu Container (Vertikal) -->
+  <ul
+    id="fab-menu"
+    role="menu"
+    aria-label="Pilihan Aksi Cepat"
+    aria-orientation="vertical"
+    aria-hidden="true"
+    class="mb-3 flex flex-col-reverse items-end gap-1 origin-bottom-right fab-menu-container"
+  >
+    {
+      /* 1. FITUR PENDAFTARAN (PPDB / PSB) - Dipertahankan persis seperti semula */
+    }
+    <li
+      role="none"
+      class="fab-item pointer-events-auto"
+      style="--fab-delay: 50ms;"
+    >
+      <a
+        role="menuitem"
+        href={ppdbUrl}
+        tabindex="-1"
+        class="group flex items-center gap-3 rounded-full border border-border bg-surface py-2 pl-4 pr-2 shadow-(--shadow-hover) transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-surface-subtle"
+      >
+        <div class="flex flex-col text-right">
+          <span
+            class="font-body text-xs font-semibold text-heading transition-colors group-hover:text-primary whitespace-nowrap"
+          >
+            {ppdbLabel}
+          </span>
+          <span class="font-body text-[10px] text-muted whitespace-nowrap">
+            Portal Calon Siswa
+          </span>
+        </div>
+        <span
+          class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-surface transition-all duration-200 group-hover:scale-105 group-hover:bg-primary-hover group-hover:text-white"
+        >
+          <!-- Icon: Graduation Cap -->
+          <svg
+            class="h-4 w-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M22 10v6M2 10l10-5 10 5-10 5z"></path>
+            <path d="M6 12v5c3 3 9 3 12 0v-5"></path>
+          </svg>
+        </span>
+      </a>
+    </li>
+
+    {
+      /* 2. SOSMED VERTIKAL (Setelah fitur pendaftaran, dalam bentuk ikon saja) */
+    }
+    {
+      socials.map((soc, idx) => (
+        <li
+          role="none"
+          class="fab-item pointer-events-auto"
+          style={`--fab-delay: ${(idx + 2) * 50}ms;`}
+        >
+          <a
+            role="menuitem"
+            href={soc.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={soc.name}
+            title={soc.name}
+            tabindex="-1"
+            class={`group/soc relative flex h-10 w-10 items-center justify-center rounded-full border border-border bg-surface shadow-(--shadow-hover) transition-all duration-200 hover:-translate-x-1 hover:scale-110 active:scale-95 ${soc.colorClass}`}
+          >
+            {/* Tooltip di sebelah kiri */}
+            <span class="pointer-events-none absolute right-12 top-1/2 -translate-y-1/2 whitespace-nowrap rounded-[4px] bg-heading px-2 py-0.5 font-body text-[10px] font-medium text-surface opacity-0 shadow-sm transition-all duration-200 group-hover/soc:-translate-x-1 group-hover/soc:opacity-100 z-20">
+              {soc.name}
+            </span>
+
+            {/* Ikon SVG Sprite */}
+            <Icon
+              name={soc.icon}
+              class="h-4 w-4 fill-current transition-transform duration-200 group-hover/soc:scale-110"
+            />
+          </a>
+        </li>
+      ))
+    }
+  </ul>
+
+  <!-- Trigger Button (Buletan) -->
+  <button
+    type="button"
+    id="fab-trigger"
+    aria-haspopup="true"
+    aria-expanded="false"
+    aria-controls="fab-menu"
+    aria-label="Buka Menu Aksi Cepat"
+    class="pointer-events-auto relative flex h-14 w-14 items-center justify-center rounded-full bg-primary text-white border border-white transition-all duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-0.5 hover:scale-105 hover:bg-primary-hover active:scale-95 cursor-pointer"
+  >
+    {/* Icon: Default Action (Plus) */}
+    <Icon
+      id="fab-icon-open"
+      name="plus"
+      class="h-6 w-6 transition-all duration-250 ease-out fab-icon-open"
+    />
+
+    {/* Icon: Close (X) */}
+    <Icon
+      id="fab-icon-close"
+      name="close"
+      class="absolute h-6 w-6 opacity-0 scale-50 rotate-90 transition-all duration-250 ease-out fab-icon-close"
+    />
+  </button>
+</aside>
+
+<style>
+  /* Isolasi total layout dari alur dokumen untuk mencegah CLS (Cumulative Layout Shift) */
+  .fab-root {
+    contain: layout paint;
+  }
+
+  /* Menu tertutup default: hidden dari pointer & accessibility flow */
+  #fab-menu {
+    visibility: hidden;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(12px) scale(0.92);
+    transition:
+      opacity 0.25s ease-out,
+      transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+      visibility 0.25s;
+  }
+
+  /* Staggered delay untuk tiap item saat terbuka */
+  .fab-item {
+    opacity: 0;
+    transform: translateY(10px) scale(0.92);
+    transition:
+      opacity 0.22s ease-out,
+      transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+    transition-delay: 0ms;
+  }
+
+  /* Status aktif hanya dikontrol melalui class .fab-active saat trigger dihover/klik */
+  :global(.fab-active) #fab-menu {
+    visibility: visible !important;
+    opacity: 1 !important;
+    transform: translateY(0) scale(1) !important;
+    pointer-events: auto !important;
+  }
+
+  :global(.fab-active) .fab-item {
+    opacity: 1 !important;
+    transform: translateY(0) scale(1) !important;
+    transition-delay: var(--fab-delay, 0ms) !important;
+  }
+
+  :global(.fab-active) #fab-icon-open {
+    opacity: 0 !important;
+    transform: rotate(90deg) scale(0.5) !important;
+  }
+
+  :global(.fab-active) #fab-icon-close {
+    opacity: 1 !important;
+    transform: rotate(0deg) scale(1) !important;
+  }
+</style>
+
+<script>
+  /**
+   * Vanilla JS Controller for FAB Menu
+   * Murni interaksi KLIK:
+   * - Klik tombol (+) untuk membuka (berubah jadi X)
+   * - Klik tombol (X) untuk menutup
+   * - Klik di luar area atau tekan tombol Escape untuk menutup
+   */
+  function initFabMenu() {
+    const root = document.querySelector<HTMLElement>("[data-fab-root]");
+    if (!root || root.hasAttribute("data-initialized")) return;
+    root.setAttribute("data-initialized", "true");
+
+    const trigger = document.getElementById("fab-trigger");
+    const menu = document.getElementById("fab-menu");
+    const interactiveLinks = menu
+      ? Array.from(menu.querySelectorAll<HTMLAnchorElement>("a"))
+      : [];
+
+    if (!trigger || !menu) return;
+
+    let isOpen = false;
+
+    function setMenuState(open: boolean) {
+      isOpen = open;
+      trigger.setAttribute("aria-expanded", String(isOpen));
+      trigger.setAttribute(
+        "aria-label",
+        isOpen ? "Tutup Menu Aksi Cepat" : "Buka Menu Aksi Cepat",
+      );
+      menu.setAttribute("aria-hidden", String(!isOpen));
+
+      if (isOpen) {
+        root.classList.add("fab-active");
+        interactiveLinks.forEach((item) => item.setAttribute("tabindex", "0"));
+      } else {
+        root.classList.remove("fab-active");
+        interactiveLinks.forEach((item) => item.setAttribute("tabindex", "-1"));
+      }
+    }
+
+    // 1. Click Toggle: Buka & tutup hanya lewat klik tombol utama
+    trigger.addEventListener("click", (e) => {
+      e.stopPropagation();
+      setMenuState(!isOpen);
+    });
+
+    // 2. Klik di luar area FAB untuk menutup menu
+    document.addEventListener("click", (event) => {
+      if (!isOpen) return;
+      const target = event.target as Node | null;
+      if (target && !root.contains(target)) {
+        setMenuState(false);
+      }
+    });
+
+    // 3. Tombol Escape keyboard untuk menutup menu
+    document.addEventListener("keydown", (e) => {
+      if (!isOpen) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setMenuState(false);
+        trigger.focus();
+      }
+    });
+  }
+
+  // Pasang saat DOM ready & kompatibel dengan Astro View Transitions
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initFabMenu);
+  } else {
+    initFabMenu();
+  }
+  document.addEventListener("astro:page-load", initFabMenu);
+</script>

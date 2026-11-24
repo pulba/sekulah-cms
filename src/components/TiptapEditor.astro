@@ -1,0 +1,292 @@
+<!-- TiptapEditor.astro - Shared Tiptap WYSIWYG component for tambah & edit berita -->
+<!-- Props: editorId (string), initialContent (string, HTML) -->
+<script>
+  // Export fungsi init agar halaman parent bisa memanggilnya
+  // Pattern: setiap halaman memanggil window.initTiptap(id, content?) setelah DOM ready
+</script>
+
+<div id="tiptap-wrapper" class="rounded-[10px] border border-border bg-surface overflow-visible shadow-xs">
+  <!-- ============================================================
+       TOOLBAR — sticky di atas area editor, responsive horizontal scroll
+  ============================================================ -->
+  <div
+    id="editor-toolbar"
+    class="sticky top-0 z-20 bg-surface-subtle rounded-t-[10px] p-1.5"
+  >
+    <div class="flex items-center gap-0.5 overflow-x-auto no-scrollbar scroll-smooth py-0.5 px-0.5">
+      <!-- Bold, Italic, Underline, Strike, Code -->
+      <button type="button" data-tip="bold" title="Tebal (Ctrl+B)"
+        class="tbtn shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-muted hover:bg-surface-subtle hover:text-heading">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 256 256">
+          <path d="M178.48,115.7A44,44,0,0,0,148,40H80a8,8,0,0,0-8,8V200a8,8,0,0,0,8,8h80a48,48,0,0,0,18.48-92.3ZM88,56h60a28,28,0,0,1,0,56H88Zm72,136H88V128h72a32,32,0,0,1,0,64Z"/>
+        </svg>
+      </button>
+      <button type="button" data-tip="italic" title="Miring (Ctrl+I)"
+        class="tbtn shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-muted hover:bg-surface-subtle hover:text-heading">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 256 256">
+          <path d="M200,56a8,8,0,0,1-8,8H157.77L115.1,192H144a8,8,0,0,1,0,16H64a8,8,0,0,1,0-16H98.23L140.9,64H112a8,8,0,0,1,0-16h80A8,8,0,0,1,200,56Z"/>
+        </svg>
+      </button>
+      <button type="button" data-tip="underline" title="Garis Bawah (Ctrl+U)"
+        class="tbtn shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-muted hover:bg-surface-subtle hover:text-heading">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 256 256">
+          <path d="M200,224a8,8,0,0,1-8,8H64a8,8,0,0,1,0-16H192A8,8,0,0,1,200,224Zm-72-24a64.07,64.07,0,0,0,64-64V56a8,8,0,0,0-16,0v80a48,48,0,0,1-96,0V56a8,8,0,0,0-16,0v80A64.07,64.07,0,0,0,128,200Z"/>
+        </svg>
+      </button>
+      <button type="button" data-tip="strike" title="Coret"
+        class="tbtn shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-muted hover:bg-surface-subtle hover:text-heading">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 256 256">
+          <path d="M224,128a8,8,0,0,1-8,8H175.93c9.19,7.11,16.07,17.2,16.07,32,0,13.34-7,25.7-19.75,34.79C160.33,211.31,144.61,216,128,216s-32.33-4.69-44.25-13.21C71,193.7,64,181.34,64,168a8,8,0,0,1,16,0c0,17.35,22,32,48,32s48-14.65,48-32c0-14.85-10.54-23.58-38.77-32H40a8,8,0,0,1,0-16H216A8,8,0,0,1,224,128ZM76.33,104a8,8,0,0,0,7.61-10.49A17.3,17.3,0,0,1,83.11,88c0-18.24,19.3-32,44.89-32,18.84,0,34.16,7.42,41,19.85a8,8,0,0,0,14-7.7C173.33,50.52,152.77,40,128,40,93.29,40,67.11,60.63,67.11,88a33.73,33.73,0,0,0,1.62,10.49A8,8,0,0,0,76.33,104Z"/>
+        </svg>
+      </button>
+      <button type="button" data-tip="code" title="Inline Code"
+        class="tbtn shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-muted hover:bg-surface-subtle hover:text-heading">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 256 256">
+          <path d="M69.12,94.15,28.5,128l40.62,33.85a8,8,0,1,1-10.24,12.29l-48-40a8,8,0,0,1,0-12.29l48-40a8,8,0,0,1,10.24,12.3Zm176,27.7-48-40a8,8,0,1,0-10.24,12.3L227.5,128l-40.62,33.85a8,8,0,1,0,10.24,12.29l48-40a8,8,0,0,0,0-12.29ZM162.73,32.48a8,8,0,0,0-10.25,4.79l-64,176a8,8,0,0,0,4.79,10.26A8.14,8.14,0,0,0,96,224a8,8,0,0,0,7.52-5.27l64-176A8,8,0,0,0,162.73,32.48Z"/>
+        </svg>
+      </button>
+
+      <span class="w-px h-4 bg-border mx-1 shrink-0"></span>
+
+      <!-- Heading Dropdown Button -->
+      <button type="button" id="heading-dropdown-btn"
+        class="tbtn shrink-0 h-8 px-2.5 rounded-lg flex items-center gap-1 transition-colors text-muted hover:bg-surface-subtle hover:text-heading text-xs font-semibold cursor-pointer">
+        <span id="heading-btn-label" class="text-xs font-bold">H</span>
+        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" fill="currentColor" viewBox="0 0 256 256">
+          <path d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z"/>
+        </svg>
+      </button>
+
+      <span class="w-px h-4 bg-border mx-1 shrink-0"></span>
+
+      <!-- Lists, Quote, Code Block, Image -->
+      <button type="button" data-tip="bulletList" title="Daftar Poin (Bullet)"
+        class="tbtn shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-muted hover:bg-surface-subtle hover:text-heading">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 256 256">
+          <path d="M224,128a8,8,0,0,1-8,8H40a8,8,0,0,1,0-16H216A8,8,0,0,1,224,128ZM40,72H216a8,8,0,0,0,0-16H40a8,8,0,0,0,0,16ZM216,184H40a8,8,0,0,0,0,16H216a8,8,0,0,0,0-16Z"/>
+        </svg>
+      </button>
+      <button type="button" data-tip="orderedList" title="Daftar Nomor"
+        class="tbtn shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-muted hover:bg-surface-subtle hover:text-heading">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 256 256">
+          <path d="M224,128a8,8,0,0,1-8,8H104a8,8,0,0,1,0-16H216A8,8,0,0,1,224,128ZM104,72H216a8,8,0,0,0,0-16H104a8,8,0,0,0,0,16ZM216,184H104a8,8,0,0,0,0,16H216a8,8,0,0,0,0-16ZM43.58,55.16,48,52.94V104a8,8,0,0,0,16,0V40a8,8,0,0,0-11.58-7.16l-16,8a8,8,0,0,0,7.16,14.32ZM79.77,156.72a23.73,23.73,0,0,0-9.6-15.95,24.86,24.86,0,0,0-34.11,4.7,23.63,23.63,0,0,0-3.57,6.46,8,8,0,1,0,15,5.47,7.84,7.84,0,0,1,1.18-2.13,8.76,8.76,0,0,1,12-1.59A7.91,7.91,0,0,1,63.93,159a7.64,7.64,0,0,1-1.57,5.78L33.59,203.21A8,8,0,0,0,40,216H72a8,8,0,0,0,0-16H56l19.08-25.53A23.47,23.47,0,0,0,79.77,156.72Z"/>
+        </svg>
+      </button>
+      <button type="button" data-tip="blockquote" title="Kutipan (Quote)"
+        class="tbtn shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-muted hover:bg-surface-subtle hover:text-heading">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 256 256">
+          <path d="M100,56H40A16,16,0,0,0,24,72v64a16,16,0,0,0,16,16h60v8a32,32,0,0,1-32,32,8,8,0,0,0,0,16,48.05,48.05,0,0,0,48-48V72A16,16,0,0,0,100,56Zm0,80H40V72h60ZM216,56H156a16,16,0,0,0-16,16v64a16,16,0,0,0,16,16h60v8a32,32,0,0,1-32,32,8,8,0,0,0,0,16,48.05,48.05,0,0,0,48-48V72A16,16,0,0,0,216,56Zm0,80H156V72h60Z"/>
+        </svg>
+      </button>
+      <button type="button" data-tip="codeBlock" title="Blok Kode"
+        class="tbtn shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-muted hover:bg-surface-subtle hover:text-heading">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 256 256">
+          <path d="M58.34,101.66l-32-32a8,8,0,0,1,0-11.32l32-32A8,8,0,0,1,69.66,37.66L43.31,64,69.66,90.34a8,8,0,0,1-11.32,11.32Zm40,0a8,8,0,0,0,11.32,0l32-32a8,8,0,0,0,0-11.32l-32-32A8,8,0,0,0,98.34,37.66L124.69,64,98.34,90.34A8,8,0,0,0,98.34,101.66ZM200,40H176a8,8,0,0,0,0,16h24V200H56V136a8,8,0,0,0-16,0v64a16,16,0,0,0,16,16H200a16,16,0,0,0,16-16V56A16,16,0,0,0,200,40Z"/>
+        </svg>
+      </button>
+      <button type="button" data-tip="image" title="Sisipkan Gambar Inline"
+        class="tbtn shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-muted hover:bg-surface-subtle hover:text-heading">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 256 256">
+          <path d="M216,40H40A16,16,0,0,0,24,56V200a16,16,0,0,0,16,16H216a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40Zm0,16V158.75l-26.07-26.06a16,16,0,0,0-22.63,0l-20,20-44-44a16,16,0,0,0-22.62,0L40,149.37V56ZM40,172l52-52,80,80H40Zm176,28H194.63l-36-36,20-20L216,181.38V200ZM144,100a12,12,0,1,1,12,12A12,12,0,0,1,144,100Z"/>
+        </svg>
+      </button>
+
+      <span class="w-px h-4 bg-border mx-1 shrink-0"></span>
+
+      <!-- Alignment -->
+      <button type="button" data-tip="alignLeft" title="Rata Kiri"
+        class="tbtn shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-muted hover:bg-surface-subtle hover:text-heading">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 256 256">
+          <path d="M32,64a8,8,0,0,1,8-8H216a8,8,0,0,1,0,16H40A8,8,0,0,1,32,64Zm8,48H168a8,8,0,0,0,0-16H40a8,8,0,0,0,0,16Zm176,24H40a8,8,0,0,0,0,16H216a8,8,0,0,0,0-16Zm-48,40H40a8,8,0,0,0,0,16H168a8,8,0,0,0,0-16Z"/>
+        </svg>
+      </button>
+      <button type="button" data-tip="alignCenter" title="Rata Tengah"
+        class="tbtn shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-muted hover:bg-surface-subtle hover:text-heading">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 256 256">
+          <path d="M32,64a8,8,0,0,1,8-8H216a8,8,0,0,1,0,16H40A8,8,0,0,1,32,64ZM64,96a8,8,0,0,0,0,16H192a8,8,0,0,0,0-16Zm152,40H40a8,8,0,0,0,0,16H216a8,8,0,0,0,0-16Zm-24,40H64a8,8,0,0,0,0,16H192a8,8,0,0,0,0-16Z"/>
+        </svg>
+      </button>
+      <button type="button" data-tip="alignRight" title="Rata Kanan"
+        class="tbtn shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-muted hover:bg-surface-subtle hover:text-heading">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 256 256">
+          <path d="M32,64a8,8,0,0,1,8-8H216a8,8,0,0,1,0,16H40A8,8,0,0,1,32,64ZM216,96H88a8,8,0,0,0,0,16H216a8,8,0,0,0,0-16Zm0,40H40a8,8,0,0,0,0,16H216a8,8,0,0,0,0-16Zm0,40H88a8,8,0,0,0,0,16H216a8,8,0,0,0,0-16Z"/>
+        </svg>
+      </button>
+
+      <span class="w-px h-4 bg-border mx-1 shrink-0"></span>
+
+      <!-- Link -->
+      <button type="button" data-tip="link" title="Sisipkan Tautan (Ctrl+K)"
+        class="tbtn shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-muted hover:bg-surface-subtle hover:text-heading">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 256 256">
+          <path d="M240,88.23a54.43,54.43,0,0,1-16,37L189.25,160a54.27,54.27,0,0,1-38.63,16h-.05A54.63,54.63,0,0,1,96,119.84a8,8,0,0,1,16,.45A38.62,38.62,0,0,0,150.58,160h0a38.39,38.39,0,0,0,27.31-11.31l34.75-34.75a38.63,38.63,0,0,0-54.63-54.63l-11,11A8,8,0,0,1,135.7,59l11-11A54.65,54.65,0,0,1,224,48,54.86,54.86,0,0,1,240,88.23ZM109,185.66l-11,11A38.41,38.41,0,0,1,70.6,208h0a38.63,38.63,0,0,1-27.29-65.94L78,107.31A38.63,38.63,0,0,1,144,135.71a8,8,0,0,0,16,.45A54.86,54.86,0,0,0,144,96a54.65,54.65,0,0,0-77.27,0L32,130.75A54.62,54.62,0,0,0,70.56,224h0a54.28,54.28,0,0,0,38.64-16l11-11A8,8,0,0,0,109,185.66Z"/>
+        </svg>
+      </button>
+
+      <span class="w-px h-4 bg-border mx-1 shrink-0"></span>
+
+      <!-- Undo & Redo -->
+      <button type="button" data-tip="undo" title="Urungkan (Ctrl+Z)"
+        class="tbtn shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-muted hover:bg-surface-subtle hover:text-heading">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 256 256">
+          <path d="M232,144a64.07,64.07,0,0,1-64,64H80a8,8,0,0,1,0-16h88a48,48,0,0,0,0-96H51.31l34.35,34.34a8,8,0,0,1-11.32,11.32l-48-48a8,8,0,0,1,0-11.32l48-48A8,8,0,0,1,85.66,45.66L51.31,80H168A64.07,64.07,0,0,1,232,144Z"/>
+        </svg>
+      </button>
+      <button type="button" data-tip="redo" title="Ulangi (Ctrl+Y)"
+        class="tbtn shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors text-muted hover:bg-surface-subtle hover:text-heading">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="currentColor" viewBox="0 0 256 256">
+          <path d="M170.34,130.34,204.69,96H88a48,48,0,0,0,0,96h88a8,8,0,0,1,0,16H88A64,64,0,0,1,88,80H204.69L170.34,45.66a8,8,0,0,1,11.32-11.32l48,48a8,8,0,0,1,0,11.32l-48,48a8,8,0,0,1-11.32-11.32Z"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Heading Dropdown Menu — di luar container overflow-x-auto, fixed & floating bebas -->
+  <div id="heading-dropdown-menu"
+    class="hidden fixed w-48 rounded-[8px] border border-border bg-surface p-1 shadow-2xl z-50 space-y-0.5">
+    <button type="button" data-heading="1" class="h-item w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-heading hover:bg-surface-subtle rounded-[4px] text-left cursor-pointer transition-colors">
+      <span class="font-bold text-muted w-5 text-[11px]">H₁</span><span>Heading 1</span>
+    </button>
+    <button type="button" data-heading="2" class="h-item w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-heading hover:bg-surface-subtle rounded-[4px] text-left cursor-pointer transition-colors">
+      <span class="font-bold text-muted w-5 text-[11px]">H₂</span><span>Heading 2</span>
+    </button>
+    <button type="button" data-heading="3" class="h-item w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-heading hover:bg-surface-subtle rounded-[4px] text-left cursor-pointer transition-colors">
+      <span class="font-bold text-muted w-5 text-[11px]">H₃</span><span>Heading 3</span>
+    </button>
+    <button type="button" data-heading="4" class="h-item w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-heading hover:bg-surface-subtle rounded-[4px] text-left cursor-pointer transition-colors">
+      <span class="font-bold text-muted w-5 text-[11px]">H₄</span><span>Heading 4</span>
+    </button>
+    <button type="button" data-heading="5" class="h-item w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-heading hover:bg-surface-subtle rounded-[4px] text-left cursor-pointer transition-colors">
+      <span class="font-bold text-muted w-5 text-[11px]">H₅</span><span>Heading 5</span>
+    </button>
+    <button type="button" data-heading="6" class="h-item w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-heading hover:bg-surface-subtle rounded-[4px] text-left cursor-pointer transition-colors">
+      <span class="font-bold text-muted w-5 text-[11px]">H₆</span><span>Heading 6</span>
+    </button>
+    <div class="pt-1 mt-1">
+      <button type="button" data-heading="0" class="h-item w-full flex items-center gap-2.5 px-3 py-1.5 text-xs text-heading hover:bg-surface-subtle rounded-[4px] text-left cursor-pointer transition-colors">
+        <span class="font-bold text-muted w-5 text-[11px]">P</span><span>Paragraf Normal</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Editor Area -->
+  <div id="editor-prosemirror-mount" class="px-5 py-4 min-h-[320px] tiptap-prose"></div>
+
+  <!-- Footer: Word · Char · Read time -->
+  <div class="border-t border-border px-5 py-3">
+    <div class="flex items-center gap-3">
+      <span class="h-px flex-1 bg-border/60"></span>
+      <div class="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[11px] text-muted tabular-nums select-none">
+        <span id="tip-words">0 kata</span>
+        <span aria-hidden="true">·</span>
+        <span id="tip-chars">0 karakter</span>
+        <span aria-hidden="true">·</span>
+        <span id="tip-read">1 menit baca</span>
+      </div>
+      <span class="h-px flex-1 bg-border/60"></span>
+    </div>
+  </div>
+</div>
+
+<style is:global>
+  /* ============================================================
+     Tiptap ProseMirror Visual Styles — Editorial Modern & Bersih
+  ============================================================ */
+  .tiptap-prose .ProseMirror {
+    outline: none;
+    min-height: 280px;
+    font-size: 0.9375rem;
+    line-height: 1.75;
+    color: #1e293b;
+    font-weight: 400 !important; /* PENTING: teks default normal 400, tidak bold */
+  }
+
+  /* Paragraph — normal weight 400, tidak bold kecuali ada <strong> */
+  .tiptap-prose .ProseMirror p {
+    margin-bottom: 0.75rem;
+    font-weight: 400 !important;
+    line-height: 1.75;
+    color: #1e293b;
+  }
+
+  /* Headings — tegas, elegan */
+  .tiptap-prose .ProseMirror h1 { font-size: 1.75rem; font-weight: 700; margin: 1.5rem 0 0.5rem; line-height: 1.25; color: #0f172a; }
+  .tiptap-prose .ProseMirror h2 { font-size: 1.35rem; font-weight: 700; margin: 1.25rem 0 0.4rem; line-height: 1.3; color: #0f172a; }
+  .tiptap-prose .ProseMirror h3 { font-size: 1.15rem; font-weight: 600; margin: 1rem 0 0.35rem; color: #0f172a; }
+  .tiptap-prose .ProseMirror h4 { font-size: 1rem; font-weight: 600; margin: 0.75rem 0 0.25rem; color: #0f172a; }
+  .tiptap-prose .ProseMirror h5, .tiptap-prose .ProseMirror h6 { font-size: 0.9rem; font-weight: 600; margin: 0.5rem 0 0.2rem; color: #0f172a; }
+
+  /* Marks — Bold HANYA ketika diberi <strong> */
+  .tiptap-prose .ProseMirror strong { font-weight: 700 !important; color: #0f172a; }
+  .tiptap-prose .ProseMirror em { font-style: italic; }
+  .tiptap-prose .ProseMirror u { text-decoration: underline; }
+  .tiptap-prose .ProseMirror s { text-decoration: line-through; }
+  .tiptap-prose .ProseMirror code {
+    font-family: var(--font-mono);
+    background: #f1f5f9;
+    color: #0f172a;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.85em;
+    font-weight: 400;
+    border: 1px solid #e2e8f0;
+  }
+
+  /* Blockquote — garis solid tebal di kiri (sesuai gambar referensi) */
+  .tiptap-prose .ProseMirror blockquote {
+    border-left: 3px solid #0f172a;
+    padding-left: 1rem;
+    margin: 1rem 0;
+    font-style: normal;
+    color: #0f172a;
+    font-weight: 500;
+  }
+
+  /* Lists */
+  .tiptap-prose .ProseMirror ul { list-style-type: disc; padding-left: 1.5rem; margin: 0.75rem 0; }
+  .tiptap-prose .ProseMirror ol { list-style-type: decimal; padding-left: 1.5rem; margin: 0.75rem 0; }
+  .tiptap-prose .ProseMirror li { margin-bottom: 0.25rem; font-weight: 400; }
+  .tiptap-prose .ProseMirror li > p { margin-bottom: 0; }
+
+  /* Code Block */
+  .tiptap-prose .ProseMirror pre {
+    background: #0f172a;
+    color: #f8fafc;
+    padding: 1rem;
+    border-radius: 8px;
+    margin: 1rem 0;
+    overflow-x: auto;
+    font-size: 0.85em;
+  }
+  .tiptap-prose .ProseMirror pre code { background: transparent; padding: 0; color: inherit; font-weight: 400; border: 0; }
+
+  /* Link */
+  .tiptap-prose .ProseMirror a { color: #2563eb; text-decoration: underline; text-underline-offset: 2px; }
+
+  /* Image */
+  .tiptap-prose .ProseMirror img { max-width: 100%; border-radius: 8px; margin: 0.75rem 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+
+  /* HR */
+  .tiptap-prose .ProseMirror hr { border: 0; border-top: 1px solid #e2e8f0; margin: 1.5rem 0; }
+
+  /* Placeholder */
+  .tiptap-prose .ProseMirror p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    color: #94a3b8;
+    float: left;
+    height: 0;
+    pointer-events: none;
+    font-weight: 400;
+  }
+
+  /* Active toolbar button state — Neutral pill sesuai gambar referensi */
+  .tbtn.is-active {
+    background-color: #e2e8f0 !important;
+    color: #0f172a !important;
+    font-weight: 600;
+  }
+
+  /* Hide scrollbar for toolbar */
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+</style>

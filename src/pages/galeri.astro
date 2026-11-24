@@ -1,0 +1,379 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import Breadcrumb from "../components/Breadcrumb.astro";
+import Icon from "../components/Icon.astro";
+import { db, galleries, settings } from "../db";
+import { desc } from "drizzle-orm";
+
+export const prerender = false;
+
+// Ambil konfigurasi sekolah dari basis data
+const allSettings = await db.select().from(settings).catch(() => []);
+const schoolInfo = allSettings.reduce(
+  (acc, curr) => {
+    acc[curr.key] = curr.value;
+    return acc;
+  },
+  {} as Record<string, string>,
+);
+const schoolName = schoolInfo["school_name"] || "SMAN 1 Unggulan";
+
+// Ambil seluruh data galeri dari basis data
+const rawGalleries = await db
+  .select()
+  .from(galleries)
+  .orderBy(desc(galleries.createdAt), desc(galleries.id))
+  .catch(() => []);
+
+const fallbackGalleries = [
+  {
+    id: 1,
+    title: "Upacara Bendera Hari Senin & Apel Kedisiplinan Siswa",
+    caption: "Wujud pengabdian dan penanaman nilai nasionalisme seluruh sivitas akademika di lapangan utama.",
+    mediaUrl: "https://images.unsplash.com/photo-1541829070764-84a7d30dd3f3?auto=format&fit=crop&w=1200&q=80",
+    albumName: "Upacara & Apel",
+    type: "image",
+    createdAt: "2026-10-28",
+  },
+  {
+    id: 2,
+    title: "Praktikum Sains & Riset Laboratorium Bioteknologi",
+    caption: "Eksplorasi penelitian kultur jaringan dan fermentasi oleh siswa kelas riset unggulan.",
+    mediaUrl: "https://images.unsplash.com/photo-1581092921461-eab62e97a780?auto=format&fit=crop&w=800&q=80",
+    albumName: "Akademik & Sains",
+    type: "image",
+    createdAt: "2026-10-25",
+  },
+  {
+    id: 3,
+    title: "Gelar Karya Proyek Penguatan Profil Pelajar Pancasila (P5)",
+    caption: "Pameran produk kewirausahaan hijau dan parade busana adat nusantara kreasi siswa.",
+    mediaUrl: "https://images.unsplash.com/photo-1524178232363-1fb2b075b655?auto=format&fit=crop&w=800&q=80",
+    albumName: "P5 & Budaya",
+    type: "image",
+    createdAt: "2026-10-20",
+  },
+  {
+    id: 4,
+    title: "Sosialisasi Budaya Kampus Ramah & Aman Lingkungan",
+    caption: "Edukasi penguatan karakter, pencegahan perundungan, dan keselamatan berkendara bersama instansi kepolisian.",
+    mediaUrl: "https://images.unsplash.com/photo-1577896851231-70ef18881754?auto=format&fit=crop&w=800&q=80",
+    albumName: "Kesiswaan",
+    type: "image",
+    createdAt: "2026-10-18",
+  },
+  {
+    id: 5,
+    title: "Turnamen Olahraga Antar Kelas & Pentas Seni Siswa",
+    caption: "Ajang sportivitas perebutan piala bergilir kepala sekolah sekaligus wadah ekspresi musik siswa.",
+    mediaUrl: "https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=800&q=80",
+    albumName: "Olahraga & Seni",
+    type: "image",
+    createdAt: "2026-10-12",
+  },
+  {
+    id: 6,
+    title: "Simulasi Ujian Berbasis Komputer & Asesmen Nasional",
+    caption: "Uji kesiapan infrastruktur IT dan kematangan literasi numerasi siswa di laboratorium komputer.",
+    mediaUrl: "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80",
+    albumName: "Akademik & Sains",
+    type: "image",
+    createdAt: "2026-10-05",
+  },
+  {
+    id: 7,
+    title: "Latihan Dasar Kepemimpinan Siswa (LDKS) Pengurus OSIS",
+    caption: "Karantina kepemimpinan, manajemen organisasi, dan perumusan program kerja tahunan.",
+    mediaUrl: "https://images.unsplash.com/photo-1517486808906-6ca8b3f04846?auto=format&fit=crop&w=800&q=80",
+    albumName: "Kesiswaan",
+    type: "image",
+    createdAt: "2026-09-28",
+  },
+  {
+    id: 8,
+    title: "Bakti Sosial & Santunan Yatim Peringatan Maulid Nabi",
+    caption: "Penyaluran sembako dan donasi peduli masyarakat sekitar lingkungan kampus.",
+    mediaUrl: "https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&w=800&q=80",
+    albumName: "Kesiswaan",
+    type: "image",
+    createdAt: "2026-09-15",
+  },
+];
+
+const galleryList = rawGalleries.length > 0 ? rawGalleries : fallbackGalleries;
+
+// Daftar album unik untuk tab filter
+const albums = ["Semua", ...new Set(galleryList.map((g) => g.albumName || "Umum"))];
+---
+
+<Layout
+  title={`Galeri Kegiatan & Dokumentasi — ${schoolName}`}
+  description="Dokumentasi foto dan rekaman visual dinamika pendidikan, prestasi, perayaan hari besar, dan kegiatan kesiswaan."
+>
+  <Header currentPath="/galeri" />
+
+  <main class="flex-1 py-10 sm:py-14 bg-background">
+    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <!-- Breadcrumb -->
+      <Breadcrumb
+        items={[
+          { label: "Beranda", href: "/" },
+          { label: "Galeri Kegiatan" },
+        ]}
+      />
+
+      <!-- Section Title Header -->
+      <div class="pb-2 mb-8 space-y-4">
+        <h1 class="font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-heading">
+          Galeri Kegiatan Sekolah
+        </h1>
+        <p class="font-body text-sm sm:text-base text-muted max-w-2xl leading-relaxed">
+          Kilas dokumentasi visual rangkaian pembelajaran, pembinaan karakter, peringatan hari nasional, serta momen kebersamaan seluruh keluarga besar {schoolName}.
+        </p>
+
+        <!-- Stats Counter (Kartu KPI Mandiri) -->
+        <div class="mt-6 flex flex-wrap gap-3 sm:gap-4">
+          <div class="rounded-[10px] border border-border bg-surface px-4 py-2.5 shadow-xs">
+            <span class="font-display text-lg sm:text-xl font-bold tracking-tight text-primary leading-none block">
+              {galleryList.length}
+            </span>
+            <span class="mt-1 font-body text-xs text-muted block whitespace-nowrap">
+              Foto Dokumentasi
+            </span>
+          </div>
+          <div class="rounded-[10px] border border-border bg-surface px-4 py-2.5 shadow-xs">
+            <span class="font-display text-lg sm:text-xl font-bold tracking-tight text-primary leading-none block">
+              {albums.length - 1}
+            </span>
+            <span class="mt-1 font-body text-xs text-muted block whitespace-nowrap">
+              Album Kegiatan
+            </span>
+          </div>
+          <div class="rounded-[10px] border border-border bg-surface px-4 py-2.5 shadow-xs">
+            <span class="font-display text-lg sm:text-xl font-bold tracking-tight text-primary leading-none block">
+              Terverifikasi
+            </span>
+            <span class="mt-1 font-body text-xs text-muted block whitespace-nowrap">
+              Arsip Resmi Kampus
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filter Album Tabs -->
+      <div
+        class="flex items-center gap-2 overflow-x-auto pb-2 mb-8 scrollbar-none *:shrink-0 *:rounded-[6px] *:px-3.5 *:py-1.5 *:font-body *:text-xs *:transition-colors"
+        id="gallery-filter-bar"
+      >
+        {albums.map((album, idx) => (
+          <button
+            type="button"
+            data-album={album}
+            class:list={[
+              "filter-btn cursor-pointer",
+              idx === 0
+                ? "bg-primary font-semibold text-white shadow-xs"
+                : "border border-border bg-surface font-medium text-muted hover:border-border-hover hover:text-heading hover:bg-surface-subtle"
+            ]}
+          >
+            {album}
+          </button>
+        ))}
+      </div>
+
+      <!-- Grid Foto Galeri -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6" id="gallery-grid">
+        {galleryList.map((item) => (
+          <article
+            class="gallery-item group overflow-hidden rounded-[12px] border border-border bg-surface transition-all duration-200 hover:-translate-y-0.5 hover:border-border-hover hover:shadow-(--shadow-hover) flex flex-col justify-between cursor-pointer"
+            data-album={item.albumName || "Umum"}
+            data-full-img={item.mediaUrl}
+            data-title={item.title}
+            data-caption={item.caption || ""}
+          >
+            <div>
+              <div class="relative aspect-[16/10] w-full overflow-hidden bg-surface-subtle">
+                <img
+                  src={item.mediaUrl}
+                  alt={item.title}
+                  width="600"
+                  height="375"
+                  class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                  loading="lazy"
+                />
+                <div class="absolute top-3 left-3">
+                  <span class="rounded-[4px] border border-white/20 bg-black/60 backdrop-blur-xs px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-white shadow-xs">
+                    {item.albumName || "Kegiatan"}
+                  </span>
+                </div>
+              </div>
+
+              <div class="p-5 space-y-2">
+                <h2 class="font-display text-base sm:text-lg font-bold text-heading leading-snug transition-colors group-hover:text-primary">
+                  {item.title}
+                </h2>
+                {item.caption && (
+                  <p class="font-body text-xs sm:text-sm text-muted leading-relaxed line-clamp-2">
+                    {item.caption}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div class="px-5 pb-5 pt-0 flex items-center justify-between text-xs text-muted">
+              <span class="rounded-[4px] border border-border bg-surface-subtle px-2 py-0.5 text-[11px] font-medium text-muted">
+                {item.albumName || "Umum"}
+              </span>
+              <span class="inline-flex items-center gap-1 font-semibold text-primary group-hover:underline">
+                <span>Perbesar</span>
+                <Icon name="chevron-right" class="h-3 w-3" />
+              </span>
+            </div>
+          </article>
+        ))}
+
+        <!-- State Kosong jika Album Tidak Memiliki Foto -->
+        <div
+          id="empty-state"
+          class="hidden rounded-[12px] border border-border bg-surface p-12 text-center max-w-md mx-auto space-y-3 shadow-xs col-span-full"
+        >
+          <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-surface-subtle text-muted">
+            <Icon name="search" class="h-6 w-6 text-muted" />
+          </div>
+          <h3 class="font-display text-base font-bold text-heading">
+            Tidak Ada Dokumentasi
+          </h3>
+          <p class="font-body text-xs text-muted">
+            Belum ada dokumentasi visual yang diarsipkan pada album kegiatan ini.
+          </p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Lightbox Modal untuk Preview Foto Resolusi Penuh -->
+  <div
+    id="lightbox-modal"
+    class="fixed inset-0 z-50 hidden bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Penampil Foto Resolusi Penuh"
+  >
+    <div class="relative max-w-4xl w-full bg-surface rounded-[12px] border border-border overflow-hidden shadow-2xl">
+      <!-- Tombol Tutup -->
+      <button
+        id="lightbox-close"
+        type="button"
+        class="absolute top-3 right-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black transition-colors cursor-pointer"
+        aria-label="Tutup penampil foto"
+      >
+        <Icon name="close" class="h-5 w-5" />
+      </button>
+
+      <!-- Area Foto -->
+      <div class="aspect-[16/10] sm:aspect-[16/9] w-full bg-black flex items-center justify-center overflow-hidden">
+        <img id="lightbox-img" src="" alt="Pratinjau Foto Dokumentasi" width="1200" height="800" class="h-full w-full object-contain" />
+      </div>
+
+      <!-- Info Foto di Bawah -->
+      <div class="p-4 sm:p-5 bg-surface space-y-1">
+        <h3 id="lightbox-title" class="font-display text-base sm:text-lg font-bold text-heading"></h3>
+        <p id="lightbox-caption" class="font-body text-xs sm:text-sm text-muted leading-relaxed"></p>
+      </div>
+    </div>
+  </div>
+
+  <Footer />
+
+  <script>
+    function initGalleryPage() {
+      // 1. Filter Tab
+      const filterBar = document.getElementById('gallery-filter-bar');
+      const grid = document.getElementById('gallery-grid');
+      const emptyState = document.getElementById('empty-state');
+      const buttons = filterBar?.querySelectorAll<HTMLButtonElement>('.filter-btn') || [];
+      const items = grid?.querySelectorAll<HTMLElement>('.gallery-item') || [];
+
+      buttons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const selected = btn.getAttribute('data-album');
+
+          buttons.forEach((b) => {
+            b.classList.remove('bg-primary', 'text-white', 'font-semibold', 'shadow-xs');
+            b.classList.add('border', 'border-border', 'bg-surface', 'text-muted', 'hover:border-border-hover', 'hover:text-heading', 'hover:bg-surface-subtle');
+          });
+          btn.classList.remove('border', 'border-border', 'bg-surface', 'text-muted', 'hover:border-border-hover', 'hover:text-heading', 'hover:bg-surface-subtle');
+          btn.classList.add('bg-primary', 'text-white', 'font-semibold', 'shadow-xs');
+
+          let visibleCount = 0;
+          items.forEach((item) => {
+            const album = item.getAttribute('data-album');
+            if (selected === 'Semua' || album === selected) {
+              item.classList.remove('hidden');
+              visibleCount++;
+            } else {
+              item.classList.add('hidden');
+            }
+          });
+
+          if (emptyState) {
+            if (visibleCount === 0) {
+              emptyState.classList.remove('hidden');
+            } else {
+              emptyState.classList.add('hidden');
+            }
+          }
+        });
+      });
+
+      // 2. Lightbox Modal
+      const modal = document.getElementById('lightbox-modal');
+      const modalImg = document.getElementById('lightbox-img') as HTMLImageElement | null;
+      const modalTitle = document.getElementById('lightbox-title');
+      const modalCaption = document.getElementById('lightbox-caption');
+      const closeBtn = document.getElementById('lightbox-close');
+
+      items.forEach((item) => {
+        item.addEventListener('click', () => {
+          const fullImg = item.getAttribute('data-full-img') || '';
+          const title = item.getAttribute('data-title') || '';
+          const caption = item.getAttribute('data-caption') || '';
+
+          if (modalImg) {
+            modalImg.src = fullImg;
+            modalImg.alt = title;
+          }
+          if (modalTitle) modalTitle.textContent = title;
+          if (modalCaption) modalCaption.textContent = caption;
+
+          modal?.classList.remove('hidden');
+        });
+      });
+
+      function closeModal() {
+        modal?.classList.add('hidden');
+        if (modalImg) modalImg.src = '';
+      }
+
+      closeBtn?.addEventListener('click', closeModal);
+      modal?.addEventListener('click', (e) => {
+        if (e.target === modal) closeModal();
+      });
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !modal?.classList.contains('hidden')) {
+          closeModal();
+        }
+      });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initGalleryPage);
+    } else {
+      initGalleryPage();
+    }
+  </script>
+</Layout>
+

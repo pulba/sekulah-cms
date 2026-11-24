@@ -1,0 +1,908 @@
+---
+import AdminLayout from "../../../layouts/AdminLayout.astro";
+import MediaPickerModal from "../../../components/MediaPickerModal.astro";
+import Icon from "../../../components/Icon.astro";
+import Pagination from "../../../components/Pagination.astro";
+import { db, teachers } from "../../../db";
+import { sql } from "drizzle-orm";
+
+export const prerender = false;
+
+const currentPage = Math.max(1, parseInt(Astro.url.searchParams.get('page') || '1', 10) || 1);
+const pageSize = 10;
+
+const totalFiltered = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(teachers)
+  .then(r => Number(r[0]?.count || 0));
+
+const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
+const validPage = Math.min(currentPage, totalPages);
+const offset = (validPage - 1) * pageSize;
+
+const teachersList = await db
+  .select()
+  .from(teachers)
+  .orderBy(teachers.orderNumber)
+  .limit(pageSize)
+  .offset(offset);
+
+function getPageUrl(p: number) {
+  const params = new URLSearchParams(Astro.url.searchParams);
+  if (p > 1) {
+    params.set('page', String(p));
+  } else {
+    params.delete('page');
+  }
+  const qs = params.toString();
+  return `/admin/direktori${qs ? `?${qs}` : ''}`;
+}
+---
+
+<AdminLayout title="Manajemen Guru & Staf" activeNav="direktori">
+  <div class="space-y-8 max-w-6xl">
+    <div
+      class="pb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+    >
+      <div>
+        <h1 class="font-display text-2xl font-bold tracking-tight text-heading">
+          Direktori Guru & Tenaga Kependidikan
+        </h1>
+        <p class="mt-1 font-body text-xs text-muted">
+          Kelola profil pengajar, NIP resmi, urutan hierarki pimpinan, dan
+          status aktif mengajar.
+        </p>
+      </div>
+      <div class="flex items-center gap-2">
+        <button
+          id="open-import-modal-btn"
+          type="button"
+          class="inline-flex h-[36px] items-center justify-center gap-1.5 rounded-[6px] border border-border bg-surface px-3.5 text-xs font-semibold text-heading hover:bg-surface-subtle transition-all shadow-xs shrink-0 cursor-pointer"
+        >
+          <Icon name="download" class="h-4 w-4 text-success rotate-180" />
+          <span>Unggah via Excel</span>
+        </button>
+        <button
+          id="open-modal-btn"
+          class="inline-flex h-[36px] items-center justify-center gap-1.5 rounded-[6px] bg-primary px-4 text-xs font-semibold text-white transition-all hover:bg-primary-hover shadow-xs shrink-0 cursor-pointer"
+        >
+          <Icon name="plus" class="h-4 w-4" />
+          <span>Tambah Tendik</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Alert / Toast Status Banner -->
+    <div id="status-banner" class="hidden rounded-[6px] p-3 text-xs font-semibold transition-all"></div>
+
+    <!-- Tabel Daftar Guru -->
+    <div
+      class="rounded-[8px] border border-border bg-surface overflow-hidden shadow-xs"
+    >
+      <div class="p-4 flex items-center justify-between">
+        <h2 class="font-display text-sm font-bold text-heading">
+          Daftar Guru & Staf
+        </h2>
+        <span class="text-[11px] text-muted font-mono"
+          >Halaman {validPage} dari {totalPages}</span
+        >
+      </div>
+
+      {
+        teachersList.length === 0 ? (
+          <div class="p-12 text-center text-xs text-muted">
+            Belum ada data guru tersimpan. Klik "Tambah Tenaga Pendidik" untuk
+            memulai.
+          </div>
+        ) : (
+          <div class="overflow-x-auto">
+            <table class="w-full text-left font-body text-xs">
+              <thead class="bg-surface-subtle text-[11px] font-semibold text-muted uppercase">
+                <tr>
+                  <th class="py-3 px-4 w-12 text-center">No</th>
+                  <th class="py-3 px-4">Nama Lengkap & NIP</th>
+                  <th class="py-3 px-4">Jabatan & Kategori</th>
+                  <th class="py-3 px-4">Mata Pelajaran</th>
+                  <th class="py-3 px-4 text-center">Status</th>
+                  <th class="py-3 px-4 text-right">Tindakan</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-border">
+                {teachersList.map((item, index) => (
+                  <tr
+                    class="hover:bg-surface-subtle transition-colors"
+                    id={`row-${item.id}`}
+                  >
+                    <td class="py-3 px-4 text-center font-mono font-medium text-muted">
+                      {offset + index + 1}
+                    </td>
+                    <td class="py-3 px-4">
+                      <div class="flex items-center gap-3">
+                        {item.photoUrl ? (
+                          <img
+                            src={item.photoUrl}
+                            alt={item.name}
+                            class="h-9 w-9 rounded-full object-cover border border-border shrink-0"
+                          />
+                        ) : (
+                          <div class="h-9 w-9 rounded-full bg-surface-subtle border border-border flex items-center justify-center font-display font-bold text-xs text-heading shrink-0">
+                            {item.name.charAt(0)}
+                          </div>
+                        )}
+                        <div>
+                          <button
+                            type="button"
+                            class="edit-btn font-bold text-heading hover:text-primary hover:underline text-left cursor-pointer transition-colors block"
+                            data-item={JSON.stringify(item)}
+                            title={`Edit data: ${item.name}`}
+                          >
+                            {item.name}
+                          </button>
+                          <p class="font-mono text-[10px] text-muted">
+                            NIP: {item.nip || "-"}
+                          </p>
+                        </div>
+                      </div>
+                    </td>
+                    <td class="py-3 px-4">
+                      <p class="font-medium text-heading">{item.position}</p>
+                      <span class:list={[
+                        "inline-block mt-0.5 rounded-[4px] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider",
+                        item.category === "pimpinan" ? "bg-primary-light text-primary" : item.category === "tendik" ? "bg-surface-subtle text-muted border border-border" : "bg-secondary-light text-secondary-foreground"
+                      ]}>
+                        {item.category === "pimpinan" ? "Pimpinan" : item.category === "tendik" ? "Tendik" : "Pendidik"}
+                      </span>
+                    </td>
+                    <td class="py-3 px-4 text-muted">{item.subject || "-"}</td>
+                    <td class="py-3 px-4 text-center">
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={item.isActive ? "true" : "false"}
+                        class:list={[
+                          "toggle-status-btn relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out",
+                          item.isActive ? "bg-primary" : "bg-border"
+                        ]}
+                        data-id={item.id}
+                        title={item.isActive ? "Aktif (Klik untuk menonaktifkan)" : "Nonaktif (Klik untuk mengaktifkan)"}
+                        aria-label={item.isActive ? "Nonaktifkan status guru" : "Aktifkan status guru"}
+                      >
+                        <span class="sr-only">{item.isActive ? 'Aktif' : 'Nonaktif'}</span>
+                        <span
+                          aria-hidden="true"
+                          class:list={[
+                            "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out",
+                            item.isActive ? "translate-x-4" : "translate-x-0"
+                          ]}
+                        />
+                      </button>
+                    </td>
+                    <td class="py-3 px-4 text-right whitespace-nowrap">
+                      <div class="inline-flex items-center gap-1.5 *:inline-flex *:h-7 *:w-7 *:items-center *:justify-center *:rounded-[6px] *:border *:transition-colors *:cursor-pointer">
+                        <button
+                          type="button"
+                          class="edit-btn border-border bg-surface text-muted hover:text-primary hover:border-primary/40 hover:bg-surface-subtle shadow-2xs"
+                          data-item={JSON.stringify(item)}
+                          title="Edit Data Guru"
+                          aria-label="Edit Data Guru"
+                        >
+                          <Icon name="edit" class="h-3.5 w-3.5 pointer-events-none" />
+                        </button>
+                        <button
+                          type="button"
+                          class="delete-btn border-border bg-surface text-muted hover:text-error hover:border-error/40 hover:bg-error-light shadow-2xs"
+                          data-id={item.id}
+                          title="Hapus Data Guru"
+                          aria-label="Hapus Data Guru"
+                        >
+                          <Icon name="trash" class="h-3.5 w-3.5 pointer-events-none" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      }
+
+      {
+        totalFiltered > 0 && (
+          <Pagination
+            currentPage={validPage}
+            totalPages={totalPages}
+            totalItems={totalFiltered}
+            pageSize={pageSize}
+            itemLabel="tenaga pendidik"
+            getPageUrl={getPageUrl}
+            class="border-t-0"
+          />
+        )
+      }
+    </div>
+
+    <!-- Modal Form (Create / Edit) -->
+    <div
+      id="modal-backdrop"
+      class="fixed inset-0 bg-heading/40 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4"
+    >
+      <div
+        class="rounded-[8px] border border-border bg-surface p-6 shadow-xl max-w-lg w-full space-y-4"
+      >
+        <div
+          class="flex items-center justify-between pb-3"
+        >
+          <h3
+            id="modal-title"
+            class="font-display text-sm font-bold text-heading"
+          >
+            Tambah Tenaga Pendidik
+          </h3>
+          <button id="close-modal-btn" class="text-muted hover:text-heading cursor-pointer" type="button" aria-label="Tutup modal">
+            <Icon name="close" class="h-5 w-5" />
+          </button>
+        </div>
+
+        <form id="teacher-form" class="space-y-4">
+          <input type="hidden" id="edit-id" name="id" value="" />
+          <input type="hidden" id="orderNumber" name="orderNumber" value="10" />
+          <input type="hidden" id="photoUrl" name="photoUrl" value="" />
+
+          <!-- Input Utama (2 Kolom Sejajar) -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div class="space-y-1">
+              <label
+                for="name"
+                class="block font-body text-xs font-semibold text-heading"
+              >
+                Nama Lengkap & Gelar <span class="text-error">*</span>
+              </label>
+              <input
+                id="name"
+                name="name"
+                type="text"
+                required
+                placeholder="Contoh: Drs. H. Ahmad Fauzi, M.Pd."
+                class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading transition-colors"
+              />
+            </div>
+
+            <div class="space-y-1">
+              <label
+                for="nip"
+                class="block font-body text-xs font-semibold text-heading"
+              >
+                NIP (Nomor Induk Pegawai)
+              </label>
+              <input
+                id="nip"
+                name="nip"
+                type="text"
+                placeholder="198001012005011002"
+                class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading font-mono transition-colors"
+              />
+            </div>
+
+            <div class="space-y-1">
+              <label
+                for="position"
+                class="block font-body text-xs font-semibold text-heading"
+              >
+                Jabatan Struktural <span class="text-error">*</span>
+              </label>
+              <select
+                id="position"
+                name="position"
+                required
+                class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading transition-colors"
+              >
+                <option value="">-- Pilih Jabatan --</option>
+                <option value="Kepala Sekolah">Kepala Sekolah</option>
+                <option value="Wakil Kepala Sekolah Kurikulum"
+                  >Wakil Kepala Sekolah Kurikulum</option
+                >
+                <option value="Wakil Kepala Sekolah Kesiswaan"
+                  >Wakil Kepala Sekolah Kesiswaan</option
+                >
+                <option value="Wakil Kepala Sekolah Humas"
+                  >Wakil Kepala Sekolah Humas</option
+                >
+                <option value="Wakil Kepala Sekolah Sarana & Prasarana"
+                  >Wakil Kepala Sekolah Sarana & Prasarana</option
+                >
+                <option value="Kepala Tata Usaha">Kepala Tata Usaha</option>
+                <option value="Guru Pengampu">Guru Pengampu</option>
+                <option value="Guru Bimbingan Konseling (BK)"
+                  >Guru Bimbingan Konseling (BK)</option
+                >
+                <option value="Staf Tata Usaha">Staf Tata Usaha</option>
+                <option value="Tenaga Laboratorium">Tenaga Laboratorium</option>
+                <option value="Tenaga Perpustakaan">Tenaga Perpustakaan</option>
+              </select>
+            </div>
+
+            <div class="space-y-1">
+              <label
+                for="category"
+                class="block font-body text-xs font-semibold text-heading"
+              >
+                Kategori Kepegawaian <span class="text-error">*</span>
+              </label>
+              <select
+                id="category"
+                name="category"
+                required
+                class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading transition-colors"
+              >
+                <option value="guru">Guru (Tenaga Pendidik)</option>
+                <option value="pimpinan">Pimpinan Sekolah (Kepala / Waka)</option>
+                <option value="tendik">Tenaga Kependidikan (TU / Lab / Perpus)</option>
+              </select>
+            </div>
+
+            <div class="space-y-1 sm:col-span-2">
+              <label
+                for="subject"
+                class="block font-body text-xs font-semibold text-heading"
+              >
+                Mata Pelajaran yang Diampu
+              </label>
+              <input
+                id="subject"
+                name="subject"
+                type="text"
+                placeholder="Contoh: Matematika / Fisika"
+                class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading transition-colors"
+              />
+            </div>
+          </div>
+
+          <!-- Bagian Foto Guru / Media Library -->
+          <div
+            class="rounded-[6px] border border-border/80 bg-surface-subtle p-3 space-y-2.5"
+          >
+
+            <div class="flex items-center gap-3">
+              <img
+                id="teacher-photo-preview"
+                src=""
+                alt="Preview"
+                class="h-12 w-12 rounded-full object-cover border border-border hidden shrink-0 shadow-2xs"
+              />
+              <div class="flex-1 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  id="btn-select-media"
+                  class="inline-flex h-[32px] items-center justify-center gap-1.5 rounded-[6px] bg-surface border border-border px-3 text-xs font-semibold text-heading hover:bg-surface-subtle hover:border-primary/50 transition-colors shadow-2xs cursor-pointer"
+                >
+                  <Icon name="plus" class="h-3.5 w-3.5 text-primary shrink-0" />
+                  <span>Unggah</span>
+                </button>
+                <button
+                  type="button"
+                  id="btn-remove-photo"
+                  class="hidden inline-flex h-[32px] items-center justify-center px-2.5 rounded-[6px] border border-border bg-surface text-xs font-medium text-error hover:bg-error-light transition-colors cursor-pointer"
+                >
+                  Hapus Foto
+                </button>
+              </div>
+            </div>
+            <p
+              id="teacher-upload-status"
+              class="text-[10px] text-muted font-mono"
+            >
+              Foto diambil langsung dari Pustaka Media sekolah (/admin/media).
+            </p>
+          </div>
+
+          <div
+            class="flex items-center justify-end gap-2 pt-3"
+          >
+            <button
+              type="button"
+              id="cancel-btn"
+              class="h-[34px] rounded-[6px] border border-border bg-surface px-4 text-xs font-medium text-muted hover:bg-surface-subtle cursor-pointer"
+            >
+              Batal
+            </button>
+            <button
+              type="submit"
+              id="save-btn"
+              class="h-[34px] rounded-[6px] bg-primary px-4 text-xs font-semibold text-white transition-all hover:bg-primary-hover shadow-xs cursor-pointer"
+            >
+              Simpan
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal Import Excel -->
+    <div
+      id="import-modal-backdrop"
+      class="fixed inset-0 bg-heading/40 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4"
+    >
+      <div
+        class="rounded-[8px] border border-border bg-surface p-6 shadow-xl max-w-md w-full space-y-4"
+      >
+        <div
+          class="flex items-center justify-between pb-3"
+        >
+          <div class="flex items-center gap-2">
+            <div
+              class="flex h-8 w-8 items-center justify-center rounded-[6px] bg-success-light text-success"
+            >
+              <Icon name="download" class="h-5 w-5 rotate-180" />
+            </div>
+            <div>
+              <h3 class="font-display text-sm font-bold text-heading">
+                Unggah Data Guru via Excel
+              </h3>
+              <p class="text-[11px] text-muted">
+                Mendukung format .xlsx, .xls, atau .csv
+              </p>
+            </div>
+          </div>
+          <button
+            id="close-import-modal-btn"
+            class="text-muted hover:text-heading cursor-pointer"
+            type="button"
+            aria-label="Tutup modal import"
+          >
+            <Icon name="close" class="h-5 w-5" />
+          </button>
+        </div>
+
+        <div
+          class="rounded-[6px] border border-success bg-success-light p-3 flex items-center justify-between gap-3 text-xs"
+        >
+          <div>
+            <p class="font-semibold text-success-text">Format Spreadsheet</p>
+            <p class="text-[11px] text-success-text">
+              Gunakan template kolom resmi agar data terverifikasi otomatis.
+            </p>
+          </div>
+          <a
+            href="/api/admin/teachers/template"
+            download="template_data_guru.xlsx"
+            class="inline-flex items-center gap-1 rounded-[4px] bg-success px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-2xs hover:bg-success-hover shrink-0 transition-colors"
+          >
+            <Icon name="download" class="h-3.5 w-3.5" />
+            <span>Unduh Template</span>
+          </a>
+        </div>
+
+        <form id="import-excel-form" class="space-y-4">
+          <div class="space-y-1.5">
+            <label class="block font-body text-xs font-semibold text-heading">
+              Pilih Berkas Excel / CSV <span class="text-error">*</span>
+            </label>
+            <input
+              type="file"
+              id="excel-file-input"
+              name="file"
+              accept=".xlsx, .xls, .csv"
+              required
+              class="w-full text-xs font-body text-muted file:mr-3 file:py-1.5 file:px-3 file:rounded-[6px] file:border file:border-border file:text-xs file:font-semibold file:bg-surface-subtle file:text-heading cursor-pointer border border-dashed border-border rounded-[6px] p-3 hover:border-primary transition-colors"
+            />
+          </div>
+
+          <div
+            id="import-result-box"
+            class="hidden text-xs rounded-[6px] p-3 space-y-1"
+          >
+          </div>
+
+          <div
+            class="flex items-center justify-end gap-2 pt-3"
+          >
+            <button
+              type="button"
+              id="cancel-import-btn"
+              class="h-[34px] rounded-[6px] border border-border bg-surface px-4 text-xs font-medium text-muted hover:bg-surface-subtle cursor-pointer"
+            >
+              Tutup
+            </button>
+            <button
+              type="submit"
+              id="submit-import-btn"
+              class="inline-flex items-center gap-1.5 h-[34px] rounded-[6px] bg-success px-4 text-xs font-semibold text-white transition-all hover:bg-success-hover shadow-xs cursor-pointer"
+            >
+              <span>Mulai Impor</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Media Picker Modal Component -->
+    <MediaPickerModal modalId="teacher-media-picker" />
+  </div>
+
+  <script>
+    const modal = document.getElementById("modal-backdrop") as HTMLDivElement;
+    const openBtn = document.getElementById(
+      "open-modal-btn",
+    ) as HTMLButtonElement;
+    const closeBtn = document.getElementById(
+      "close-modal-btn",
+    ) as HTMLButtonElement;
+    const cancelBtn = document.getElementById(
+      "cancel-btn",
+    ) as HTMLButtonElement;
+    const form = document.getElementById("teacher-form") as HTMLFormElement;
+    const modalTitle = document.getElementById(
+      "modal-title",
+    ) as HTMLHeadingElement;
+
+    const editIdInput = document.getElementById("edit-id") as HTMLInputElement;
+    const nameInput = document.getElementById("name") as HTMLInputElement;
+    const nipInput = document.getElementById("nip") as HTMLInputElement;
+    const orderNumberInput = document.getElementById(
+      "orderNumber",
+    ) as HTMLInputElement;
+    const positionInput = document.getElementById(
+      "position",
+    ) as HTMLSelectElement;
+    const categoryInput = document.getElementById(
+      "category",
+    ) as HTMLSelectElement;
+    const subjectInput = document.getElementById("subject") as HTMLInputElement;
+    const photoUrlInput = document.getElementById(
+      "photoUrl",
+    ) as HTMLInputElement;
+    let currentIsActive = true;
+
+    const btnSelectMedia = document.getElementById(
+      "btn-select-media",
+    ) as HTMLButtonElement;
+    const btnRemovePhoto = document.getElementById(
+      "btn-remove-photo",
+    ) as HTMLButtonElement;
+    const uploadStatus = document.getElementById(
+      "teacher-upload-status",
+    ) as HTMLParagraphElement;
+    const photoPreview = document.getElementById(
+      "teacher-photo-preview",
+    ) as HTMLImageElement;
+
+    // Media Library Integration
+    btnSelectMedia?.addEventListener("click", () => {
+      if (typeof (window as any).openMediaPicker === "function") {
+        (window as any).openMediaPicker(
+          (selectedMedia: any) => {
+            if (selectedMedia && selectedMedia.fileUrl) {
+              photoUrlInput.value = selectedMedia.fileUrl;
+              if (photoPreview) {
+                photoPreview.src = selectedMedia.mediumUrl || selectedMedia.fileUrl;
+                photoPreview.classList.remove("hidden");
+              }
+              btnRemovePhoto?.classList.remove("hidden");
+              uploadStatus.innerText = `Foto dipilih: ${selectedMedia.title || selectedMedia.originalName || "Media terpilih"}`;
+            }
+          },
+          { type: "image" }
+        );
+      } else {
+        window.open("/admin/media", "_blank");
+      }
+    });
+
+    btnRemovePhoto?.addEventListener("click", () => {
+      photoUrlInput.value = "";
+      if (photoPreview) {
+        photoPreview.src = "";
+        photoPreview.classList.add("hidden");
+      }
+      btnRemovePhoto.classList.add("hidden");
+      uploadStatus.innerText = "Foto dihapus.";
+    });
+
+    function resetForm() {
+      editIdInput.value = "";
+      form.reset();
+      orderNumberInput.value = "10";
+      photoUrlInput.value = "";
+      currentIsActive = true;
+      if (categoryInput) categoryInput.value = "guru";
+      modalTitle.innerText = "Tambah Tenaga Pendidik";
+      uploadStatus.innerText = "";
+      btnRemovePhoto?.classList.add("hidden");
+      if (photoPreview) {
+        photoPreview.src = "";
+        photoPreview.classList.add("hidden");
+      }
+    }
+
+    positionInput?.addEventListener("change", () => {
+      const p = (positionInput.value || "").toLowerCase();
+      if (p.includes("kepala") || p.includes("wakil") || p.includes("waka")) {
+        categoryInput.value = "pimpinan";
+      } else if (p.includes("tata usaha") || p.includes("laboratorium") || p.includes("perpustakaan") || p.includes("staf") || p.includes("administrasi")) {
+        categoryInput.value = "tendik";
+      } else {
+        categoryInput.value = "guru";
+      }
+    });
+
+    openBtn?.addEventListener("click", () => {
+      resetForm();
+      modal.classList.remove("hidden");
+    });
+
+    closeBtn?.addEventListener("click", () => modal.classList.add("hidden"));
+    cancelBtn?.addEventListener("click", () => modal.classList.add("hidden"));
+
+    const statusBanner = document.getElementById("status-banner") as HTMLDivElement;
+
+    function showStatus(message: string, type: "success" | "error" = "success") {
+      if (!statusBanner) return;
+      statusBanner.innerText = message;
+      statusBanner.className = `rounded-[6px] p-3 text-xs font-semibold block transition-all ${
+        type === "success"
+          ? "bg-success-light text-success-text border border-success"
+          : "bg-error-light text-error border border-error"
+      }`;
+      setTimeout(() => {
+        statusBanner.className = "hidden";
+      }, 5000);
+    }
+
+    // Handle Quick Toggle Status
+    document.querySelectorAll(".toggle-status-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = (btn as HTMLElement).dataset.id;
+        if (!id) return;
+        (btn as HTMLButtonElement).disabled = true;
+        (btn as HTMLElement).classList.add("opacity-50");
+
+        try {
+          const res = await fetch(`/api/admin/teachers/${id}/toggle`, { method: "PUT" });
+          const result = await res.json();
+          if (result.success) {
+            window.location.reload();
+          } else {
+            showStatus(result.error || "Gagal mengubah status guru", "error");
+            (btn as HTMLButtonElement).disabled = false;
+            (btn as HTMLElement).classList.remove("opacity-50");
+          }
+        } catch {
+          showStatus("Koneksi server gagal", "error");
+          (btn as HTMLButtonElement).disabled = false;
+          (btn as HTMLElement).classList.remove("opacity-50");
+        }
+      });
+    });
+
+    // Handle Edit
+    document.querySelectorAll(".edit-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const itemStr = (btn as HTMLElement).dataset.item;
+        if (!itemStr) return;
+        const item = JSON.parse(itemStr);
+
+        editIdInput.value = item.id;
+        nameInput.value = item.name || "";
+        nipInput.value = item.nip || "";
+        orderNumberInput.value =
+          item.orderNumber !== undefined ? item.orderNumber : "10";
+
+        // Set position in select dropdown
+        if (item.position) {
+          let exists = false;
+          for (let i = 0; i < positionInput.options.length; i++) {
+            if (positionInput.options[i].value === item.position) {
+              exists = true;
+              break;
+            }
+          }
+          if (!exists) {
+            const opt = document.createElement("option");
+            opt.value = item.position;
+            opt.textContent = item.position;
+            positionInput.appendChild(opt);
+          }
+          positionInput.value = item.position;
+        } else {
+          positionInput.value = "";
+        }
+
+        if (categoryInput) {
+          categoryInput.value = item.category || "guru";
+        }
+
+        subjectInput.value = item.subject || "";
+        photoUrlInput.value = item.photoUrl || "";
+        if (item.photoUrl && photoPreview) {
+          photoPreview.src = item.photoUrl;
+          photoPreview.classList.remove("hidden");
+          btnRemovePhoto?.classList.remove("hidden");
+          uploadStatus.innerText = "Foto saat ini terpasang dari Media.";
+        } else if (photoPreview) {
+          photoPreview.src = "";
+          photoPreview.classList.add("hidden");
+          btnRemovePhoto?.classList.add("hidden");
+          uploadStatus.innerText = "";
+        }
+
+        currentIsActive = item.isActive !== false;
+
+        modalTitle.innerText = `Edit Data: ${item.name}`;
+        modal.classList.remove("hidden");
+      });
+    });
+
+    // Handle Delete
+    document.querySelectorAll(".delete-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = (btn as HTMLElement).dataset.id;
+        const confirmed = await (window as any).confirmDialog({
+          title: "Hapus Data Guru",
+          message: "Apakah Anda yakin ingin menghapus data guru ini?\nTindakan ini tidak dapat dibatalkan.",
+          confirmText: "Ya, Hapus",
+          cancelText: "Batal",
+          type: "danger",
+        });
+        if (!confirmed) return;
+
+        try {
+          const res = await fetch(`/api/admin/teachers/${id}`, {
+            method: "DELETE",
+          });
+          const result = await res.json();
+          if (result.success) {
+            document.getElementById(`row-${id}`)?.remove();
+            (window as any).showToast("Data guru berhasil dihapus.", "success");
+          } else {
+            (window as any).showToast(result.error || "Gagal menghapus data guru", "error");
+          }
+        } catch {
+          (window as any).showToast("Gagal menghubungi server", "error");
+        }
+      });
+    });
+
+    // Handle Form Submit
+    form?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const id = editIdInput.value;
+      const isEdit = Boolean(id);
+      const url = isEdit ? `/api/admin/teachers/${id}` : "/api/admin/teachers";
+      const method = isEdit ? "PUT" : "POST";
+
+      const payload = {
+        name: nameInput.value,
+        nip: nipInput.value || null,
+        orderNumber: orderNumberInput.value
+          ? Number(orderNumberInput.value)
+          : 10,
+        position: positionInput.value,
+        category: categoryInput ? categoryInput.value : "guru",
+        subject: subjectInput.value || null,
+        photoUrl: photoUrlInput.value || null,
+        isActive: currentIsActive,
+      };
+
+      try {
+        const res = await fetch(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          modal.classList.add("hidden");
+          window.location.reload();
+        } else {
+          showStatus(data.error || "Gagal menyimpan data guru.", "error");
+        }
+      } catch {
+        showStatus("Terjadi kesalahan jaringan.", "error");
+      }
+    });
+
+    // Import Excel Handler
+    const importModal = document.getElementById(
+      "import-modal-backdrop",
+    ) as HTMLDivElement;
+    const openImportBtn = document.getElementById(
+      "open-import-modal-btn",
+    ) as HTMLButtonElement;
+    const closeImportBtn = document.getElementById(
+      "close-import-modal-btn",
+    ) as HTMLButtonElement;
+    const cancelImportBtn = document.getElementById(
+      "cancel-import-btn",
+    ) as HTMLButtonElement;
+    const importForm = document.getElementById(
+      "import-excel-form",
+    ) as HTMLFormElement;
+    const excelFileInput = document.getElementById(
+      "excel-file-input",
+    ) as HTMLInputElement;
+    const submitImportBtn = document.getElementById(
+      "submit-import-btn",
+    ) as HTMLButtonElement;
+    const importResultBox = document.getElementById(
+      "import-result-box",
+    ) as HTMLDivElement;
+
+    openImportBtn?.addEventListener("click", () => {
+      importForm.reset();
+      importResultBox.className = "hidden";
+      importResultBox.innerHTML = "";
+      importModal.classList.remove("hidden");
+    });
+
+    closeImportBtn?.addEventListener("click", () =>
+      importModal.classList.add("hidden"),
+    );
+    cancelImportBtn?.addEventListener("click", () =>
+      importModal.classList.add("hidden"),
+    );
+
+    importForm?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const file = excelFileInput.files?.[0];
+      if (!file) {
+        showStatus("Pilih berkas Excel (.xlsx, .xls, .csv) terlebih dahulu.", "error");
+        return;
+      }
+
+      submitImportBtn.disabled = true;
+      submitImportBtn.innerText = "Mengimpor...";
+      importResultBox.className =
+        "text-xs rounded-[6px] p-3 bg-surface-subtle border border-border text-heading";
+      importResultBox.innerHTML = "Sedang memproses berkas spreadsheet...";
+
+      const fd = new FormData();
+      fd.append("file", file);
+
+      try {
+        const res = await fetch("/api/admin/teachers/import", {
+          method: "POST",
+          body: fd,
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          let html = `<p class="font-bold text-success-text">✓ Berhasil mengimpor ${data.insertedCount} data guru.</p>`;
+          if (data.skippedCount > 0) {
+            html += `<p class="text-warning-text mt-1">${data.skippedCount} data dilewati (NIP sudah ada).</p>`;
+          }
+          if (data.errors && data.errors.length > 0) {
+            html += `<div class="mt-2 text-error text-[11px] list-disc list-inside">`;
+            data.errors.slice(0, 5).forEach((err: string) => {
+              html += `<p>• ${err}</p>`;
+            });
+            if (data.errors.length > 5)
+              html += `<p>• ...dan ${data.errors.length - 5} baris lainnya.</p>`;
+            html += `</div>`;
+          }
+
+          importResultBox.className =
+            "text-xs rounded-[6px] p-3 bg-success-light border border-success text-success-text";
+          importResultBox.innerHTML = html;
+
+          setTimeout(() => {
+            window.location.reload();
+          }, 1500);
+        } else {
+          importResultBox.className =
+            "text-xs rounded-[6px] p-3 bg-error-light border border-error text-error";
+          importResultBox.innerText = `Gagal: ${data.error || "Terjadi kesalahan saat impor."}`;
+        }
+      } catch {
+        importResultBox.className =
+          "text-xs rounded-[6px] p-3 bg-error-light border border-error text-error";
+        importResultBox.innerText = "Gagal menghubungi server.";
+      } finally {
+        submitImportBtn.disabled = false;
+        submitImportBtn.innerText = "Mulai Impor";
+      }
+    });
+  </script>
+</AdminLayout>

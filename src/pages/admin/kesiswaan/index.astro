@@ -1,0 +1,1717 @@
+---
+import AdminLayout from "../../../layouts/AdminLayout.astro";
+import Icon from "../../../components/Icon.astro";
+import {
+  db,
+  studentEnrollmentStats,
+  graduationTracerStats,
+  settings as schoolSettings,
+} from "../../../db";
+import { desc } from "drizzle-orm";
+
+export const prerender = false;
+
+// Ambil pengaturan sekolah untuk mendeteksi jenjang pendidikan (SD / SMP / SMA / SMK)
+const rawSettings = await db
+  .select()
+  .from(schoolSettings)
+  .catch(() => []);
+const settingMap = Object.fromEntries(rawSettings.map((s) => [s.key, s.value]));
+const schoolType = (
+  settingMap["school_type"] ||
+  settingMap["school_level"] ||
+  "SMA"
+).toUpperCase();
+
+const isSD = ["SD", "MI"].includes(schoolType);
+const isSMP = ["SMP", "MTS"].includes(schoolType);
+const isSMK = schoolType === "SMK";
+
+// Konfigurasi Terminologi Dinamis Kelanjutan Lulusan
+const tracerTerms = isSD
+  ? {
+      tabTitle: "Kelanjutan Studi",
+      paneTitle: "Rekapitulasi Kelanjutan Studi Siswa (Lulusan SD/MI)",
+      paneDesc:
+        "Data sebaran siswa melanjutkan ke SMP Negeri favorit, SMP Swasta, MTs, dan Pesantren untuk publikasi beranda.",
+      chartTitle: "Grafik Sebaran Kelanjutan Studi Siswa Lulusan",
+      chartDesc:
+        "Perbandingan sebaran alumni masuk SMP Negeri, Swasta/MTs, dan Pesantren antar tahun kelulusan.",
+      primaryLabel: "Lolos SMP Negeri",
+      primaryShort: "SMP Negeri",
+      secondaryLabel: "SMP Swasta / MTs / Pesantren",
+      secondaryShort: "Swasta / MTs",
+      tertiaryLabel: "Lainnya / Mandiri",
+      tertiaryShort: "Lainnya",
+      ratioLabel: "Rasio SMP Negeri",
+      notesLabel: "Keterangan / Jalur Masuk",
+      notesPlaceholder: "Contoh: Jalur Prestasi & Zonasi SMP Negeri Favorit",
+      modalAddTitle: "Tambah Rekap Kelanjutan Studi SD",
+    }
+  : isSMP
+    ? {
+        tabTitle: "Kelanjutan Studi",
+        paneTitle: "Rekapitulasi Kelanjutan Studi Siswa (Lulusan SMP/MTs)",
+        paneDesc:
+          "Data sebaran siswa menembus SMA/SMK Negeri favorit, Swasta, MA, dan Pesantren untuk publikasi beranda.",
+        chartTitle: "Grafik Sebaran Kelanjutan Studi Siswa Lulusan",
+        chartDesc:
+          "Perbandingan sebaran alumni masuk SMA/SMK Negeri, Swasta/MA, dan Pesantren antar tahun kelulusan.",
+        primaryLabel: "Lolos SMA/SMK Negeri",
+        primaryShort: "SMA/SMK Negeri",
+        secondaryLabel: "SMA/SMK Swasta / MA / Pesantren",
+        secondaryShort: "Swasta / MA",
+        tertiaryLabel: "Lainnya / Pesantren",
+        tertiaryShort: "Lainnya",
+        ratioLabel: "Rasio SMA/SMK Negeri",
+        notesLabel: "Keterangan / Jalur Masuk",
+        notesPlaceholder:
+          "Contoh: Jalur Prestasi Akademik & Zonasi SMA/SMK Negeri",
+        modalAddTitle: "Tambah Rekap Kelanjutan Studi SMP",
+      }
+    : isSMK
+      ? {
+          tabTitle: "Penelusuran Tamatan (BMW)",
+          paneTitle:
+            "Rekapitulasi Penelusuran Tamatan (Tracer Study SMK - BMW)",
+          paneDesc:
+            "Data penelusuran tamatan Bekerja di Industri, Melanjutkan Kuliah, dan Wirausaha mandiri (Standar BMW).",
+          chartTitle: "Grafik Keterserapan Kerja & Kelanjutan Tamatan SMK",
+          chartDesc:
+            "Perbandingan serapan tamatan di dunia industri, perguruan tinggi, dan wirausaha antar angkatan.",
+          primaryLabel: "Bekerja di Industri (Mitra BKK)",
+          primaryShort: "Bekerja (BKK)",
+          secondaryLabel: "Melanjutkan Kuliah (PTN/PTS)",
+          secondaryShort: "Kuliah (PT)",
+          tertiaryLabel: "Wirausaha Mandiri",
+          tertiaryShort: "Wirausaha",
+          ratioLabel: "Keterserapan Lulusan",
+          notesLabel: "Keterangan / Mitra Penyaluran",
+          notesPlaceholder:
+            "Contoh: Rekrutmen Massal Industri Manufaktur & Mitra BKK",
+          modalAddTitle: "Tambah Rekap Penelusuran Tamatan (BMW)",
+        }
+      : {
+          // Default: SMA / MA
+          tabTitle: "Kelanjutan Lulusan",
+          paneTitle: "Rekapitulasi Kelanjutan Lulusan (Tracer Cohort)",
+          paneDesc:
+            "Data persentase lulusan menembus Perguruan Tinggi Negeri (PTN), PTS, dan karier untuk ditampilkan di beranda.",
+          chartTitle: "Grafik Sebaran Kelanjutan Studi & Karier Lulusan",
+          chartDesc:
+            "Perbandingan penyerapan alumni ke PTN, PTS, dan dunia kerja antar tahun kelulusan.",
+          primaryLabel: "Diterima PTN",
+          primaryShort: "Diterima PTN",
+          secondaryLabel: "Diterima PTS",
+          secondaryShort: "Diterima PTS",
+          tertiaryLabel: "Kerja / Wirausaha",
+          tertiaryShort: "Kerja / Wirausaha",
+          ratioLabel: "Rasio PTN",
+          notesLabel: "Keterangan / Jalur Seleksi",
+          notesPlaceholder: "Contoh: Jalur SNBP, SNBT, dan Mandiri PTN",
+          modalAddTitle: "Tambah Rekap Angkatan Kelulusan",
+        };
+
+const allEnrollmentStats = await db
+  .select()
+  .from(studentEnrollmentStats)
+  .orderBy(desc(studentEnrollmentStats.academicYear))
+  .catch(() => []);
+
+const allTracerStats = await db
+  .select()
+  .from(graduationTracerStats)
+  .orderBy(desc(graduationTracerStats.graduationYear))
+  .catch(() => []);
+
+// Persiapan data komputasi grafik statistik
+const sortedEnrollment = [...allEnrollmentStats].reverse();
+const maxEnrollmentTotal = Math.max(
+  ...allEnrollmentStats.map((s) => Number(s.totalStudents) || 0),
+  100,
+);
+
+const sortedTracer = [...allTracerStats].reverse();
+const maxTracerTotal = Math.max(
+  ...allTracerStats.map((t) => Number(t.totalGraduates) || 0),
+  50,
+);
+
+// Skala Nilai Maksimum untuk Grafik Batang Berdampingan (Side-by-Side Grouped Bar)
+const maxSingleGender = Math.max(
+  ...allEnrollmentStats.map((s) =>
+    Math.max(Number(s.maleCount) || 0, Number(s.femaleCount) || 0),
+  ),
+  50,
+);
+const maxChartScale1 = Math.ceil(maxSingleGender / 50) * 50;
+
+const maxSingleTracer = Math.max(
+  ...allTracerStats.map((t) =>
+    Math.max(
+      Number(t.ptnAcceptedUnique) || 0,
+      Number(t.ptsAccepted) || 0,
+      (Number(t.workingCount) || 0) + (Number(t.entrepreneurCount) || 0),
+    ),
+  ),
+  20,
+);
+const maxChartScale2 = Math.ceil(maxSingleTracer / 20) * 20;
+
+// Metrik Ringkasan Eksekutif untuk Visualisasi Siswa Aktif
+const activeEnrollmentItem =
+  allEnrollmentStats.find((s) => s.isActive) || allEnrollmentStats[0];
+const totalCurrentStudents = activeEnrollmentItem
+  ? Number(activeEnrollmentItem.totalStudents) || 0
+  : 0;
+const totalCurrentMale = activeEnrollmentItem
+  ? Number(activeEnrollmentItem.maleCount) || 0
+  : 0;
+const totalCurrentFemale = activeEnrollmentItem
+  ? Number(activeEnrollmentItem.femaleCount) || 0
+  : 0;
+const malePctCurrent =
+  totalCurrentStudents > 0
+    ? Math.round((totalCurrentMale / totalCurrentStudents) * 100)
+    : 50;
+const femalePctCurrent = 100 - malePctCurrent;
+const currentRombel = activeEnrollmentItem?.rombelCount
+  ? Number(activeEnrollmentItem.rombelCount)
+  : 0;
+const avgStudentsPerRombel =
+  currentRombel > 0 ? Math.round(totalCurrentStudents / currentRombel) : 0;
+
+// Metrik Ringkasan Eksekutif untuk Visualisasi Kelanjutan Lulusan
+const activeTracerItem =
+  allTracerStats.find((t) => t.isActive) || allTracerStats[0];
+const totalCurrentGrads = activeTracerItem
+  ? Number(activeTracerItem.totalGraduates) || 0
+  : 0;
+const totalCurrentPrimary = activeTracerItem
+  ? Number(activeTracerItem.ptnAcceptedUnique) || 0
+  : 0;
+const currentTracerRate =
+  totalCurrentGrads > 0
+    ? Math.round((totalCurrentPrimary / totalCurrentGrads) * 100)
+    : 0;
+const totalAllGradsRecorded = allTracerStats.reduce(
+  (acc, t) => acc + (Number(t.totalGraduates) || 0),
+  0,
+);
+---
+
+<AdminLayout title="Statistik & Rekap Kesiswaan" activeNav="rekap-kesiswaan">
+  <div class="space-y-6 max-w-6xl">
+    <!-- Header Halaman -->
+    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5">
+      <div>
+        <h1 class="font-display text-2xl font-bold tracking-tight text-heading">
+          Statistik Kesiswaan & Lulusan
+        </h1>
+      </div>
+
+      <!-- Action Buttons di Header -->
+      <div class="flex flex-col sm:flex-row sm:items-center gap-2.5">
+        <button
+          type="button"
+          id="btn-add-enrollment"
+          class="inline-flex h-[36px] items-center justify-center gap-1.5 rounded-[6px] bg-primary px-4 text-xs font-semibold text-white transition-all hover:bg-primary-hover shadow-xs shrink-0 cursor-pointer"
+        >
+          <Icon name="plus" class="h-3.5 w-3.5" />
+          <span>Data Siswa</span>
+        </button>
+
+        <button
+          type="button"
+          id="btn-add-tracer"
+          class="hidden inline-flex h-[36px] items-center justify-center gap-1.5 rounded-[6px] bg-primary px-4 text-xs font-semibold text-white transition-all hover:bg-primary-hover shadow-xs shrink-0 cursor-pointer"
+        >
+          <Icon name="plus" class="h-3.5 w-3.5" />
+          <span>Data Lulusan</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Status Banner / Toast Alert -->
+    <div
+      id="status-banner"
+      class="hidden rounded-[6px] p-3 text-xs font-medium transition-all"
+    ></div>
+
+    <!-- Navigasi Tab Utama (Segmented Control - Zero Load) -->
+    <div class="flex overflow-x-auto no-scrollbar gap-2 sm:gap-4">
+      <button
+        type="button"
+        id="tab-btn-enrollment"
+        class="main-tab-btn border-b-2 border-primary font-bold text-primary flex items-center gap-2 py-3 px-3 text-xs cursor-pointer transition-colors whitespace-nowrap"
+        data-tab="pane-enrollment"
+      >
+        <Icon name="users" class="h-4 w-4" />
+        <span>Data Siswa ({allEnrollmentStats.length})</span>
+      </button>
+
+      <button
+        type="button"
+        id="tab-btn-tracer"
+        class="main-tab-btn border-b-2 border-transparent font-medium text-muted hover:text-heading flex items-center gap-2 py-3 px-3 text-xs cursor-pointer transition-colors whitespace-nowrap"
+        data-tab="pane-tracer"
+      >
+        <Icon name="award" class="h-4 w-4" />
+        <span>Data Lulusan ({allTracerStats.length})</span>
+      </button>
+    </div>
+
+    <!-- PANEL 1: REKAPITULASI SISWA AKTIF                            -->
+
+    <div id="pane-enrollment" class="tab-pane space-y-6">
+      <!-- GRAFIK STATISTIK SISWA AKTIF PROFESIONAL -->
+      {allEnrollmentStats.length > 0 && (
+        <div class="rounded-[8px] border border-border bg-surface shadow-xs overflow-hidden">
+          <!-- Card Header & Legend -->
+          <div class="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <h3 class="font-display text-sm font-bold text-heading">
+              Tren Pertumbuhan & Distribusi Gender Siswa
+            </h3>
+
+            <!-- Legend Badge -->
+            <div class="flex items-center gap-3 text-[11px] font-medium text-muted">
+              <span class="inline-flex items-center gap-1.5">
+                <span class="h-2 w-3 rounded-[2px] bg-primary"></span>
+                <span class="text-heading font-semibold">Laki-laki</span>
+              </span>
+              <span class="text-border">|</span>
+              <span class="inline-flex items-center gap-1.5">
+                <span class="h-2 w-3 rounded-[2px] bg-warning"></span>
+                <span class="text-heading font-semibold">Perempuan</span>
+              </span>
+            </div>
+          </div>
+
+          <!-- Quick Metrics Bar (Executive Summary) -->
+          {activeEnrollmentItem && (
+            <div class="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-border bg-surface-subtle text-xs">
+              <div class="p-3 sm:px-4">
+                <span class="text-[10px] uppercase font-semibold text-muted block">
+                  Siswa Aktif Rujukan
+                </span>
+                <span class="font-display text-base font-bold text-heading">
+                  {totalCurrentStudents.toLocaleString("id-ID")}
+                </span>
+                <span class="text-[10px] text-muted block font-mono">
+                  TA {activeEnrollmentItem.academicYear}
+                </span>
+              </div>
+              <div class="p-3 sm:px-4">
+                <span class="text-[10px] uppercase font-semibold text-muted block">
+                  RomBel
+                </span>
+                <span class="font-display text-base font-bold text-heading">
+                  {currentRombel} Rombel
+                </span>
+                <span class="text-[10px] text-muted block">
+                  {avgStudentsPerRombel} siswa / kelas
+                </span>
+              </div>
+              <div class="p-3 sm:px-4">
+                <span class="text-[10px] uppercase font-semibold text-muted block">
+                  Gender
+                </span>
+                <span class="font-display text-base font-bold text-heading">
+                  {malePctCurrent}% L &bull; {femalePctCurrent}% P
+                </span>
+                <span class="text-[10px] text-muted block">
+                  {totalCurrentMale.toLocaleString("id-ID")} L /{" "}
+                  {totalCurrentFemale.toLocaleString("id-ID")} P
+                </span>
+              </div>
+              <div class="p-3 sm:px-4">
+                <span class="text-[10px] uppercase font-semibold text-muted block">
+                  Basis Data
+                </span>
+                <span class="font-display text-base font-bold text-success block mt-0.5">
+                  Terverifikasi
+                </span>
+                <span class="text-[10px] text-muted block truncate">
+                  {activeEnrollmentItem.source || "Dapodik Kemendikdasmen"}
+                </span>
+              </div>
+            </div>
+          )}
+
+          <!-- Chart Visual Area with Grid Reference Lines (Side-by-Side Slim Bars) -->
+          <div class="p-4 sm:p-6 overflow-x-auto no-scrollbar">
+            <div class="min-w-[340px] sm:min-w-0 relative h-64 w-full pt-10">
+              <!-- Y-Axis Reference Guidelines -->
+              <div class="absolute inset-x-0 bottom-7 top-10 flex flex-col justify-between pointer-events-none select-none text-[10px] text-muted font-mono">
+                <div class="w-full border-b border-dashed border-border/50 flex items-center justify-between pb-0.5">
+                  <span class="w-10 text-right pr-2 shrink-0">
+                    {maxChartScale1.toLocaleString("id-ID")}
+                  </span>
+                  <div class="flex-1"></div>
+                </div>
+                <div class="w-full border-b border-dashed border-border/50 flex items-center justify-between pb-0.5">
+                  <span class="w-10 text-right pr-2 shrink-0">
+                    {Math.round(maxChartScale1 * 0.75).toLocaleString("id-ID")}
+                  </span>
+                  <div class="flex-1"></div>
+                </div>
+                <div class="w-full border-b border-dashed border-border/50 flex items-center justify-between pb-0.5">
+                  <span class="w-10 text-right pr-2 shrink-0">
+                    {Math.round(maxChartScale1 * 0.5).toLocaleString("id-ID")}
+                  </span>
+                  <div class="flex-1"></div>
+                </div>
+                <div class="w-full border-b border-dashed border-border/50 flex items-center justify-between pb-0.5">
+                  <span class="w-10 text-right pr-2 shrink-0">
+                    {Math.round(maxChartScale1 * 0.25).toLocaleString("id-ID")}
+                  </span>
+                  <div class="flex-1"></div>
+                </div>
+                <div class="w-full border-b border-border flex items-center justify-between pb-0.5">
+                  <span class="w-10 text-right pr-2 shrink-0">0</span>
+                  <div class="flex-1"></div>
+                </div>
+              </div>
+
+              <!-- Columns Container (Side-by-Side Kiri: Laki-laki, Kanan: Perempuan) -->
+              <div class="relative z-10 pl-12 pr-2 h-[calc(100%-28px)] flex items-end justify-around gap-2 sm:gap-6">
+                {sortedEnrollment.map((item) => {
+                  const total = Number(item.totalStudents) || 0;
+                  const male = Number(item.maleCount) || 0;
+                  const female = Number(item.femaleCount) || 0;
+                  const malePct = total > 0 ? (male / total) * 100 : 50;
+                  const femalePct = 100 - malePct;
+                  const maleHeightPct = Math.min(
+                    100,
+                    Math.max(4, Math.round((male / maxChartScale1) * 100)),
+                  );
+                  const femaleHeightPct = Math.min(
+                    100,
+                    Math.max(4, Math.round((female / maxChartScale1) * 100)),
+                  );
+
+                  return (
+                    <div
+                      class="chart-col-group group relative flex flex-col items-center justify-end h-full cursor-pointer focus:outline-none"
+                      tabindex="0"
+                      data-year={item.academicYear}
+                    >
+                      <!-- Floating Tooltip (Hover & Click) -->
+                      <div class="chart-tooltip hidden pointer-events-none absolute -top-14 z-30 bg-heading/95 text-white text-[11px] py-2 px-3 rounded-[8px] shadow-xl backdrop-blur-xs whitespace-nowrap text-center border border-white/10">
+                        <p class="font-bold tracking-tight text-xs">
+                          TA {item.academicYear} &bull;{" "}
+                          {total.toLocaleString("id-ID")} Siswa
+                        </p>
+                        <div class="flex items-center justify-center gap-3 text-[10px] text-white/90 mt-1">
+                          <span class="flex items-center gap-1.5 font-medium">
+                            <span class="h-1.5 w-2 rounded-[2px] bg-primary shrink-0"></span>
+                            L: {male.toLocaleString("id-ID")} (
+                            {Math.round(malePct)}%)
+                          </span>
+                          <span>&bull;</span>
+                          <span class="flex items-center gap-1.5 font-medium">
+                            <span class="h-1.5 w-2 rounded-[2px] bg-warning shrink-0"></span>
+                            P: {female.toLocaleString("id-ID")} (
+                            {Math.round(femalePct)}%)
+                          </span>
+                        </div>
+                        {item.rombelCount && (
+                          <p class="text-[9px] text-white/70 mt-0.5">
+                            {item.rombelCount} Rombel &bull; ~
+                            {Math.round(total / item.rombelCount)} siswa/kelas
+                          </p>
+                        )}
+                      </div>
+
+                      <!-- Side-by-Side Slim Bars (Kiri: L, Kanan: P) -->
+                      <div class="flex items-end gap-1 sm:gap-1.5 h-full px-1">
+                        <!-- Bar Laki-laki (Kiri) -->
+                        <div class="w-3 sm:w-4 bg-surface-subtle/80 rounded-t-[3px] h-full flex items-end">
+                          <div
+                            class="w-full bg-primary rounded-t-[3px] transition-all duration-300 group-hover:brightness-110 shadow-2xs"
+                            style={`height: ${maleHeightPct}%;`}
+                            title={`Laki-laki: ${male}`}
+                          ></div>
+                        </div>
+
+                        <!-- Bar Perempuan (Kanan) -->
+                        <div class="w-3 sm:w-4 bg-surface-subtle/80 rounded-t-[3px] h-full flex items-end">
+                          <div
+                            class="w-full bg-warning rounded-t-[3px] transition-all duration-300 group-hover:brightness-110 shadow-2xs"
+                            style={`height: ${femaleHeightPct}%;`}
+                            title={`Perempuan: ${female}`}
+                          ></div>
+                        </div>
+                      </div>
+
+                      <!-- X-Axis Label -->
+                      <div class="mt-2 text-center">
+                        <span
+                          class:list={[
+                            "block font-mono text-[11px] font-semibold transition-colors whitespace-nowrap",
+                            item.isActive
+                              ? "text-primary font-bold"
+                              : "text-muted group-hover:text-heading",
+                          ]}
+                        >
+                          {item.academicYear}
+                        </span>
+                        {item.isActive && (
+                          <span class="inline-block text-[8px] font-bold text-primary bg-primary/10 px-1 py-0.2 rounded-full uppercase tracking-wider">
+                            Aktif
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div class="overflow-x-auto rounded-[8px] border border-border bg-surface shadow-xs">
+        <table class="w-full text-left font-body text-xs">
+          <thead class="bg-surface-subtle text-[11px] font-semibold uppercase tracking-wider text-muted">
+            <tr>
+              <th class="py-3 px-4">Tahun Ajaran</th>
+              <th class="py-3 px-4 text-center font-bold text-primary">
+                Total Siswa Aktif
+              </th>
+              <th class="py-3 px-4 text-center">Laki-laki (L)</th>
+              <th class="py-3 px-4 text-center">Perempuan (P)</th>
+              <th class="py-3 px-4 text-center">Rombel</th>
+              <th class="py-3 px-4">Sumber Data</th>
+              <th class="py-3 px-4 text-center">Status Beranda</th>
+              <th class="py-3 px-4 text-right">Tindakan</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-border" id="enrollment-tbody">
+            {allEnrollmentStats.length === 0 ? (
+              <tr>
+                <td colspan="8" class="py-12 text-center text-muted">
+                  Belum ada rekap tahun ajaran. Klik "Tambah Rekap Tahun Ajaran"
+                  untuk memasukkan data.
+                </td>
+              </tr>
+            ) : (
+              allEnrollmentStats.map((item) => (
+                <tr
+                  class="hover:bg-surface-subtle transition-colors"
+                  id={`enrollment-row-${item.id}`}
+                >
+                  <td class="py-3.5 px-4 font-bold text-heading">
+                    TA {item.academicYear}
+                  </td>
+                  <td class="py-3.5 px-4 text-center font-display text-sm font-bold text-primary">
+                    {Number(item.totalStudents).toLocaleString("id-ID")}
+                  </td>
+                  <td class="py-3.5 px-4 text-center font-mono text-muted">
+                    {item.maleCount
+                      ? Number(item.maleCount).toLocaleString("id-ID")
+                      : "-"}
+                  </td>
+                  <td class="py-3.5 px-4 text-center font-mono text-muted">
+                    {item.femaleCount
+                      ? Number(item.femaleCount).toLocaleString("id-ID")
+                      : "-"}
+                  </td>
+                  <td class="py-3.5 px-4 text-center font-mono text-muted">
+                    {item.rombelCount ? `${item.rombelCount} Rombel` : "-"}
+                  </td>
+                  <td class="py-3.5 px-4 text-muted">
+                    {item.source || "Dapodik Kemendikdasmen"}
+                  </td>
+                  <td class="py-3.5 px-4 text-center">
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={item.isActive ? "true" : "false"}
+                      class="btn-toggle-enrollment-status inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors cursor-pointer"
+                      class:list={[
+                        item.isActive
+                          ? "bg-primary"
+                          : "bg-border hover:bg-muted/40",
+                      ]}
+                      data-id={item.id}
+                      data-active={String(item.isActive)}
+                      title={
+                        item.isActive
+                          ? "Rujukan Beranda Aktif (Klik untuk nonaktifkan)"
+                          : "Historis (Klik untuk jadikan rujukan beranda)"
+                      }
+                    >
+                      <span
+                        class:list={[
+                          "h-4 w-4 rounded-full bg-white shadow-xs transition-transform pointer-events-none",
+                          item.isActive ? "translate-x-4" : "translate-x-0",
+                        ]}
+                      ></span>
+                    </button>
+                  </td>
+                  <td class="py-3.5 px-4 text-right">
+                    <div class="inline-flex items-center gap-1.5 justify-end">
+                      <button
+                        type="button"
+                        class="btn-edit-enrollment inline-flex h-7 w-7 items-center justify-center rounded-[6px] border border-border bg-surface text-muted hover:text-heading hover:bg-surface-subtle transition-colors shadow-2xs cursor-pointer"
+                        data-item={JSON.stringify(item)}
+                        title="Edit Rekap Kesiswaan"
+                      >
+                        <Icon name="edit" class="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        class="btn-delete-enrollment inline-flex h-7 w-7 items-center justify-center rounded-[6px] border border-border bg-surface text-error hover:bg-error hover:text-white hover:border-error transition-colors shadow-2xs cursor-pointer"
+                        data-id={item.id}
+                        data-year={item.academicYear}
+                        title="Hapus Rekap Kesiswaan"
+                      >
+                        <Icon name="trash" class="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- PANEL 2: REKAPITULASI KELANJUTAN LULUSAN                     -->
+
+    <div id="pane-tracer" class="tab-pane hidden space-y-6">
+      <!-- GRAFIK STATISTIK KELANJUTAN LULUSAN PROFESIONAL -->
+      {allTracerStats.length > 0 && (
+        <div class="rounded-[8px] border border-border bg-surface shadow-xs overflow-hidden">
+          <!-- Card Header & Legend -->
+          <div class="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <h3 class="font-display text-sm font-bold text-heading">
+              {tracerTerms.chartTitle}
+            </h3>
+            <!-- Legend Badge -->
+            <div class="flex items-center gap-3 text-[11px] font-medium text-muted">
+              <span class="inline-flex items-center gap-1.5">
+                <span class="h-2 w-3 rounded-[2px] bg-primary"></span>
+                <span class="text-heading font-semibold">
+                  {tracerTerms.primaryShort}
+                </span>
+              </span>
+              <span class="text-border">|</span>
+              <span class="inline-flex items-center gap-1.5">
+                <span class="h-2 w-3 rounded-[2px] bg-secondary"></span>
+                <span class="text-heading font-semibold">
+                  {tracerTerms.secondaryShort}
+                </span>
+              </span>
+              <span class="text-border">|</span>
+              <span class="inline-flex items-center gap-1.5">
+                <span class="h-2 w-3 rounded-[2px] bg-success"></span>
+                <span class="text-heading font-semibold">
+                  {tracerTerms.tertiaryShort}
+                </span>
+              </span>
+            </div>
+          </div>
+
+          <!-- Quick Metrics Bar (Executive Summary) -->
+          {activeTracerItem && (
+            <div class="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-border bg-surface-subtle text-xs">
+              <div class="p-3 sm:px-4">
+                <span class="text-[10px] uppercase font-semibold text-muted block">
+                  Rasio {tracerTerms.primaryShort} Terkini
+                </span>
+                <span class="font-display text-base font-bold text-primary">
+                  {currentTracerRate}%
+                </span>
+                <span class="text-[10px] text-muted block font-mono">
+                  Angkatan {activeTracerItem.graduationYear}
+                </span>
+              </div>
+              <div class="p-3 sm:px-4">
+                <span class="text-[10px] uppercase font-semibold text-muted block">
+                  Total Lulusan Angkatan
+                </span>
+                <span class="font-display text-base font-bold text-heading">
+                  {totalCurrentGrads.toLocaleString("id-ID")} Alumni
+                </span>
+                <span class="text-[10px] text-muted block">
+                  {totalCurrentPrimary} {tracerTerms.primaryShort}
+                </span>
+              </div>
+              <div class="p-3 sm:px-4">
+                <span class="text-[10px] uppercase font-semibold text-muted block">
+                  Total Alumni Terdata
+                </span>
+                <span class="font-display text-base font-bold text-heading">
+                  {totalAllGradsRecorded.toLocaleString("id-ID")} Orang
+                </span>
+                <span class="text-[10px] text-muted block">
+                  Dari {allTracerStats.length} tahun kelulusan
+                </span>
+              </div>
+              <div class="p-3 sm:px-4">
+                <span class="text-[10px] uppercase font-semibold text-muted block">
+                  Status Publikasi
+                </span>
+                <span class="font-display text-base font-bold text-success block mt-0.5">
+                  Rujukan Aktif
+                </span>
+                <span class="text-[10px] text-muted block truncate">
+                  {activeTracerItem.notes || "Terdata di Direktori"}
+                </span>
+              </div>
+            </div>
+          )}
+
+          <!-- Chart Visual Area with Grid Reference Lines (Side-by-Side Slim Bars) -->
+          <div class="p-4 sm:p-6 overflow-x-auto no-scrollbar">
+            <div class="min-w-[340px] sm:min-w-0 relative h-64 w-full pt-10">
+              <!-- Y-Axis Reference Guidelines -->
+              <div class="absolute inset-x-0 bottom-7 top-10 flex flex-col justify-between pointer-events-none select-none text-[10px] text-muted font-mono">
+                <div class="w-full border-b border-dashed border-border/50 flex items-center justify-between pb-0.5">
+                  <span class="w-10 text-right pr-2 shrink-0">
+                    {maxChartScale2.toLocaleString("id-ID")}
+                  </span>
+                  <div class="flex-1"></div>
+                </div>
+                <div class="w-full border-b border-dashed border-border/50 flex items-center justify-between pb-0.5">
+                  <span class="w-10 text-right pr-2 shrink-0">
+                    {Math.round(maxChartScale2 * 0.75).toLocaleString("id-ID")}
+                  </span>
+                  <div class="flex-1"></div>
+                </div>
+                <div class="w-full border-b border-dashed border-border/50 flex items-center justify-between pb-0.5">
+                  <span class="w-10 text-right pr-2 shrink-0">
+                    {Math.round(maxChartScale2 * 0.5).toLocaleString("id-ID")}
+                  </span>
+                  <div class="flex-1"></div>
+                </div>
+                <div class="w-full border-b border-dashed border-border/50 flex items-center justify-between pb-0.5">
+                  <span class="w-10 text-right pr-2 shrink-0">
+                    {Math.round(maxChartScale2 * 0.25).toLocaleString("id-ID")}
+                  </span>
+                  <div class="flex-1"></div>
+                </div>
+                <div class="w-full border-b border-border flex items-center justify-between pb-0.5">
+                  <span class="w-10 text-right pr-2 shrink-0">0</span>
+                  <div class="flex-1"></div>
+                </div>
+              </div>
+
+              <!-- Columns Container (Side-by-Side 3 Batang Tipis: PTN, PTS, Kerja/Lainnya) -->
+              <div class="relative z-10 pl-12 pr-2 h-[calc(100%-28px)] flex items-end justify-around gap-2 sm:gap-6">
+                {sortedTracer.map((item) => {
+                  const total = Number(item.totalGraduates) || 0;
+                  const ptn = Number(item.ptnAcceptedUnique) || 0;
+                  const pts = Number(item.ptsAccepted) || 0;
+                  const work =
+                    (Number(item.workingCount) || 0) +
+                    (Number(item.entrepreneurCount) || 0);
+                  const rate = total > 0 ? Math.round((ptn / total) * 100) : 0;
+                  const ptnHeightPct = Math.min(
+                    100,
+                    Math.max(4, Math.round((ptn / maxChartScale2) * 100)),
+                  );
+                  const ptsHeightPct = Math.min(
+                    100,
+                    Math.max(4, Math.round((pts / maxChartScale2) * 100)),
+                  );
+                  const workHeightPct = Math.min(
+                    100,
+                    Math.max(4, Math.round((work / maxChartScale2) * 100)),
+                  );
+
+                  return (
+                    <div
+                      class="chart-col-group group relative flex flex-col items-center justify-end h-full cursor-pointer focus:outline-none"
+                      tabindex="0"
+                      data-year={item.graduationYear}
+                    >
+                      <!-- Floating Tooltip (Hover & Click) -->
+                      <div class="chart-tooltip hidden pointer-events-none absolute -top-14 z-30 bg-heading/95 text-white text-[11px] py-2 px-3 rounded-[8px] shadow-xl backdrop-blur-xs whitespace-nowrap text-center border border-white/10">
+                        <p class="font-bold tracking-tight text-xs">
+                          Lulusan {item.graduationYear} &bull;{" "}
+                          {total.toLocaleString("id-ID")} Alumni
+                        </p>
+                        <div class="flex items-center justify-center gap-2.5 text-[10px] text-white/90 mt-1">
+                          <span class="flex items-center gap-1 font-medium">
+                            <span class="h-1.5 w-2 rounded-[2px] bg-primary shrink-0"></span>
+                            {tracerTerms.primaryShort}: {ptn} ({rate}%)
+                          </span>
+                          <span>&bull;</span>
+                          <span class="flex items-center gap-1 font-medium">
+                            <span class="h-1.5 w-2 rounded-[2px] bg-secondary shrink-0"></span>
+                            {tracerTerms.secondaryShort}: {pts}
+                          </span>
+                          <span>&bull;</span>
+                          <span class="flex items-center gap-1 font-medium">
+                            <span class="h-1.5 w-2 rounded-[2px] bg-success shrink-0"></span>
+                            {tracerTerms.tertiaryShort}: {work}
+                          </span>
+                        </div>
+                      </div>
+
+                      <!-- Side-by-Side Slim Bars (Kiri: PTN, Tengah: PTS, Kanan: Kerja/Lainnya) -->
+                      <div class="flex items-end gap-1 sm:gap-1.5 h-full px-1">
+                        <!-- Bar 1 (Kiri) -->
+                        <div class="w-2.5 sm:w-3.5 bg-surface-subtle/80 rounded-t-[3px] h-full flex items-end">
+                          <div
+                            class="w-full bg-primary rounded-t-[3px] transition-all duration-300 group-hover:brightness-110 shadow-2xs"
+                            style={`height: ${ptnHeightPct}%;`}
+                            title={`${tracerTerms.primaryLabel}: ${ptn}`}
+                          ></div>
+                        </div>
+
+                        <!-- Bar 2 (Tengah) -->
+                        <div class="w-2.5 sm:w-3.5 bg-surface-subtle/80 rounded-t-[3px] h-full flex items-end">
+                          <div
+                            class="w-full bg-secondary rounded-t-[3px] transition-all duration-300 group-hover:brightness-110 shadow-2xs"
+                            style={`height: ${ptsHeightPct}%;`}
+                            title={`${tracerTerms.secondaryLabel}: ${pts}`}
+                          ></div>
+                        </div>
+
+                        <!-- Bar 3 (Kanan) -->
+                        <div class="w-2.5 sm:w-3.5 bg-surface-subtle/80 rounded-t-[3px] h-full flex items-end">
+                          <div
+                            class="w-full bg-success rounded-t-[3px] transition-all duration-300 group-hover:brightness-110 shadow-2xs"
+                            style={`height: ${workHeightPct}%;`}
+                            title={`${tracerTerms.tertiaryLabel}: ${work}`}
+                          ></div>
+                        </div>
+                      </div>
+
+                      <!-- X-Axis Label -->
+                      <div class="mt-2 text-center">
+                        <span
+                          class:list={[
+                            "block font-mono text-[11px] font-semibold transition-colors whitespace-nowrap",
+                            item.isActive
+                              ? "text-primary font-bold"
+                              : "text-muted group-hover:text-heading",
+                          ]}
+                        >
+                          {item.graduationYear}
+                        </span>
+                        {item.isActive && (
+                          <span class="inline-block text-[8px] font-bold text-primary bg-primary/10 px-1 py-0.2 rounded-full uppercase tracking-wider">
+                            Rujukan
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div class="overflow-x-auto rounded-[8px] border border-border bg-surface shadow-xs">
+        <table class="w-full text-left font-body text-xs">
+          <thead class="bg-surface-subtle text-[11px] font-semibold uppercase tracking-wider text-muted">
+            <tr>
+              <th class="py-3 px-4">Tahun Lulus</th>
+              <th class="py-3 px-4 text-center">Total Lulusan</th>
+              <th class="py-3 px-4 text-center font-bold text-primary">
+                {tracerTerms.primaryLabel}
+              </th>
+              <th class="py-3 px-4 text-center">
+                {tracerTerms.secondaryLabel}
+              </th>
+              <th class="py-3 px-4 text-center">{tracerTerms.tertiaryLabel}</th>
+              <th class="py-3 px-4 text-center font-bold text-primary">
+                {tracerTerms.ratioLabel} (%)
+              </th>
+              <th class="py-3 px-4 text-center">Status Beranda</th>
+              <th class="py-3 px-4 text-right">Tindakan</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-border" id="tracer-tbody">
+            {allTracerStats.length === 0 ? (
+              <tr>
+                <td colspan="8" class="py-12 text-center text-muted">
+                  Belum ada rekap angkatan kelulusan. Klik "Tambah Rekap
+                  Angkatan" untuk memasukkan data.
+                </td>
+              </tr>
+            ) : (
+              allTracerStats.map((item) => {
+                const rate =
+                  item.totalGraduates > 0
+                    ? Math.round(
+                        (item.ptnAcceptedUnique / item.totalGraduates) * 100,
+                      )
+                    : 0;
+                return (
+                  <tr
+                    class="hover:bg-surface-subtle transition-colors"
+                    id={`tracer-row-${item.id}`}
+                  >
+                    <td class="py-3.5 px-4 font-bold text-heading">
+                      Lulusan {item.graduationYear}
+                      {item.notes && (
+                        <p class="text-[10px] text-muted font-normal mt-0.5">
+                          {item.notes}
+                        </p>
+                      )}
+                    </td>
+                    <td class="py-3.5 px-4 text-center font-mono font-medium text-heading">
+                      {item.totalGraduates}
+                    </td>
+                    <td class="py-3.5 px-4 text-center font-mono font-semibold text-primary">
+                      {item.ptnAcceptedUnique}
+                    </td>
+                    <td class="py-3.5 px-4 text-center font-mono text-muted">
+                      {item.ptsAccepted || 0}
+                    </td>
+                    <td class="py-3.5 px-4 text-center font-mono text-muted">
+                      {(item.workingCount || 0) + (item.entrepreneurCount || 0)}
+                    </td>
+                    <td class="py-3.5 px-4 text-center font-display text-sm font-bold text-primary">
+                      {rate}%
+                    </td>
+                    <td class="py-3.5 px-4 text-center">
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={item.isActive ? "true" : "false"}
+                        class="btn-toggle-tracer-status inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors cursor-pointer"
+                        class:list={[
+                          item.isActive
+                            ? "bg-primary"
+                            : "bg-border hover:bg-muted/40",
+                        ]}
+                        data-id={item.id}
+                        data-active={String(item.isActive)}
+                        title={
+                          item.isActive
+                            ? "Rujukan Beranda Aktif (Klik untuk nonaktifkan)"
+                            : "Historis (Klik untuk jadikan rujukan beranda)"
+                        }
+                      >
+                        <span
+                          class:list={[
+                            "h-4 w-4 rounded-full bg-white shadow-xs transition-transform pointer-events-none",
+                            item.isActive ? "translate-x-4" : "translate-x-0",
+                          ]}
+                        ></span>
+                      </button>
+                    </td>
+                    <td class="py-3.5 px-4 text-right">
+                      <div class="inline-flex items-center gap-1.5 justify-end">
+                        <button
+                          type="button"
+                          class="btn-edit-tracer inline-flex h-7 w-7 items-center justify-center rounded-[6px] border border-border bg-surface text-muted hover:text-heading hover:bg-surface-subtle transition-colors shadow-2xs cursor-pointer"
+                          data-item={JSON.stringify(item)}
+                          title="Edit Rekap Angkatan"
+                        >
+                          <Icon name="edit" class="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          class="btn-delete-tracer inline-flex h-7 w-7 items-center justify-center rounded-[6px] border border-border bg-surface text-error hover:bg-error hover:text-white hover:border-error transition-colors shadow-2xs cursor-pointer"
+                          data-id={item.id}
+                          data-year={item.graduationYear}
+                          title="Hapus Rekap Angkatan"
+                        >
+                          <Icon name="trash" class="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODALS CONTAINER                                             -->
+
+  <div slot="modals">
+    <!-- MODAL 1: REKAP KESISWAAN (ENROLLMENT) -->
+    <div
+      id="modal-enrollment"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-enrollment-title"
+      class="fixed inset-0 z-50 hidden overflow-y-auto bg-heading/60 backdrop-blur-xs p-4 sm:p-6"
+    >
+      <div class="flex min-h-full items-center justify-center">
+        <div class="w-full max-w-md max-h-[90dvh] flex flex-col rounded-[12px] border border-border bg-surface shadow-2xl overflow-hidden">
+          <!-- Header (Sticky) -->
+          <div class="flex items-center justify-between px-5 py-4 bg-surface shrink-0 border-b border-border">
+            <div class="flex items-center gap-2.5">
+              <h3
+                id="modal-enrollment-title"
+                class="font-display text-sm sm:text-base font-bold text-heading"
+              >
+                Tambah Rekap Kesiswaan
+              </h3>
+            </div>
+            <button
+              type="button"
+              class="btn-close-enrollment-modal text-muted hover:text-heading p-1.5 rounded-[6px] hover:bg-surface-subtle transition-colors cursor-pointer"
+              title="Tutup"
+              aria-label="Tutup"
+            >
+              <Icon name="close" class="h-4 w-4" />
+            </button>
+          </div>
+
+          <!-- Body (Scrollable) -->
+          <form
+            id="form-enrollment"
+            class="flex flex-col flex-1 min-h-0 overflow-hidden"
+          >
+            <div class="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-3.5">
+              <input type="hidden" id="enrollment-id" />
+
+              <div class="grid grid-cols-2 gap-3">
+                <div class="space-y-1">
+                  <label
+                    for="enrollment-year"
+                    class="block font-body text-xs font-semibold text-heading"
+                  >
+                    Tahun Ajaran <span class="text-error">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="enrollment-year"
+                    required
+                    class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading font-mono focus:border-primary focus:outline-none transition-colors"
+                    placeholder="Contoh: 2026/2027"
+                  />
+                </div>
+                <div class="space-y-1">
+                  <label
+                    for="enrollment-total"
+                    class="block font-body text-xs font-semibold text-heading"
+                  >
+                    Total Siswa Aktif <span class="text-error">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    id="enrollment-total"
+                    required
+                    min="1"
+                    class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading font-mono focus:border-primary focus:outline-none transition-colors"
+                    placeholder="1250"
+                  />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-3 gap-2">
+                <div class="space-y-1">
+                  <label
+                    for="enrollment-male"
+                    class="block font-body text-xs font-semibold text-heading"
+                  >
+                    Laki-laki (L)
+                  </label>
+                  <input
+                    type="number"
+                    id="enrollment-male"
+                    min="0"
+                    class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading font-mono focus:border-primary focus:outline-none transition-colors"
+                    placeholder="610"
+                  />
+                </div>
+                <div class="space-y-1">
+                  <label
+                    for="enrollment-female"
+                    class="block font-body text-xs font-semibold text-heading"
+                  >
+                    Perempuan (P)
+                  </label>
+                  <input
+                    type="number"
+                    id="enrollment-female"
+                    min="0"
+                    class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading font-mono focus:border-primary focus:outline-none transition-colors"
+                    placeholder="640"
+                  />
+                </div>
+                <div class="space-y-1">
+                  <label
+                    for="enrollment-rombel"
+                    class="block font-body text-xs font-semibold text-heading"
+                  >
+                    Rombel
+                  </label>
+                  <input
+                    type="number"
+                    id="enrollment-rombel"
+                    min="0"
+                    class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading font-mono focus:border-primary focus:outline-none transition-colors"
+                    placeholder="36"
+                  />
+                </div>
+              </div>
+
+              <div class="space-y-1">
+                <label
+                  for="enrollment-source"
+                  class="block font-body text-xs font-semibold text-heading"
+                >
+                  Sumber Data / Cut-Off
+                </label>
+                <input
+                  type="text"
+                  id="enrollment-source"
+                  class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading focus:border-primary focus:outline-none transition-colors"
+                  placeholder="Dapodik Kemendikdasmen Cut-Off 31 Agustus"
+                />
+              </div>
+
+              <div class="pt-1 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="enrollment-active"
+                  class="h-4 w-4 rounded border-border text-primary focus:ring-0 cursor-pointer"
+                />
+                <label
+                  for="enrollment-active"
+                  class="font-body text-xs font-medium text-heading cursor-pointer"
+                >
+                  Jadikan rujukan utama jumlah siswa aktif di beranda
+                </label>
+              </div>
+            </div>
+
+            <!-- Footer (Sticky) -->
+            <div class="flex items-center justify-end gap-2 px-5 py-3.5 bg-surface-subtle shrink-0 border-t border-border">
+              <button
+                type="button"
+                class="btn-close-enrollment-modal inline-flex h-[34px] items-center justify-center rounded-[6px] border border-border bg-surface px-4 font-body text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                id="btn-submit-enrollment"
+                class="inline-flex h-[34px] items-center justify-center rounded-[6px] bg-primary px-4 font-body text-xs font-semibold text-white transition-all hover:bg-primary-hover shadow-xs cursor-pointer"
+              >
+                Simpan Rekap
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL 2: REKAP TRACER LULUSAN -->
+    <div
+      id="modal-tracer"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-tracer-title"
+      class="fixed inset-0 z-50 hidden overflow-y-auto bg-heading/60 backdrop-blur-xs p-4 sm:p-6"
+    >
+      <div class="flex min-h-full items-center justify-center">
+        <div class="w-full max-w-md max-h-[90dvh] flex flex-col rounded-[12px] border border-border bg-surface shadow-2xl overflow-hidden">
+          <!-- Header (Sticky) -->
+          <div class="flex items-center justify-between px-5 py-4 bg-surface shrink-0 border-b border-border">
+            <div class="flex items-center gap-2.5">
+              <h3
+                id="modal-tracer-title"
+                class="font-display text-sm sm:text-base font-bold text-heading"
+              >
+                Tambah Rekap Angkatan Kelulusan
+              </h3>
+            </div>
+            <button
+              type="button"
+              class="btn-close-tracer-modal text-muted hover:text-heading p-1.5 rounded-[6px] hover:bg-surface-subtle transition-colors cursor-pointer"
+              title="Tutup"
+              aria-label="Tutup"
+            >
+              <Icon name="close" class="h-4 w-4" />
+            </button>
+          </div>
+
+          <!-- Body (Scrollable) -->
+          <form
+            id="form-tracer"
+            class="flex flex-col flex-1 min-h-0 overflow-hidden"
+          >
+            <div class="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-3.5">
+              <input type="hidden" id="tracer-id" />
+
+              <div class="grid grid-cols-2 gap-3">
+                <div class="space-y-1">
+                  <label
+                    for="tracer-year"
+                    class="block font-body text-xs font-semibold text-heading"
+                  >
+                    Tahun Kelulusan <span class="text-error">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="tracer-year"
+                    required
+                    class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading font-mono focus:border-primary focus:outline-none transition-colors"
+                    placeholder="Contoh: 2025"
+                  />
+                </div>
+                <div class="space-y-1">
+                  <label
+                    for="tracer-total"
+                    class="block font-body text-xs font-semibold text-heading"
+                  >
+                    Total Lulusan <span class="text-error">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    id="tracer-total"
+                    required
+                    min="1"
+                    class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading font-mono focus:border-primary focus:outline-none transition-colors"
+                    placeholder="Contoh: 200"
+                  />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-3 gap-2">
+                <div class="space-y-1">
+                  <label
+                    for="tracer-ptn"
+                    class="block font-body text-xs font-semibold text-heading"
+                  >
+                    {tracerTerms.primaryShort} <span class="text-error">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    id="tracer-ptn"
+                    required
+                    min="0"
+                    class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading font-mono focus:border-primary focus:outline-none transition-colors"
+                    placeholder="176"
+                  />
+                </div>
+                <div class="space-y-1">
+                  <label
+                    for="tracer-pts"
+                    class="block font-body text-xs font-semibold text-heading"
+                  >
+                    {tracerTerms.secondaryShort}
+                  </label>
+                  <input
+                    type="number"
+                    id="tracer-pts"
+                    min="0"
+                    class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading font-mono focus:border-primary focus:outline-none transition-colors"
+                    placeholder="14"
+                  />
+                </div>
+                <div class="space-y-1">
+                  <label
+                    for="tracer-work"
+                    class="block font-body text-xs font-semibold text-heading"
+                  >
+                    {tracerTerms.tertiaryShort}
+                  </label>
+                  <input
+                    type="number"
+                    id="tracer-work"
+                    min="0"
+                    class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading font-mono focus:border-primary focus:outline-none transition-colors"
+                    placeholder="10"
+                  />
+                </div>
+              </div>
+
+              <div class="space-y-1">
+                <label
+                  for="tracer-notes"
+                  class="block font-body text-xs font-semibold text-heading"
+                >
+                  {tracerTerms.notesLabel}
+                </label>
+                <input
+                  type="text"
+                  id="tracer-notes"
+                  class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading focus:border-primary focus:outline-none transition-colors"
+                  placeholder={tracerTerms.notesPlaceholder}
+                />
+              </div>
+
+              <div class="pt-1 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="tracer-active"
+                  class="h-4 w-4 rounded border-border text-primary focus:ring-0 cursor-pointer"
+                />
+                <label
+                  for="tracer-active"
+                  class="font-body text-xs font-medium text-heading cursor-pointer"
+                >
+                  Jadikan rujukan utama persentase PTN di beranda
+                </label>
+              </div>
+            </div>
+
+            <!-- Footer (Sticky) -->
+            <div class="flex items-center justify-end gap-2 px-5 py-3.5 bg-surface-subtle shrink-0 border-t border-border">
+              <button
+                type="button"
+                class="btn-close-tracer-modal inline-flex h-[34px] items-center justify-center rounded-[6px] border border-border bg-surface px-4 font-body text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                id="btn-submit-tracer"
+                class="inline-flex h-[34px] items-center justify-center rounded-[6px] bg-primary px-4 font-body text-xs font-semibold text-white transition-all hover:bg-primary-hover shadow-xs cursor-pointer"
+              >
+                Simpan Rekap
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Client Script -->
+  <script is:inline>
+    function initKesiswaanPage() {
+      // 1. Tab Switcher
+      const tabEnrollment = document.getElementById("tab-btn-enrollment");
+      const tabTracer = document.getElementById("tab-btn-tracer");
+      const paneEnrollment = document.getElementById("pane-enrollment");
+      const paneTracer = document.getElementById("pane-tracer");
+      const banner = document.getElementById("status-banner");
+
+      function showBanner(msg, type = "success") {
+        if (window.showToast) {
+          window.showToast(msg, type);
+        }
+        if (!banner) return;
+        banner.className =
+          type === "success"
+            ? "rounded-lg border border-success bg-success-light p-3.5 text-xs text-success-text font-medium block"
+            : "rounded-lg border border-error bg-error-light p-3.5 text-xs text-error font-medium block";
+        banner.textContent = msg;
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        setTimeout(() => banner.classList.add("hidden"), 5000);
+      }
+
+      const tabs = [
+        { btn: tabEnrollment, pane: paneEnrollment },
+        { btn: tabTracer, pane: paneTracer },
+      ];
+
+      function switchTab(targetIndex) {
+        tabs.forEach((t, i) => {
+          if (i === targetIndex) {
+            t.btn?.setAttribute(
+              "class",
+              "main-tab-btn border-b-2 border-primary font-bold text-primary flex items-center gap-2 py-3 px-3 text-xs cursor-pointer transition-colors whitespace-nowrap",
+            );
+            t.pane?.classList.remove("hidden");
+          } else {
+            t.btn?.setAttribute(
+              "class",
+              "main-tab-btn border-b-2 border-transparent font-medium text-muted hover:text-heading flex items-center gap-2 py-3 px-3 text-xs cursor-pointer transition-colors whitespace-nowrap",
+            );
+            t.pane?.classList.add("hidden");
+          }
+        });
+
+        // Toggle action buttons di header sesuai tab aktif
+        const btnAddEnrollment = document.getElementById("btn-add-enrollment");
+        const btnAddTracer = document.getElementById("btn-add-tracer");
+        if (targetIndex === 1) {
+          btnAddEnrollment?.classList.add("hidden");
+          btnAddTracer?.classList.remove("hidden");
+        } else {
+          btnAddEnrollment?.classList.remove("hidden");
+          btnAddTracer?.classList.add("hidden");
+        }
+      }
+
+      tabs.forEach((t, i) => {
+        t.btn?.addEventListener("click", () => switchTab(i));
+      });
+
+      // 2. Enrollment Modal & Form Handlers
+      const modalEnrollment = document.getElementById("modal-enrollment");
+      const formEnrollment = document.getElementById("form-enrollment");
+      const enrollmentIdInput = document.getElementById("enrollment-id");
+      const enrollmentYearInput = document.getElementById("enrollment-year");
+      const enrollmentTotalInput = document.getElementById("enrollment-total");
+      const enrollmentMaleInput = document.getElementById("enrollment-male");
+      const enrollmentFemaleInput =
+        document.getElementById("enrollment-female");
+      const enrollmentRombelInput =
+        document.getElementById("enrollment-rombel");
+      const enrollmentSourceInput =
+        document.getElementById("enrollment-source");
+      const enrollmentActiveInput =
+        document.getElementById("enrollment-active");
+      const modalEnrollmentTitle = document.getElementById(
+        "modal-enrollment-title",
+      );
+
+      function openEnrollmentModal() {
+        modalEnrollment?.classList.remove("hidden");
+      }
+      function closeEnrollmentModal() {
+        modalEnrollment?.classList.add("hidden");
+      }
+
+      document
+        .getElementById("btn-add-enrollment")
+        ?.addEventListener("click", () => {
+          enrollmentIdInput.value = "";
+          formEnrollment?.reset();
+          if (enrollmentActiveInput) enrollmentActiveInput.checked = true;
+          if (modalEnrollmentTitle)
+            modalEnrollmentTitle.textContent = "Tambah Rekap Kesiswaan";
+          openEnrollmentModal();
+          enrollmentYearInput?.focus();
+        });
+
+      document
+        .querySelectorAll(".btn-close-enrollment-modal")
+        .forEach((btn) => {
+          btn.addEventListener("click", closeEnrollmentModal);
+        });
+
+      document.querySelectorAll(".btn-edit-enrollment").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const item = JSON.parse(btn.dataset.item || "{}");
+          enrollmentIdInput.value = item.id;
+          enrollmentYearInput.value = item.academicYear;
+          enrollmentTotalInput.value = item.totalStudents;
+          enrollmentMaleInput.value = item.maleCount || "";
+          enrollmentFemaleInput.value = item.femaleCount || "";
+          enrollmentRombelInput.value = item.rombelCount || "";
+          enrollmentSourceInput.value = item.source || "";
+          if (enrollmentActiveInput)
+            enrollmentActiveInput.checked = Boolean(item.isActive);
+          if (modalEnrollmentTitle)
+            modalEnrollmentTitle.textContent = `Edit Rekap Kesiswaan TA ${item.academicYear}`;
+          openEnrollmentModal();
+        });
+      });
+
+      document
+        .querySelectorAll(".btn-toggle-enrollment-status")
+        .forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const id = btn.getAttribute("data-id");
+            const currentActive = btn.getAttribute("data-active") === "true";
+            const nextActive = !currentActive;
+            try {
+              btn.disabled = true;
+              const res = await fetch(`/api/admin/enrollment-stats/${id}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ isActive: nextActive }),
+              });
+              const data = await res.json();
+              if (data.success) {
+                showBanner(
+                  nextActive
+                    ? "Tahun ajaran berhasil diaktifkan sebagai rujukan beranda."
+                    : "Tahun ajaran dinonaktifkan dari rujukan beranda.",
+                );
+                setTimeout(() => window.location.reload(), 500);
+              } else {
+                btn.disabled = false;
+                alert(data.error || "Gagal mengubah status rujukan beranda");
+              }
+            } catch {
+              btn.disabled = false;
+              alert("Gagal menghubungi server");
+            }
+          });
+        });
+
+      document.querySelectorAll(".btn-delete-enrollment").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const id = btn.dataset.id;
+          const year = btn.dataset.year;
+          const confirmed =
+            (await window.confirmDialog?.({
+              title: "Hapus Rekapitulasi Kesiswaan",
+              message: `Hapus rekapitulasi kesiswaan tahun ajaran ${year}?\nTindakan ini tidak dapat dibatalkan.`,
+              confirmText: "Ya, Hapus",
+              cancelText: "Batal",
+              type: "danger",
+            })) ??
+            confirm(`Hapus rekapitulasi kesiswaan tahun ajaran ${year}?`);
+          if (!confirmed) return;
+          try {
+            const res = await fetch(`/api/admin/enrollment-stats/${id}`, {
+              method: "DELETE",
+            });
+            const data = await res.json();
+            if (data.success) {
+              document.getElementById(`enrollment-row-${id}`)?.remove();
+              showBanner(`Rekap kesiswaan TA ${year} berhasil dihapus.`);
+            } else {
+              alert(data.error || "Gagal menghapus");
+            }
+          } catch {
+            alert("Gagal menghubungi server");
+          }
+        });
+      });
+
+      formEnrollment?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const id = enrollmentIdInput.value;
+        const url = id
+          ? `/api/admin/enrollment-stats/${id}`
+          : "/api/admin/enrollment-stats";
+        const method = id ? "PUT" : "POST";
+        const payload = {
+          academicYear: enrollmentYearInput.value,
+          totalStudents: Number(enrollmentTotalInput.value),
+          maleCount: enrollmentMaleInput.value
+            ? Number(enrollmentMaleInput.value)
+            : null,
+          femaleCount: enrollmentFemaleInput.value
+            ? Number(enrollmentFemaleInput.value)
+            : null,
+          rombelCount: enrollmentRombelInput.value
+            ? Number(enrollmentRombelInput.value)
+            : null,
+          source: enrollmentSourceInput.value || null,
+          isActive: enrollmentActiveInput.checked,
+        };
+
+        try {
+          const res = await fetch(url, {
+            method,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+          if (data.success) {
+            closeEnrollmentModal();
+            showBanner("Rekap kesiswaan berhasil disimpan.");
+            setTimeout(() => window.location.reload(), 800);
+          } else {
+            alert(data.error || "Gagal menyimpan rekap");
+          }
+        } catch {
+          alert("Gagal menghubungi server");
+        }
+      });
+
+      // 3. Tracer Modal & Form Handlers
+      const modalTracer = document.getElementById("modal-tracer");
+      const formTracer = document.getElementById("form-tracer");
+      const tracerIdInput = document.getElementById("tracer-id");
+      const tracerYearInput = document.getElementById("tracer-year");
+      const tracerTotalInput = document.getElementById("tracer-total");
+      const tracerPtnInput = document.getElementById("tracer-ptn");
+      const tracerPtsInput = document.getElementById("tracer-pts");
+      const tracerWorkInput = document.getElementById("tracer-work");
+      const tracerNotesInput = document.getElementById("tracer-notes");
+      const tracerActiveInput = document.getElementById("tracer-active");
+      const modalTracerTitle = document.getElementById("modal-tracer-title");
+
+      function openTracerModal() {
+        modalTracer?.classList.remove("hidden");
+      }
+      function closeTracerModal() {
+        modalTracer?.classList.add("hidden");
+      }
+
+      document
+        .getElementById("btn-add-tracer")
+        ?.addEventListener("click", () => {
+          tracerIdInput.value = "";
+          formTracer?.reset();
+          if (tracerActiveInput) tracerActiveInput.checked = true;
+          if (modalTracerTitle)
+            modalTracerTitle.textContent = "Tambah Rekap Angkatan Kelulusan";
+          openTracerModal();
+          tracerYearInput?.focus();
+        });
+
+      document.querySelectorAll(".btn-close-tracer-modal").forEach((btn) => {
+        btn.addEventListener("click", closeTracerModal);
+      });
+
+      document.querySelectorAll(".btn-edit-tracer").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const item = JSON.parse(btn.dataset.item || "{}");
+          tracerIdInput.value = item.id;
+          tracerYearInput.value = item.graduationYear;
+          tracerTotalInput.value = item.totalGraduates;
+          tracerPtnInput.value = item.ptnAcceptedUnique || 0;
+          tracerPtsInput.value = item.ptsAccepted || 0;
+          tracerWorkInput.value =
+            (item.workingCount || 0) + (item.entrepreneurCount || 0);
+          tracerNotesInput.value = item.notes || "";
+          if (tracerActiveInput)
+            tracerActiveInput.checked = Boolean(item.isActive);
+          if (modalTracerTitle)
+            modalTracerTitle.textContent = `Edit Rekap Angkatan ${item.graduationYear}`;
+          openTracerModal();
+        });
+      });
+
+      document.querySelectorAll(".btn-toggle-tracer-status").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const id = btn.getAttribute("data-id");
+          const currentActive = btn.getAttribute("data-active") === "true";
+          const nextActive = !currentActive;
+          try {
+            btn.disabled = true;
+            const res = await fetch(`/api/admin/tracer-stats/${id}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ isActive: nextActive }),
+            });
+            const data = await res.json();
+            if (data.success) {
+              showBanner(
+                nextActive
+                  ? "Data angkatan berhasil diaktifkan sebagai rujukan beranda."
+                  : "Data angkatan dinonaktifkan dari rujukan beranda.",
+              );
+              setTimeout(() => window.location.reload(), 500);
+            } else {
+              btn.disabled = false;
+              alert(data.error || "Gagal mengubah status rujukan beranda");
+            }
+          } catch {
+            btn.disabled = false;
+            alert("Gagal menghubungi server");
+          }
+        });
+      });
+
+      document.querySelectorAll(".btn-delete-tracer").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const id = btn.dataset.id;
+          const year = btn.dataset.year;
+          const confirmed =
+            (await window.confirmDialog?.({
+              title: "Hapus Rekapitulasi Kelulusan",
+              message: `Hapus rekapitulasi kelulusan tahun ${year}?\nTindakan ini tidak dapat dibatalkan.`,
+              confirmText: "Ya, Hapus",
+              cancelText: "Batal",
+              type: "danger",
+            })) ?? confirm(`Hapus rekapitulasi kelulusan tahun ${year}?`);
+          if (!confirmed) return;
+          try {
+            const res = await fetch(`/api/admin/tracer-stats/${id}`, {
+              method: "DELETE",
+            });
+            const data = await res.json();
+            if (data.success) {
+              document.getElementById(`tracer-row-${id}`)?.remove();
+              showBanner(`Rekap angkatan ${year} berhasil dihapus.`);
+            } else {
+              alert(data.error || "Gagal menghapus");
+            }
+          } catch {
+            alert("Gagal menghubungi server");
+          }
+        });
+      });
+
+      formTracer?.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const id = tracerIdInput.value;
+        const url = id
+          ? `/api/admin/tracer-stats/${id}`
+          : "/api/admin/tracer-stats";
+        const method = id ? "PUT" : "POST";
+        const payload = {
+          graduationYear: tracerYearInput.value,
+          totalGraduates: Number(tracerTotalInput.value),
+          ptnAcceptedUnique: Number(tracerPtnInput.value),
+          ptsAccepted: Number(tracerPtsInput.value || 0),
+          workingCount: Number(tracerWorkInput.value || 0),
+          notes: tracerNotesInput.value || null,
+          isActive: tracerActiveInput.checked,
+        };
+
+        try {
+          const res = await fetch(url, {
+            method,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+          if (data.success) {
+            closeTracerModal();
+            showBanner("Rekap tracer kelulusan berhasil disimpan.");
+            setTimeout(() => window.location.reload(), 800);
+          } else {
+            alert(data.error || "Gagal menyimpan rekap");
+          }
+        } catch {
+          alert("Gagal menghubungi server");
+        }
+      });
+
+      // 4. Modal Backdrop & Escape Key Handlers
+      [modalEnrollment, modalTracer].forEach((m) => {
+        m?.addEventListener("click", (e) => {
+          const target = e.target;
+          if (target === m || target?.classList?.contains("min-h-full")) {
+            m.classList.add("hidden");
+          }
+        });
+      });
+
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          closeEnrollmentModal();
+          closeTracerModal();
+        }
+      });
+
+      // 5. Interactive Chart Tooltip (Hover via CSS & Click / Touch via JS)
+      document.querySelectorAll(".chart-col-group").forEach((col) => {
+        col.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const isCurrentActive = col.classList.contains("active-tooltip");
+
+          document.querySelectorAll(".chart-col-group").forEach((c) => {
+            c.classList.remove("active-tooltip");
+          });
+
+          if (!isCurrentActive) {
+            col.classList.add("active-tooltip");
+          }
+        });
+      });
+
+      document.addEventListener("click", () => {
+        document.querySelectorAll(".chart-col-group").forEach((c) => {
+          c.classList.remove("active-tooltip");
+        });
+      });
+    }
+
+    document.addEventListener("DOMContentLoaded", initKesiswaanPage);
+    document.addEventListener("astro:page-load", initKesiswaanPage);
+  </script>
+
+  <style>
+    .chart-tooltip {
+      display: none;
+    }
+    .chart-col-group:hover .chart-tooltip,
+    .chart-col-group.active-tooltip .chart-tooltip {
+      display: block !important;
+    }
+  </style>
+</AdminLayout>

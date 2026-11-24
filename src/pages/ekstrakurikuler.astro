@@ -1,0 +1,315 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import Breadcrumb from "../components/Breadcrumb.astro";
+import Icon from "../components/Icon.astro";
+import { db, extracurriculars, settings } from "../db";
+import { eq, asc, desc } from "drizzle-orm";
+
+export const prerender = false;
+
+// Ambil konfigurasi sekolah dari basis data
+const allSettings = await db.select().from(settings).catch(() => []);
+const schoolInfo = allSettings.reduce(
+  (acc, curr) => {
+    acc[curr.key] = curr.value;
+    return acc;
+  },
+  {} as Record<string, string>,
+);
+const schoolName = schoolInfo["school_name"] || "SMAN 1 Unggulan";
+
+// Ambil seluruh data ekstrakurikuler aktif
+const rawEkskul = await db
+  .select()
+  .from(extracurriculars)
+  .where(eq(extracurriculars.isActive, true))
+  .orderBy(asc(extracurriculars.orderNumber), desc(extracurriculars.id))
+  .catch(() => []);
+
+const fallbackEkskul = [
+  {
+    id: 1,
+    name: "Robotika & Rekayasa Kecerdasan Buatan",
+    category: "Sains & Robotik",
+    schedule: "Jumat & Sabtu, 15.30 WIB",
+    coach: "Ir. Hendra Wijaya, M.T.",
+    description: "Pendalaman teknologi mikrokontroler, IoT, automasi cerdas, dan pemrograman robot untuk kompetisi nasional dan internasional.",
+    imageUrl: "https://images.unsplash.com/photo-1581092921461-eab62e97a780?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    id: 2,
+    name: "Karya Ilmiah Remaja (KIR) & Sains",
+    category: "Sains & Robotik",
+    schedule: "Rabu & Kamis, 15.30 WIB",
+    coach: "Dr. Siti Aminah, M.Si.",
+    description: "Pengembangan metode penelitian ilmiah, penulisan esai akademik, dan eksperimen laboratorium terapan bagi talenta riset muda.",
+    imageUrl: "https://images.unsplash.com/photo-1532094349884-543bc11b234d?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    id: 3,
+    name: "Pasukan Pengibar Bendera (Paskibra)",
+    category: "Kepemimpinan",
+    schedule: "Selasa & Sabtu, 15.00 WIB",
+    coach: "Bambang Sudarsono, S.Pd.",
+    description: "Pelatihan disiplin baris-berbaris, formasi pengibaran bendera pusaka, serta pembinaan kepemimpinan dan jiwa nasionalisme tangguh.",
+    imageUrl: "https://images.unsplash.com/photo-1541829070764-84a7d30dd3f3?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    id: 4,
+    name: "Seni Musik Tradisional & Modern",
+    category: "Kesenian",
+    schedule: "Senin & Kamis, 15.30 WIB",
+    coach: "Dewi Lestari, S.Sn.",
+    description: "Eksplorasi instrumen gamelan, kolaborasi ensambel orkestra modern, dan olah vokal paduan suara berprestasi festival.",
+    imageUrl: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    id: 5,
+    name: "Basket & Futsal Unggulan",
+    category: "Olahraga",
+    schedule: "Selasa & Jumat, 15.45 WIB",
+    coach: "Aris Nugroho, S.Pd.Kor.",
+    description: "Pembinaan teknik fundamental bola basket dan futsal, taktik permainan tim, serta persiapan kompetisi DBL dan kejuaraan daerah.",
+    imageUrl: "https://images.unsplash.com/photo-1546519638-68e109498ffc?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    id: 6,
+    name: "English Club & Debat Konstitusi",
+    category: "Sains & Robotik",
+    schedule: "Rabu & Sabtu, 14.00 WIB",
+    coach: "Nurul Hidayati, M.Pd.",
+    description: "Asah kefasihan public speaking berbahasa Inggris, Model United Nations (MUN), dan teknik debat kritis isu global.",
+    imageUrl: "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    id: 7,
+    name: "Palang Merah Remaja (PMR Wira)",
+    category: "Kepemimpinan",
+    schedule: "Kamis, 15.30 WIB",
+    coach: "Rina Kusuma, S.Kep.",
+    description: "Keterampilan pertolongan pertama pada kecelakaan (PPGD), mitigasi bencana, donor darah, dan aksi kemanusiaan sekolah.",
+    imageUrl: "https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    id: 8,
+    name: "Tahfidz Al-Qur'an & Kajian Rohis",
+    category: "Keagamaan",
+    schedule: "Setiap Hari Ba'da Ashar",
+    coach: "Ust. M. Ridwan, Lc.",
+    description: "Bimbingan tahsin bersanad, setoran hafalan Al-Qur'an terstruktur, dan pembinaan akhlak karimah peserta didik.",
+    imageUrl: "https://images.unsplash.com/photo-1609599006353-e629aaabfeae?auto=format&fit=crop&w=800&q=80",
+  },
+];
+
+const ekskulList = rawEkskul.length > 0 ? rawEkskul : fallbackEkskul;
+
+// Daftar kategori unik untuk filter
+const categories = ["Semua", ...new Set(ekskulList.map((e) => e.category))];
+---
+
+<Layout
+  title={`Ekstrakurikuler & Program Unggulan — ${schoolName}`}
+  description="Daftar lengkap kegiatan ekstrakurikuler, pembina, jadwal latihan, serta program pembinaan minat bakat peserta didik."
+>
+  <Header currentPath="/ekstrakurikuler" />
+
+  <main class="flex-1 py-10 sm:py-14 bg-background">
+    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <!-- Breadcrumb -->
+      <Breadcrumb
+        items={[
+          { label: "Beranda", href: "/" },
+          { label: "Ekstrakurikuler" },
+        ]}
+      />
+
+      <!-- Section Title Header -->
+      <div class="pb-2 mb-8 space-y-4">
+        <h1 class="font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-heading">
+          Ekstrakurikuler & Program Unggulan
+        </h1>
+        <p class="font-body text-sm sm:text-base text-muted max-w-2xl leading-relaxed">
+          Wadah aktualisasi diri, eksplorasi riset teknologi, kepemimpinan karakter, dan ekspresi seni budaya untuk melahirkan pribadi yang kompetitif dan berintegritas.
+        </p>
+
+        <!-- Stats Counter: Disusun ringkas dengan kartu KPI mandiri -->
+        <div class="mt-6 flex flex-wrap gap-3 sm:gap-4">
+          <div class="rounded-[10px] border border-border bg-surface px-4 py-2.5 shadow-xs">
+            <span class="font-display text-lg sm:text-xl font-bold tracking-tight text-primary leading-none block">
+              {ekskulList.length}
+            </span>
+            <span class="mt-1 font-body text-xs text-muted block whitespace-nowrap">
+              Ekstrakurikuler Terbina
+            </span>
+          </div>
+          <div class="rounded-[10px] border border-border bg-surface px-4 py-2.5 shadow-xs">
+            <span class="font-display text-lg sm:text-xl font-bold tracking-tight text-primary leading-none block">
+              {categories.length - 1}
+            </span>
+            <span class="mt-1 font-body text-xs text-muted block whitespace-nowrap">
+              Bidang Peminatan
+            </span>
+          </div>
+          <div class="rounded-[10px] border border-border bg-surface px-4 py-2.5 shadow-xs">
+            <span class="font-display text-lg sm:text-xl font-bold tracking-tight text-primary leading-none block">
+              100%
+            </span>
+            <span class="mt-1 font-body text-xs text-muted block whitespace-nowrap">
+              Pembina Tersertifikasi
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filter Kategori Tabs -->
+      <div
+        class="flex items-center gap-2 overflow-x-auto pb-2 mb-8 scrollbar-none *:shrink-0 *:rounded-[6px] *:px-3.5 *:py-1.5 *:font-body *:text-xs *:transition-colors"
+        id="ekskul-filter-bar"
+      >
+        {categories.map((cat, idx) => (
+          <button
+            type="button"
+            data-category={cat}
+            class:list={[
+              "filter-btn cursor-pointer",
+              idx === 0
+                ? "bg-primary font-semibold text-white shadow-xs"
+                : "border border-border bg-surface font-medium text-muted hover:border-border-hover hover:text-heading hover:bg-surface-subtle"
+            ]}
+          >
+            {cat}
+          </button>
+        ))}
+      </div>
+
+      <!-- Grid Kartu Ekstrakurikuler Lengkap -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6" id="ekskul-grid">
+        {ekskulList.map((item) => (
+          <article
+            class="ekskul-item group overflow-hidden rounded-[12px] border border-border bg-surface transition-all duration-200 hover:-translate-y-0.5 hover:border-border-hover hover:shadow-(--shadow-hover) flex flex-col justify-between"
+            data-category={item.category}
+          >
+            <div>
+              <div class="relative aspect-[16/10] w-full overflow-hidden bg-surface-subtle">
+                <img
+                  src={item.imageUrl || "https://images.unsplash.com/photo-1541829070764-84a7d30dd3f3?auto=format&fit=crop&w=800&q=80"}
+                  alt={item.name}
+                  width="800"
+                  height="500"
+                  class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                  loading="lazy"
+                />
+                <div class="absolute top-3 left-3">
+                  <span class="rounded-[4px] border border-white/20 bg-black/60 backdrop-blur-xs px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-white shadow-xs">
+                    {item.category}
+                  </span>
+                </div>
+              </div>
+
+              <div class="p-5 space-y-2">
+                <h2 class="font-display text-base sm:text-lg font-bold text-heading leading-snug transition-colors group-hover:text-primary">
+                  {item.name}
+                </h2>
+                {item.description && (
+                  <p class="font-body text-xs sm:text-sm text-muted leading-relaxed line-clamp-3">
+                    {item.description}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div class="px-5 pb-5 pt-0">
+              <div class="rounded-[8px] bg-surface-subtle border border-border p-3 text-xs text-muted space-y-1.5">
+                {item.schedule && (
+                  <div class="flex items-center gap-2">
+                    <Icon name="clock" class="h-3.5 w-3.5 text-primary shrink-0" />
+                    <span class="truncate">{item.schedule}</span>
+                  </div>
+                )}
+                {item.coach && (
+                  <div class="flex items-center gap-2 truncate">
+                    <Icon name="user" class="h-3.5 w-3.5 text-primary shrink-0" />
+                    <span class="truncate">
+                      Pembina: <strong class="text-heading font-medium">{item.coach}</strong>
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </article>
+        ))}
+
+        <!-- State Kosong jika Kategori Tidak Memiliki Kegiatan -->
+        <div
+          id="empty-state"
+          class="hidden rounded-[12px] border border-border bg-surface p-12 text-center max-w-md mx-auto space-y-3 shadow-xs col-span-full"
+        >
+          <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-surface-subtle text-muted">
+            <Icon name="search" class="h-6 w-6 text-muted" />
+          </div>
+          <h3 class="font-display text-base font-bold text-heading">
+            Tidak Ada Kegiatan
+          </h3>
+          <p class="font-body text-xs text-muted">
+            Belum ada ekstrakurikuler yang terdaftar pada kategori peminatan ini.
+          </p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <Footer />
+
+  <script>
+    function initEkskulFilter() {
+      const filterBar = document.getElementById('ekskul-filter-bar');
+      const grid = document.getElementById('ekskul-grid');
+      const emptyState = document.getElementById('empty-state');
+      if (!filterBar || !grid) return;
+
+      const buttons = filterBar.querySelectorAll<HTMLButtonElement>('.filter-btn');
+      const items = grid.querySelectorAll<HTMLElement>('.ekskul-item');
+
+      buttons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const selected = btn.getAttribute('data-category');
+
+          buttons.forEach((b) => {
+            b.classList.remove('bg-primary', 'text-white', 'font-semibold', 'shadow-xs');
+            b.classList.add('border', 'border-border', 'bg-surface', 'text-muted', 'hover:border-border-hover', 'hover:text-heading', 'hover:bg-surface-subtle');
+          });
+          btn.classList.remove('border', 'border-border', 'bg-surface', 'text-muted', 'hover:border-border-hover', 'hover:text-heading', 'hover:bg-surface-subtle');
+          btn.classList.add('bg-primary', 'text-white', 'font-semibold', 'shadow-xs');
+
+          let visibleCount = 0;
+          items.forEach((item) => {
+            const cat = item.getAttribute('data-category');
+            if (selected === 'Semua' || cat === selected) {
+              item.classList.remove('hidden');
+              visibleCount++;
+            } else {
+              item.classList.add('hidden');
+            }
+          });
+
+          if (emptyState) {
+            if (visibleCount === 0) {
+              emptyState.classList.remove('hidden');
+            } else {
+              emptyState.classList.add('hidden');
+            }
+          }
+        });
+      });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initEkskulFilter);
+    } else {
+      initEkskulFilter();
+    }
+  </script>
+</Layout>
+

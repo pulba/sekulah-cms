@@ -1,0 +1,2484 @@
+---
+export const prerender = false;
+
+import AdminLayout from "../../../layouts/AdminLayout.astro";
+import MediaPickerModal from "../../../components/MediaPickerModal.astro";
+import Icon from "../../../components/Icon.astro";
+import { db, heroSlides, navigationItems } from "../../../db";
+import { asc, desc } from "drizzle-orm";
+
+// 1. Data Banner Slider Hero
+const slidesList = await db
+  .select()
+  .from(heroSlides)
+  .orderBy(asc(heroSlides.orderNumber), asc(heroSlides.id))
+  .catch(() => []);
+
+// 2. Data Navigasi Website
+const navList = await db
+  .select()
+  .from(navigationItems)
+  .orderBy(asc(navigationItems.sortOrder), asc(navigationItems.createdAt))
+  .catch(() => []);
+
+// Bangun struktur hierarki navigasi (Top-Level & Submenu)
+const topLevelNav = navList.filter((item) => !item.parentId);
+const subNavMap = new Map<string, typeof navList>();
+navList.forEach((item) => {
+  if (item.parentId) {
+    if (!subNavMap.has(item.parentId)) {
+      subNavMap.set(item.parentId, []);
+    }
+    subNavMap.get(item.parentId)!.push(item);
+  }
+});
+
+// Urutkan submenu berdasarkan sortOrder
+subNavMap.forEach((children) => {
+  children.sort((a, b) => a.sortOrder - b.sortOrder);
+});
+
+const dropdownItems = topLevelNav.filter((i) => i.type === "dropdown");
+---
+
+<AdminLayout title="Pengaturan Tampilan Website" activeNav="slider">
+  <div class="space-y-8 max-w-6xl">
+    <!-- Header Utama Halaman -->
+    <div class="border-b border-border pb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <h1 class="font-display text-2xl font-bold tracking-tight text-heading">
+          Pengaturan Tampilan Website
+        </h1>
+        <p class="mt-1 font-body text-xs text-muted">
+          Kelola tayangan banner slider beranda dan susunan navigasi website
+          sekolah.
+        </p>
+      </div>
+
+      <!-- Tombol Aksi Cepat -->
+      <div class="flex items-center gap-2">
+        <button
+          id="btn-action-slider"
+          class="inline-flex h-[36px] items-center justify-center gap-1.5 rounded-[6px] border border-border bg-surface px-3.5 text-xs font-semibold text-heading hover:bg-surface-subtle shadow-xs cursor-pointer transition-colors"
+        >
+          <Icon name="plus" class="h-4 w-4 text-primary" />
+          <span>Tambah Slide</span>
+        </button>
+
+        <button
+          id="btn-action-nav"
+          class="inline-flex h-[36px] items-center justify-center gap-1.5 rounded-[6px] bg-primary px-4 text-xs font-semibold text-white hover:bg-primary-hover shadow-xs cursor-pointer transition-colors"
+        >
+          <Icon name="plus" class="h-4 w-4" />
+          <span>Tambah Menu</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Alert / Toast Banner Status -->
+    <div
+      id="status-banner"
+      class="hidden rounded-[6px] p-3 text-xs font-medium transition-all"
+    ></div>
+
+    <!-- BAGIAN 1: BANNER SLIDER HERO                             -->
+
+    <div id="panel-slider" class="space-y-6">
+      <div class="rounded-[8px] border border-border bg-surface overflow-hidden shadow-xs">
+        <div class="p-4 border-b border-border flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h2 class="font-display text-sm font-bold text-heading flex items-center gap-2">
+              <span>Daftar Slide Banner ({slidesList.length})</span>
+              <span
+                id="reorder-spinner"
+                class="hidden text-xs text-primary font-normal flex items-center gap-1"
+              >
+                <svg
+                  class="animate-spin h-3.5 w-3.5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                >
+                  <circle
+                    class="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    stroke-width="4"
+                  ></circle>
+                  <path
+                    class="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8v8H4z"
+                  ></path>
+                </svg>
+                <span>Menyimpan urutan baru...</span>
+              </span>
+            </h2>
+            <p class="text-[11px] text-muted">
+              Gunakan ikon pegangan (grip) untuk menggeser urutan banner secara
+              langsung.
+            </p>
+          </div>
+          <span class="text-[11px] text-muted font-mono bg-surface-subtle px-2 py-1 rounded border border-border/60 self-start sm:self-auto">
+            Urutan otomatis tersimpan
+          </span>
+        </div>
+
+        {slidesList.length === 0 ? (
+          <div class="p-12 text-center text-xs text-muted">
+            Belum ada slide banner dibuat. Klik tombol "Tambah Slide Baru" untuk
+            membuat tampilan banner beranda.
+          </div>
+        ) : (
+          <div class="overflow-x-auto">
+            <table class="w-full text-left font-body text-xs" id="slider-table">
+              <thead class="border-b border-border bg-surface-subtle text-[11px] font-semibold text-muted uppercase">
+                <tr>
+                  <th
+                    class="py-3 px-3 w-10 text-center"
+                    title="Geser untuk mengurutkan"
+                  >
+                    Pindah
+                  </th>
+                  <th class="py-3 px-3 w-14 text-center">Urutan</th>
+                  <th class="py-3 px-4 w-36">Gambar</th>
+                  <th class="py-3 px-4">Judul & Deskripsi</th>
+                  <th class="py-3 px-4">Tombol Aksi (CTA)</th>
+                  <th class="py-3 px-4">Status</th>
+                  <th class="py-3 px-4 text-right">Tindakan</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-border" id="slider-tbody">
+                {slidesList.map((item, idx) => (
+                  <tr
+                    class="slide-row hover:bg-surface-subtle transition-colors select-none"
+                    id={`row-${item.id}`}
+                    data-id={item.id}
+                    draggable="true"
+                  >
+                    <!-- Drag Handle -->
+                    <td class="py-3 px-3 text-center">
+                      <div
+                        class="drag-handle inline-flex items-center justify-center p-1.5 rounded text-muted hover:text-heading hover:bg-surface cursor-grab active:cursor-grabbing transition-colors"
+                        title="Klik dan geser untuk memindahkan posisi"
+                      >
+                        <svg
+                          class="h-4 w-4"
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                        >
+                          <path d="M7 2a2 2 0 100 4 2 2 0 000-4zM13 2a2 2 0 100 4 2 2 0 000-4zM7 8a2 2 0 100 4 2 2 0 000-4zM13 8a2 2 0 100 4 2 2 0 000-4zM7 14a2 2 0 100 4 2 2 0 000-4zM13 14a2 2 0 100 4 2 2 0 000-4z" />
+                        </svg>
+                      </div>
+                    </td>
+
+                    <!-- Nomor Urutan Dinamis -->
+                    <td class="py-3 px-3 text-center">
+                      <span class="order-badge inline-flex h-6 w-6 items-center justify-center rounded-full bg-surface-subtle border border-border text-[11px] font-mono font-bold text-heading">
+                        {idx + 1}
+                      </span>
+                    </td>
+
+                    <!-- Gambar Thumbnail -->
+                    <td class="py-3 px-4">
+                      <div class="relative h-14 w-28 overflow-hidden rounded-[4px] border border-border bg-surface-subtle group/thumb">
+                        <img
+                          src={item.imageUrl}
+                          alt={item.title}
+                          class="h-full w-full object-cover"
+                          loading="lazy"
+                        />
+                        <a
+                          href={item.imageUrl}
+                          target="_blank"
+                          class="absolute inset-0 bg-heading/60 opacity-0 group-hover/thumb:opacity-100 flex items-center justify-center text-white text-[10px] font-medium transition-opacity"
+                        >
+                          Lihat Full
+                        </a>
+                      </div>
+                    </td>
+
+                    <!-- Judul & Subtitle -->
+                    <td class="py-3 px-4 max-w-xs">
+                      {item.tagline && (
+                        <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider bg-surface-subtle text-muted border border-border mb-1">
+                          {item.tagline}
+                        </span>
+                      )}
+                      <div class="font-display font-semibold text-heading truncate">
+                        {item.title}
+                      </div>
+                      {item.subtitle ? (
+                        <div class="text-[11px] text-muted line-clamp-1 mt-0.5">
+                          {item.subtitle}
+                        </div>
+                      ) : (
+                        <div class="text-[10px] text-muted/60 italic mt-0.5">
+                          Tanpa subjudul
+                        </div>
+                      )}
+                    </td>
+
+                    <!-- Tombol Aksi (CTA) -->
+                    <td class="py-3 px-4 max-w-[200px]">
+                      {item.linkText && item.linkUrl ? (
+                        <div class="flex flex-col gap-1">
+                          <span class="inline-flex items-center gap-1 text-[11px] font-medium text-primary truncate">
+                            <span class="truncate">{item.linkText}</span>
+                          </span>
+                          {item.linkText2 && item.linkUrl2 && (
+                            <span class="inline-flex items-center gap-1 text-[10px] font-medium text-muted truncate">
+                              <span class="truncate">{item.linkText2}</span>
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span class="text-[10px] text-muted italic">
+                          Tanpa tautan
+                        </span>
+                      )}
+                    </td>
+
+                    <!-- Status Aktif / Nonaktif (Tombol Switch) -->
+                    <td class="py-3 px-4">
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={item.isActive ? "true" : "false"}
+                        class:list={[
+                          "toggle-status-btn relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out",
+                          item.isActive ? "bg-primary" : "bg-border",
+                        ]}
+                        data-id={item.id}
+                        title={
+                          item.isActive
+                            ? "Aktif (Klik untuk menonaktifkan)"
+                            : "Nonaktif (Klik untuk mengaktifkan)"
+                        }
+                        aria-label={
+                          item.isActive
+                            ? "Nonaktifkan slide banner"
+                            : "Aktifkan slide banner"
+                        }
+                      >
+                        <span class="sr-only">
+                          {item.isActive ? "Aktif" : "Nonaktif"}
+                        </span>
+                        <span
+                          aria-hidden="true"
+                          class:list={[
+                            "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out",
+                            item.isActive ? "translate-x-4" : "translate-x-0",
+                          ]}
+                        />
+                      </button>
+                    </td>
+
+                    <!-- Tombol Tindakan (Icon Saja) -->
+                    <td class="py-3 px-4 text-right whitespace-nowrap">
+                      <div class="inline-flex items-center gap-1.5 *:inline-flex *:h-7 *:w-7 *:items-center *:justify-center *:rounded-[6px] *:border *:transition-colors *:cursor-pointer">
+                        <button
+                          type="button"
+                          class="edit-btn border-border bg-surface text-muted hover:text-primary hover:border-primary/40 hover:bg-surface-subtle shadow-2xs"
+                          data-slide={JSON.stringify(item)}
+                          title="Edit slide banner"
+                          aria-label="Edit slide banner"
+                        >
+                          <Icon
+                            name="edit"
+                            class="h-3.5 w-3.5 pointer-events-none"
+                          />
+                        </button>
+                        <button
+                          type="button"
+                          class="delete-btn border-border bg-surface text-muted hover:text-error hover:border-error/40 hover:bg-error-light shadow-2xs"
+                          data-id={item.id}
+                          data-title={item.title}
+                          title="Hapus slide banner"
+                          aria-label="Hapus slide banner"
+                        >
+                          <Icon
+                            name="trash"
+                            class="h-3.5 w-3.5 pointer-events-none"
+                          />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+
+    <!-- BAGIAN 2: NAVIGASI WEBSITE DINAMIS (Navbar)              -->
+
+    <div id="panel-navigation" class="space-y-6">
+      <!-- Ringkasan Info & Kontrol Navigasi -->
+      <div class="rounded-[8px] border border-border bg-surface p-4 sm:p-5 shadow-xs">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/80 pb-3">
+          <div>
+            <h2 class="font-display text-sm font-bold text-heading">
+              Menu Navbar Website
+            </h2>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-mono text-muted bg-surface-subtle border border-border px-2.5 py-1 rounded">
+              {topLevelNav.length} menu utama &bull; {dropdownItems.length}{" "}
+              dropdown
+            </span>
+            <button
+              id="btn-reset-nav-defaults"
+              type="button"
+              class="inline-flex h-7 items-center justify-center gap-1 rounded border border-border bg-surface px-2.5 text-[11px] font-medium text-muted hover:text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+              title="Kembalikan struktur menu ke konfigurasi standar sekolah"
+            >
+              <svg
+                class="h-3.5 w-3.5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                />
+              </svg>
+              <span>Reset Standar</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Daftar Menu Rapi & Tenang (UI Bersih Tanpa Badge Berlebih) -->
+        <div class="mt-4 space-y-2" id="nav-hierarchy-container">
+          {topLevelNav.length === 0 ? (
+            <div class="p-8 text-center text-xs text-muted">
+              Belum ada item navigasi. Klik "Tambah Menu" atau "Reset Standar"
+              untuk memuat susunan menu.
+            </div>
+          ) : (
+            topLevelNav.map((topItem, topIdx) => {
+              const children = subNavMap.get(topItem.id) || [];
+              const isDropdown = topItem.type === "dropdown";
+
+              return (
+                <div
+                  class="nav-tree-item rounded-[6px] border border-border bg-surface transition-all hover:border-primary shadow-2xs select-none"
+                  id={`nav-item-${topItem.id}`}
+                  data-id={topItem.id}
+                  data-type={topItem.type}
+                  draggable="true"
+                >
+                  <!-- Baris Menu Utama (Parent / Top-Level) -->
+                  <div class="nav-tree-header p-2.5 sm:px-3.5 flex items-center justify-between gap-3 bg-surface rounded-[6px]">
+                    <div class="flex items-center gap-2.5 min-w-0 flex-1">
+                      <!-- Drag Handle Hierarki -->
+                      <span
+                        class="nav-drag-handle inline-flex items-center justify-center p-1 rounded text-muted hover:text-heading hover:bg-surface-subtle cursor-grab active:cursor-grabbing transition-colors shrink-0"
+                        title="Klik dan geser untuk memindahkan posisi atau hierarki menu"
+                      >
+                        <svg
+                          class="h-4 w-4 pointer-events-none"
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                        >
+                          <path d="M7 2a2 2 0 100 4 2 2 0 000-4zM13 2a2 2 0 100 4 2 2 0 000-4zM7 8a2 2 0 100 4 2 2 0 000-4zM13 8a2 2 0 100 4 2 2 0 000-4zM7 14a2 2 0 100 4 2 2 0 000-4zM13 14a2 2 0 100 4 2 2 0 000-4z" />
+                        </svg>
+                      </span>
+
+                      <!-- Nama Menu, Tipe Netral, dan URL (Informasi Utama) -->
+                      <div class="min-w-0 flex items-center gap-2 flex-wrap">
+                        <span class="font-display text-xs font-semibold text-heading truncate">
+                          {topItem.label}
+                        </span>
+
+                        <!-- Tipe Sebagai Teks Netral (Bukan Badge Mencolok) -->
+                        <span class="text-[11px] text-muted">
+                          {isDropdown
+                            ? `· Dropdown (${children.length} submenu)`
+                            : "· Halaman"}
+                        </span>
+
+                        <!-- URL / Tautan Tujuan -->
+                        {!isDropdown && (
+                          <span class="text-[11px] text-muted font-mono truncate max-w-xs">
+                            {topItem.href || "/"}
+                          </span>
+                        )}
+
+                        {topItem.openInNewTab && (
+                          <span
+                            class="text-[10px] text-muted font-mono"
+                            title="Buka di tab baru"
+                          >
+                            ↗
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <!-- Sisi Kanan: Tombol + Submenu, Status Halus, dan Menu Tindakan Tiga Titik -->
+                    <div class="flex items-center gap-2 shrink-0">
+                      <!-- Tombol Tambah Submenu Khusus Dropdown -->
+                      {isDropdown && (
+                        <button
+                          type="button"
+                          class="btn-add-submenu inline-flex h-6 px-2 items-center justify-center rounded text-[11px] font-medium text-primary hover:bg-primary-light transition-colors cursor-pointer"
+                          data-parent-id={topItem.id}
+                          data-parent-name={topItem.label}
+                          title={`Tambah submenu ke dalam ${topItem.label}`}
+                        >
+                          + Submenu
+                        </button>
+                      )}
+
+                      <!-- Status Aktif / Nonaktif (Switch Toggle) -->
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={topItem.isActive ? "true" : "false"}
+                        class:list={[
+                          "toggle-nav-status-btn relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out",
+                          topItem.isActive ? "bg-primary" : "bg-border",
+                        ]}
+                        data-id={topItem.id}
+                        title={
+                          topItem.isActive
+                            ? "Aktif (Klik untuk menonaktifkan)"
+                            : "Nonaktif (Klik untuk mengaktifkan)"
+                        }
+                        aria-label={
+                          topItem.isActive
+                            ? "Nonaktifkan menu"
+                            : "Aktifkan menu"
+                        }
+                      >
+                        <span class="sr-only">
+                          {topItem.isActive ? "Aktif" : "Nonaktif"}
+                        </span>
+                        <span
+                          aria-hidden="true"
+                          class:list={[
+                            "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out",
+                            topItem.isActive
+                              ? "translate-x-4"
+                              : "translate-x-0",
+                          ]}
+                        />
+                      </button>
+
+                      <!-- Tombol Tindakan Menu: Edit & Hapus (Icon Saja) -->
+                      <div class="inline-flex items-center gap-1.5 *:inline-flex *:h-6.5 *:w-6.5 *:items-center *:justify-center *:rounded-[6px] *:border *:transition-colors *:cursor-pointer">
+                        <button
+                          type="button"
+                          class="btn-edit-nav border-border bg-surface text-muted hover:text-primary hover:border-primary/40 hover:bg-surface-subtle shadow-2xs"
+                          data-item={JSON.stringify(topItem)}
+                          title={`Edit menu "${topItem.label}"`}
+                          aria-label={`Edit menu ${topItem.label}`}
+                        >
+                          <Icon
+                            name="edit"
+                            class="h-3.5 w-3.5 pointer-events-none"
+                          />
+                        </button>
+                        <button
+                          type="button"
+                          class="btn-delete-nav border-border bg-surface text-muted hover:text-error hover:border-error/40 hover:bg-error-light shadow-2xs"
+                          data-id={topItem.id}
+                          data-name={topItem.label}
+                          title={`Hapus menu "${topItem.label}"`}
+                          aria-label={`Hapus menu ${topItem.label}`}
+                        >
+                          <Icon
+                            name="trash"
+                            class="h-3.5 w-3.5 pointer-events-none"
+                          />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Wadah Submenu (Indentasi Halus Tanpa Nomor Dominan) -->
+                  {isDropdown && (
+                    <div
+                      class="nav-submenu-container border-t border-border/60 bg-surface-subtle pl-7 pr-3 sm:pr-3.5 py-1.5 space-y-1 min-h-[38px] transition-all rounded-b-[6px]"
+                      data-parent-id={topItem.id}
+                    >
+                      <div class="nav-empty-placeholder hidden only:block py-1 text-[11px] text-muted italic pointer-events-none">
+                        Belum ada submenu. Tarik menu ke sini atau gunakan
+                        tombol "+ Submenu" di atas.
+                      </div>
+                      {children.map((childItem, childIdx) => (
+                        <div
+                          class="nav-child-item flex items-center justify-between gap-3 p-1.5 px-2 rounded border border-border/60 bg-surface hover:border-primary transition-colors select-none"
+                          id={`nav-child-${childItem.id}`}
+                          data-id={childItem.id}
+                          data-parent-id={topItem.id}
+                          data-type={childItem.type}
+                          draggable="true"
+                        >
+                          <div class="flex items-center gap-2 min-w-0 flex-1">
+                            <!-- Drag Handle Submenu -->
+                            <span
+                              class="nav-child-drag-handle inline-flex items-center justify-center p-0.5 rounded text-muted hover:text-heading hover:bg-surface-subtle cursor-grab active:cursor-grabbing transition-colors shrink-0"
+                              title="Klik dan geser untuk memindahkan posisi atau hierarki submenu"
+                            >
+                              <svg
+                                class="h-3.5 w-3.5 pointer-events-none"
+                                fill="currentColor"
+                                viewBox="0 0 20 20"
+                              >
+                                <path d="M7 2a2 2 0 100 4 2 2 0 000-4zM13 2a2 2 0 100 4 2 2 0 000-4zM7 8a2 2 0 100 4 2 2 0 000-4zM13 8a2 2 0 100 4 2 2 0 000-4zM7 14a2 2 0 100 4 2 2 0 000-4zM13 14a2 2 0 100 4 2 2 0 000-4z" />
+                              </svg>
+                            </span>
+
+                            <span class="text-xs font-medium text-heading truncate">
+                              {childItem.label}
+                            </span>
+                            <span class="text-[11px] text-muted font-mono truncate">
+                              {childItem.href || "#"}
+                            </span>
+                          </div>
+
+                          <div class="flex items-center gap-1.5 shrink-0">
+                            <!-- Status Aktif / Nonaktif Submenu (Switch Toggle) -->
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={
+                                childItem.isActive ? "true" : "false"
+                              }
+                              class:list={[
+                                "toggle-nav-status-btn relative inline-flex h-4.5 w-8 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out",
+                                childItem.isActive ? "bg-primary" : "bg-border",
+                              ]}
+                              data-id={childItem.id}
+                              title={
+                                childItem.isActive
+                                  ? "Aktif (Klik untuk menonaktifkan)"
+                                  : "Nonaktif (Klik untuk mengaktifkan)"
+                              }
+                              aria-label={
+                                childItem.isActive
+                                  ? "Nonaktifkan submenu"
+                                  : "Aktifkan submenu"
+                              }
+                            >
+                              <span class="sr-only">
+                                {childItem.isActive ? "Aktif" : "Nonaktif"}
+                              </span>
+                              <span
+                                aria-hidden="true"
+                                class:list={[
+                                  "pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out",
+                                  childItem.isActive
+                                    ? "translate-x-3.5"
+                                    : "translate-x-0",
+                                ]}
+                              />
+                            </button>
+
+                            <div class="inline-flex items-center gap-1 *:inline-flex *:h-5.5 *:w-5.5 *:items-center *:justify-center *:rounded-[4px] *:border *:transition-colors *:cursor-pointer">
+                              <button
+                                type="button"
+                                class="btn-edit-nav border-border bg-surface text-muted hover:text-primary hover:border-primary/40 hover:bg-surface-subtle shadow-2xs"
+                                data-item={JSON.stringify(childItem)}
+                                title={`Edit submenu "${childItem.label}"`}
+                                aria-label={`Edit submenu ${childItem.label}`}
+                              >
+                                <Icon
+                                  name="edit"
+                                  class="h-3 w-3 pointer-events-none"
+                                />
+                              </button>
+                              <button
+                                type="button"
+                                class="btn-delete-nav border-border bg-surface text-muted hover:text-error hover:border-error/40 hover:bg-error-light shadow-2xs"
+                                data-id={childItem.id}
+                                data-name={childItem.label}
+                                title={`Hapus submenu "${childItem.label}"`}
+                                aria-label={`Hapus submenu ${childItem.label}`}
+                              >
+                                <Icon
+                                  name="trash"
+                                  class="h-3 w-3 pointer-events-none"
+                                />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: TAMBAH / EDIT SLIDE BANNER HERO                   -->
+
+  <div
+    id="slide-modal"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="modal-title"
+    class="fixed inset-0 z-50 hidden overflow-y-auto bg-heading/60 backdrop-blur-xs p-4 sm:p-6"
+  >
+    <div class="flex min-h-full items-center justify-center">
+      <div class="w-full max-w-xl max-h-[85dvh] flex flex-col rounded-[12px] border border-border bg-surface shadow-2xl overflow-hidden">
+        <!-- Header Modal (Sticky) -->
+        <div class="flex items-center justify-between px-5 py-4 bg-surface shrink-0">
+          <div>
+            <h3
+              id="modal-title"
+              class="font-display text-sm sm:text-base font-bold text-heading"
+            >
+              Tambah Slide Banner Hero
+            </h3>
+          </div>
+          <button
+            id="close-modal-btn"
+            type="button"
+            class="text-muted hover:text-heading p-1.5 rounded-[6px] hover:bg-surface-subtle transition-colors cursor-pointer"
+            title="Tutup"
+            aria-label="Tutup"
+          >
+            <Icon name="close" class="h-4 w-4" />
+          </button>
+        </div>
+
+        <!-- Form & Body (Scrollable) -->
+        <form
+          id="slide-form"
+          class="flex flex-col flex-1 min-h-0 overflow-hidden"
+        >
+        <div class="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4">
+          <input type="hidden" id="slide-id" name="id" />
+          <input type="hidden" id="slide-order" name="orderNumber" />
+
+          <!-- Badge / Tagline Kategori (Opsional) -->
+          <div>
+            <label
+              for="slide-tagline"
+              class="block font-body text-xs font-medium text-heading"
+            >
+              Badge / Tagline Kategori{" "}
+              <span class="text-muted font-normal">(Opsional)</span>
+            </label>
+            <input
+              type="text"
+              id="slide-tagline"
+              name="tagline"
+              placeholder="Contoh: Selamat Datang, Akreditasi A, Fasilitas Unggulan, Prestasi"
+              class="mt-1 block w-full rounded-[6px] border border-border bg-surface px-3 py-2 text-xs text-heading placeholder:text-muted"
+            />
+            <p class="mt-1 text-[11px] text-muted">
+              Teks kecil di atas judul banner. Kosongkan untuk menggunakan
+              standar akreditasi sekolah.
+            </p>
+          </div>
+
+          <!-- Judul Slide -->
+          <div>
+            <label
+              for="slide-title"
+              class="block font-body text-xs font-medium text-heading"
+            >
+              Judul Banner <span class="text-error">*</span>
+            </label>
+            <input
+              type="text"
+              id="slide-title"
+              name="title"
+              required
+              placeholder="Contoh: Selamat Datang di SMAN 1 Unggulan"
+              class="mt-1 block w-full rounded-[6px] border border-border bg-surface px-3 py-2 text-xs text-heading placeholder:text-muted"
+            />
+          </div>
+
+          <!-- Subjudul -->
+          <div>
+            <label
+              for="slide-subtitle"
+              class="block font-body text-xs font-medium text-heading"
+            >
+              Subjudul / Keterangan Singkat
+            </label>
+            <textarea
+              id="slide-subtitle"
+              name="subtitle"
+              rows="2"
+              placeholder="Contoh: Mencetak Generasi Berkarakter, Cerdas, dan Berdaya Saing Global."
+              class="mt-1 block w-full rounded-[6px] border border-border bg-surface px-3 py-2 text-xs text-heading placeholder:text-muted"
+            ></textarea>
+          </div>
+
+          <!-- Pilihan Gambar Banner -->
+          <div>
+            <label class="block font-body text-xs font-medium text-heading mb-1.5">
+              Gambar Banner Latar <span class="text-error">*</span>
+            </label>
+            <input
+              type="hidden"
+              id="slide-image-url"
+              name="imageUrl"
+              required
+            />
+
+            <!-- Wadah Preview Gambar Terpilih -->
+            <div
+              id="image-picked-container"
+              class="hidden mb-2 relative rounded-[8px] border border-border overflow-hidden bg-surface-subtle group"
+            >
+              <img
+                id="image-picked-preview"
+                src=""
+                alt="Banner Preview"
+                class="w-full h-36 sm:h-40 object-cover"
+              />
+              <div class="absolute inset-0 bg-heading/60 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2 transition-opacity p-2">
+                <button
+                  type="button"
+                  id="btn-change-image"
+                  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] bg-primary text-primary-foreground text-xs font-medium shadow-xs hover:bg-primary-hover transition-colors cursor-pointer"
+                >
+                  <Icon name="image" class="h-3.5 w-3.5" />
+                  <span>Ganti Gambar</span>
+                </button>
+                <button
+                  type="button"
+                  id="btn-remove-image"
+                  class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] bg-error text-white text-xs font-medium shadow-xs hover:bg-error/90 transition-colors cursor-pointer"
+                >
+                  <Icon name="trash" class="h-3.5 w-3.5" />
+                  <span>Hapus</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Tombol Buka Media Library -->
+            <button
+              type="button"
+              id="btn-open-media-picker"
+              class="inline-flex w-full items-center justify-center gap-2 rounded-[6px] border border-dashed border-border bg-surface-subtle px-4 py-3 text-xs font-medium text-heading hover:bg-surface hover:border-primary/50 transition-colors cursor-pointer"
+            >
+              <Icon name="image" class="h-4 w-4 text-muted" />
+              <span>Pilih Gambar dari Pustaka Media</span>
+            </button>
+            <p class="mt-1 text-[11px] text-muted">
+              Direkomendasikan foto lanskap rasio 16:9 atau lebar minimal
+              1400px.
+            </p>
+          </div>
+
+          <!-- Tombol Aksi 1 (CTA Utama) -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+            <div>
+              <label
+                for="slide-link-text"
+                class="block font-body text-xs font-medium text-heading"
+              >
+                Teks Tombol Aksi 1
+              </label>
+              <input
+                type="text"
+                id="slide-link-text"
+                name="linkText"
+                placeholder="Contoh: Info Pendaftaran 2026"
+                class="mt-1 block w-full rounded-[6px] border border-border bg-surface px-3 py-2 text-xs text-heading placeholder:text-muted"
+              />
+            </div>
+            <div>
+              <label
+                for="slide-link-url"
+                class="block font-body text-xs font-medium text-heading"
+              >
+                URL / Tautan Tombol 1
+              </label>
+              <input
+                type="text"
+                id="slide-link-url"
+                name="linkUrl"
+                placeholder="Contoh: /pendaftaran atau https://..."
+                class="mt-1 block w-full rounded-[6px] border border-border bg-surface px-3 py-2 text-xs text-heading placeholder:text-muted"
+              />
+            </div>
+          </div>
+
+          <!-- Tombol Aksi 2 (CTA Sekunder) -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label
+                for="slide-link-text2"
+                class="block font-body text-xs font-medium text-heading"
+              >
+                Teks Tombol Aksi 2 (Opsional)
+              </label>
+              <input
+                type="text"
+                id="slide-link-text2"
+                name="linkText2"
+                placeholder="Contoh: Jelajahi Profil"
+                class="mt-1 block w-full rounded-[6px] border border-border bg-surface px-3 py-2 text-xs text-heading placeholder:text-muted"
+              />
+            </div>
+            <div>
+              <label
+                for="slide-link-url2"
+                class="block font-body text-xs font-medium text-heading"
+              >
+                URL / Tautan Tombol 2 (Opsional)
+              </label>
+              <input
+                type="text"
+                id="slide-link-url2"
+                name="linkUrl2"
+                placeholder="Contoh: /profil"
+                class="mt-1 block w-full rounded-[6px] border border-border bg-surface px-3 py-2 text-xs text-heading placeholder:text-muted"
+              />
+            </div>
+          </div>
+
+          <!-- Status Aktif -->
+          <div class="flex items-center gap-2 pt-1">
+            <input
+              type="checkbox"
+              id="slide-is-active"
+              name="isActive"
+              class="h-4 w-4 rounded border-border text-primary cursor-pointer"
+              checked
+            />
+            <label
+              for="slide-is-active"
+              class="font-body text-xs font-medium text-heading cursor-pointer"
+            >
+              Tayangkan banner ini di halaman depan portal sekolah
+            </label>
+          </div>
+        </div>
+
+        <!-- Footer Modal (Sticky) -->
+        <div class="flex items-center justify-end gap-2 px-5 py-3.5 bg-surface-subtle shrink-0">
+          <button
+            type="button"
+            id="cancel-modal-btn"
+            class="inline-flex h-[34px] items-center justify-center rounded-[6px] border border-border bg-surface px-3.5 font-body text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+          >
+            Batal
+          </button>
+          <button
+            type="submit"
+            id="submit-slide-btn"
+            class="inline-flex h-[34px] items-center justify-center gap-1.5 rounded-[6px] bg-primary px-4 font-body text-xs font-semibold text-primary-foreground hover:bg-primary-hover shadow-xs transition-colors cursor-pointer"
+          >
+            <Icon name="save" class="h-3.5 w-3.5" />
+            <span>Simpan Slide</span>
+          </button>
+        </div>
+      </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: TAMBAH / EDIT MENU NAVBAR DINAMIS                 -->
+
+  <div
+    id="nav-modal"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="nav-modal-title"
+    class="fixed inset-0 z-50 hidden overflow-y-auto bg-heading/60 backdrop-blur-xs p-4 sm:p-6"
+  >
+    <div class="flex min-h-full items-center justify-center">
+      <div class="w-full max-w-[540px] max-h-[85dvh] flex flex-col rounded-[12px] border border-border bg-surface shadow-2xl overflow-hidden">
+        <!-- Header Modal (Sticky) -->
+        <div class="flex items-center justify-between px-5 py-4 bg-surface shrink-0">
+          <div>
+            <h3
+              id="nav-modal-title"
+              class="font-display text-sm sm:text-base font-bold text-heading"
+            >
+              Tambah Menu Navigasi
+            </h3>
+            <p class="font-body text-[11px] text-muted mt-0.5">
+              Atur nama, tujuan, dan tampilan menu website sekolah.
+            </p>
+          </div>
+          <button
+            id="close-nav-modal-btn"
+            type="button"
+            class="text-muted hover:text-heading p-1.5 rounded-[6px] hover:bg-surface-subtle transition-colors cursor-pointer"
+            title="Tutup"
+            aria-label="Tutup"
+          >
+            <Icon name="close" class="h-4 w-4" />
+          </button>
+        </div>
+
+        <!-- Form & Body (Scrollable) -->
+        <form id="nav-form" class="flex flex-col flex-1 min-h-0 overflow-hidden">
+          <div class="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4">
+          <input type="hidden" id="nav-item-id" name="id" />
+
+          <!-- 1. Nama Menu -->
+          <div>
+            <label
+              for="nav-label"
+              class="block font-body text-xs font-medium text-heading"
+            >
+              Nama Menu <span class="text-error">*</span>
+            </label>
+            <input
+              type="text"
+              id="nav-label"
+              name="label"
+              required
+              placeholder="Contoh: Profil, Berita, Fasilitas"
+              class="mt-1 block w-full rounded-[6px] border border-border bg-surface px-3 py-2 text-xs text-heading placeholder:text-muted"
+            />
+          </div>
+
+          <!-- 2. Jenis Menu: Segmented radio card ringkas -->
+          <div>
+            <label class="block font-body text-xs font-medium text-heading mb-1.5">
+              Jenis Menu <span class="text-error">*</span>
+            </label>
+            <div class="grid grid-cols-2 gap-2 p-1 bg-surface-subtle rounded-[8px] border border-border">
+              <label
+                id="type-opt-page"
+                class="flex flex-col px-3 py-2 rounded-[6px] border cursor-pointer transition-all border-primary bg-surface shadow-xs"
+              >
+                <div class="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="navType"
+                    value="page"
+                    id="radio-type-page"
+                    checked
+                    class="text-primary h-3.5 w-3.5"
+                  />
+                  <span class="text-xs font-semibold text-heading">
+                    Halaman / Tautan
+                  </span>
+                </div>
+                <span class="text-[11px] text-muted mt-0.5 ml-5.5">
+                  Menu menuju halaman
+                </span>
+              </label>
+              <label
+                id="type-opt-dropdown"
+                class="flex flex-col px-3 py-2 rounded-[6px] border cursor-pointer transition-all border-transparent hover:bg-surface/60"
+              >
+                <div class="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="navType"
+                    value="dropdown"
+                    id="radio-type-dropdown"
+                    class="text-primary h-3.5 w-3.5"
+                  />
+                  <span class="text-xs font-semibold text-heading">
+                    Dropdown
+                  </span>
+                </div>
+                <span class="text-[11px] text-muted mt-0.5 ml-5.5">
+                  Menu berisi submenu
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <!-- 3. Tujuan Tautan (Khusus Tipe Halaman) -->
+          <div id="wrapper-nav-destination" class="space-y-3">
+            <div>
+              <label class="block font-body text-xs font-medium text-heading mb-1.5">
+                Sumber Tujuan <span class="text-error">*</span>
+              </label>
+              <!-- Segmented Selection: Halaman Internal vs URL Eksternal -->
+              <div class="grid grid-cols-2 gap-1 p-0.5 bg-surface-subtle/80 rounded-[6px] border border-border text-xs">
+                <button
+                  type="button"
+                  id="tab-dest-internal"
+                  class="flex items-center justify-center py-1.5 rounded-[5px] font-medium text-xs transition-colors bg-surface text-heading shadow-xs cursor-pointer"
+                >
+                  Halaman Internal
+                </button>
+                <button
+                  type="button"
+                  id="tab-dest-external"
+                  class="flex items-center justify-center py-1.5 rounded-[5px] font-medium text-xs transition-colors text-muted hover:text-heading cursor-pointer"
+                >
+                  URL Eksternal
+                </button>
+              </div>
+              <input
+                type="radio"
+                name="navDestSource"
+                value="internal"
+                id="radio-dest-internal"
+                checked
+                class="sr-only"
+              />
+              <input
+                type="radio"
+                name="navDestSource"
+                value="external"
+                id="radio-dest-external"
+                class="sr-only"
+              />
+            </div>
+
+            <!-- Field 3A: Halaman Internal -->
+            <div id="dest-internal-box" class="space-y-1">
+              <label
+                for="nav-preset-select"
+                class="block font-body text-xs font-medium text-heading"
+              >
+                Pilih Halaman
+              </label>
+              <select
+                id="nav-preset-select"
+                class="block w-full rounded-[6px] border border-border bg-surface px-3 py-2 text-xs text-heading cursor-pointer"
+              >
+                <option value="">-- Pilih Halaman Preset --</option>
+                <option value="/">Beranda (/)</option>
+                <option value="/profil">Profil Sekolah (/profil)</option>
+                <option value="/profil#sambutan">
+                  Sambutan Kepala Sekolah (/profil#sambutan)
+                </option>
+                <option value="/profil#sejarah">
+                  Sejarah Sekolah (/profil#sejarah)
+                </option>
+                <option value="/profil#visi-misi">
+                  Visi dan Misi (/profil#visi-misi)
+                </option>
+                <option value="/berita">Berita & Artikel (/berita)</option>
+                <option value="/agenda">Agenda Kegiatan (/agenda)</option>
+                <option value="/direktori">
+                  Direktori Guru & Staf (/direktori)
+                </option>
+                <option value="/fasilitas">
+                  Fasilitas Sekolah (/fasilitas)
+                </option>
+                <option value="/prestasi">Prestasi Siswa (/prestasi)</option>
+                <option value="/ekskul">Ekstrakurikuler (/ekskul)</option>
+                <option value="/alumni">Tracer Alumni (/alumni)</option>
+                <option value="/kontak">Kontak Sekolah (/kontak)</option>
+                <option value="/pendaftaran">
+                  Pendaftaran Siswa Baru (/pendaftaran)
+                </option>
+              </select>
+              <p class="text-[11px] text-muted">
+                Pilih dari halaman yang sudah disediakan sistem.
+              </p>
+            </div>
+
+            <!-- Field 3B: URL Eksternal / Khusus -->
+            <div id="dest-external-box" class="space-y-1 hidden">
+              <label
+                for="nav-href"
+                class="block font-body text-xs font-medium text-heading"
+              >
+                URL Eksternal
+              </label>
+              <input
+                type="text"
+                id="nav-href"
+                name="href"
+                placeholder="https://example.com atau /halaman-kustom"
+                class="block w-full rounded-[6px] border border-border bg-surface px-3 py-2 text-xs text-heading placeholder:text-muted"
+              />
+              <p class="text-[11px] text-muted">
+                Tautan ke situs eksternal atau URL khusus.
+              </p>
+            </div>
+          </div>
+
+          <!-- Keterangan jika memilih tipe Dropdown -->
+          <div
+            id="wrapper-dropdown-info"
+            class="p-3 rounded-[6px] border border-border bg-surface-subtle text-xs text-muted space-y-1 hidden"
+          >
+            <div class="flex items-center gap-1.5 font-semibold text-heading">
+              <svg
+                class="h-4 w-4 text-primary"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              <span>Wadah Submenu</span>
+            </div>
+            <p class="text-[11px] leading-relaxed">
+              Menu tipe dropdown tidak memerlukan tujuan tautan. Submenu dapat
+              ditambahkan melalui tombol <strong>Tambah Submenu</strong> setelah
+              menu ini disimpan.
+            </p>
+          </div>
+
+          <!-- 4. Posisi Menu / Induk Dropdown (Hanya untuk Halaman) -->
+          <div id="wrapper-nav-parent" class="space-y-1">
+            <label
+              for="nav-parent-id"
+              class="block font-body text-xs font-medium text-heading"
+            >
+              Posisi Menu
+            </label>
+            <select
+              id="nav-parent-id"
+              name="parentId"
+              class="block w-full rounded-[6px] border border-border bg-surface px-3 py-2 text-xs text-heading cursor-pointer"
+            >
+              <option value="">Menu Utama (Level Teratas)</option>
+              {dropdownItems.map((d) => (
+                <option value={d.id} data-parent-id={d.id}>
+                  Induk Dropdown: {d.label}
+                </option>
+              ))}
+            </select>
+            <p id="nav-parent-desc" class="text-[11px] text-muted">
+              Pilih "Menu Utama" untuk diletakkan di navbar, atau pilih induk
+              dropdown untuk menjadi submenu.
+            </p>
+          </div>
+
+          <!-- 5. Tampilan dan Perilaku -->
+          <div class="pt-3 border-t border-border space-y-3">
+            <h4 class="font-body text-[11px] font-bold text-heading uppercase tracking-wider">
+              Tampilan dan Perilaku
+            </h4>
+
+            <!-- Visibilitas Perangkat (Segmented) -->
+            <div>
+              <label class="block font-body text-[11px] font-medium text-muted mb-1.5">
+                Tampilkan Pada
+              </label>
+              <div class="grid grid-cols-3 gap-1 p-0.5 bg-surface-subtle/80 rounded-[6px] border border-border text-xs">
+                <button
+                  type="button"
+                  id="tab-vis-all"
+                  class="flex items-center justify-center py-1.5 rounded-[5px] text-xs font-medium transition-colors bg-surface text-heading shadow-xs text-center cursor-pointer"
+                >
+                  Desktop + Mobile
+                </button>
+                <button
+                  type="button"
+                  id="tab-vis-desktop"
+                  class="flex items-center justify-center py-1.5 rounded-[5px] text-xs font-medium transition-colors text-muted hover:text-heading text-center cursor-pointer"
+                >
+                  Desktop Saja
+                </button>
+                <button
+                  type="button"
+                  id="tab-vis-mobile"
+                  class="flex items-center justify-center py-1.5 rounded-[5px] text-xs font-medium transition-colors text-muted hover:text-heading text-center cursor-pointer"
+                >
+                  Mobile Saja
+                </button>
+              </div>
+              <input
+                type="radio"
+                name="visibility"
+                value="all"
+                id="vis-all"
+                checked
+                class="sr-only"
+              />
+              <input
+                type="radio"
+                name="visibility"
+                value="desktop"
+                id="vis-desktop"
+                class="sr-only"
+              />
+              <input
+                type="radio"
+                name="visibility"
+                value="mobile"
+                id="vis-mobile"
+                class="sr-only"
+              />
+            </div>
+
+            <!-- Status Aktif (Switch) -->
+            <div class="flex items-center justify-between p-2.5 rounded-[6px] border border-border bg-surface-subtle">
+              <div>
+                <span class="block text-xs font-medium text-heading">
+                  Menu Aktif
+                </span>
+                <span class="block text-[11px] text-muted">
+                  Tampilkan menu di website publik.
+                </span>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  id="nav-is-active"
+                  name="isActive"
+                  checked
+                  class="sr-only peer"
+                />
+                <div class="w-9 h-5 bg-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+              </label>
+            </div>
+
+            <!-- Buka di Tab Baru (Khusus Tautan Halaman) -->
+            <div
+              id="wrapper-new-tab"
+              class="flex items-center justify-between p-2.5 rounded-[6px] border border-border bg-surface-subtle"
+            >
+              <div>
+                <span class="block text-xs font-medium text-heading">
+                  Buka di Tab Baru
+                </span>
+                <span class="block text-[11px] text-muted">
+                  Tersedia untuk tautan eksternal.
+                </span>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  id="nav-new-tab"
+                  name="openInNewTab"
+                  class="sr-only peer"
+                />
+                <div class="w-9 h-5 bg-border peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer Modal Nav (Sticky) -->
+        <div class="flex items-center justify-end gap-2 px-5 py-3.5 bg-surface-subtle shrink-0">
+          <button
+            type="button"
+            id="cancel-nav-modal-btn"
+            class="inline-flex h-[36px] items-center justify-center rounded-[6px] border border-border bg-surface px-4 font-body text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+          >
+            Batal
+          </button>
+          <button
+            type="submit"
+            id="submit-nav-btn"
+            class="inline-flex h-[36px] items-center justify-center gap-1.5 rounded-[6px] bg-primary px-5 font-body text-xs font-semibold text-primary-foreground hover:bg-primary-hover shadow-xs transition-colors cursor-pointer"
+          >
+            <Icon name="save" class="h-3.5 w-3.5" />
+            <span>Simpan Menu</span>
+          </button>
+        </div>
+      </form>
+      </div>
+    </div>
+  </div>
+
+  <MediaPickerModal modalId="media-picker-modal" />
+
+  <script>
+    const btnActionSlider = document.getElementById("btn-action-slider");
+    const btnActionNav = document.getElementById("btn-action-nav");
+
+    // Toast / Status banner
+    const statusBanner = document.getElementById("status-banner");
+    function showStatus(
+      message: string,
+      type: "success" | "error" = "success",
+    ) {
+      if (!statusBanner) return;
+      statusBanner.textContent = message;
+      statusBanner.className = `rounded-[6px] p-3 text-xs font-medium transition-all ${
+        type === "success"
+          ? "bg-success-light text-success-text border border-success"
+          : "bg-error-light text-error-text border border-error"
+      }`;
+      statusBanner.classList.remove("hidden");
+      setTimeout(() => {
+        statusBanner?.classList.add("hidden");
+      }, 4500);
+    }
+
+    // ========================================================
+    // 2. BANNER SLIDER HERO LOGIC
+    // ========================================================
+    const slideModal = document.getElementById("slide-modal");
+    const slideForm = document.getElementById("slide-form") as HTMLFormElement;
+    const slideIdInput = document.getElementById(
+      "slide-id",
+    ) as HTMLInputElement;
+    const slideOrderInput = document.getElementById(
+      "slide-order",
+    ) as HTMLInputElement;
+    const taglineInput = document.getElementById(
+      "slide-tagline",
+    ) as HTMLInputElement;
+    const titleInput = document.getElementById(
+      "slide-title",
+    ) as HTMLInputElement;
+    const subtitleInput = document.getElementById(
+      "slide-subtitle",
+    ) as HTMLTextAreaElement;
+    const imageUrlInput = document.getElementById(
+      "slide-image-url",
+    ) as HTMLInputElement;
+    const linkTextInput = document.getElementById(
+      "slide-link-text",
+    ) as HTMLInputElement;
+    const linkUrlInput = document.getElementById(
+      "slide-link-url",
+    ) as HTMLInputElement;
+    const linkText2Input = document.getElementById(
+      "slide-link-text2",
+    ) as HTMLInputElement;
+    const linkUrl2Input = document.getElementById(
+      "slide-link-url2",
+    ) as HTMLInputElement;
+    const activeCheckbox = document.getElementById(
+      "slide-is-active",
+    ) as HTMLInputElement;
+    const slideModalTitle = document.getElementById("modal-title");
+    const submitSlideBtn = document.getElementById(
+      "submit-slide-btn",
+    ) as HTMLButtonElement;
+
+    const imagePickedContainer = document.getElementById(
+      "image-picked-container",
+    );
+    const imagePickedPreview = document.getElementById(
+      "image-picked-preview",
+    ) as HTMLImageElement;
+    const btnOpenMediaPicker = document.getElementById("btn-open-media-picker");
+    const btnChangeImage = document.getElementById("btn-change-image");
+    const btnRemoveImage = document.getElementById("btn-remove-image");
+
+    function setPickedSlideImage(url: string, alt = "") {
+      if (
+        !imageUrlInput ||
+        !imagePickedContainer ||
+        !imagePickedPreview ||
+        !btnOpenMediaPicker
+      )
+        return;
+      if (url) {
+        imageUrlInput.value = url;
+        imagePickedPreview.src = url;
+        imagePickedPreview.alt = alt || "Banner Hero";
+        imagePickedContainer.classList.remove("hidden");
+        btnOpenMediaPicker.classList.add("hidden");
+      } else {
+        imageUrlInput.value = "";
+        imagePickedPreview.src = "";
+        imagePickedContainer.classList.add("hidden");
+        btnOpenMediaPicker.classList.remove("hidden");
+      }
+    }
+
+    function openSliderMediaPicker() {
+      if ((window as any).openMediaPicker) {
+        (window as any).openMediaPicker((media: any) => {
+          const fileUrl = media?.fileUrl || media?.url || media?.mediumUrl;
+          if (fileUrl) {
+            setPickedSlideImage(
+              fileUrl,
+              media?.title || media?.originalName || "",
+            );
+          }
+        });
+      }
+    }
+
+    btnOpenMediaPicker?.addEventListener("click", openSliderMediaPicker);
+    btnChangeImage?.addEventListener("click", openSliderMediaPicker);
+    btnRemoveImage?.addEventListener("click", () => setPickedSlideImage(""));
+
+    btnActionSlider?.addEventListener("click", () => {
+      slideForm?.reset();
+      if (slideIdInput) slideIdInput.value = "";
+      if (slideOrderInput) slideOrderInput.value = "";
+      if (taglineInput) taglineInput.value = "";
+      if (slideModalTitle)
+        slideModalTitle.innerText = "Tambah Slide Banner Hero";
+      if (activeCheckbox) activeCheckbox.checked = true;
+      setPickedSlideImage("");
+      slideModal?.classList.remove("hidden");
+      titleInput?.focus();
+    });
+
+    function closeSlideModal() {
+      slideModal?.classList.add("hidden");
+    }
+
+    document
+      .getElementById("close-modal-btn")
+      ?.addEventListener("click", closeSlideModal);
+    document
+      .getElementById("cancel-modal-btn")
+      ?.addEventListener("click", closeSlideModal);
+
+    slideModal?.addEventListener("click", (e) => {
+      if (
+        e.target === slideModal ||
+        (e.target as HTMLElement)?.classList?.contains("min-h-full")
+      ) {
+        closeSlideModal();
+      }
+    });
+
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !slideModal?.classList.contains("hidden")) {
+        closeSlideModal();
+      }
+    });
+
+    // Edit slide
+    document.querySelectorAll(".edit-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const data = JSON.parse(btn.getAttribute("data-slide") || "{}");
+        if (slideIdInput) slideIdInput.value = data.id || "";
+        if (slideOrderInput)
+          slideOrderInput.value =
+            data.orderNumber !== undefined && data.orderNumber !== null
+              ? String(data.orderNumber)
+              : "";
+        if (taglineInput) taglineInput.value = data.tagline || "";
+        if (titleInput) titleInput.value = data.title || "";
+        if (subtitleInput) subtitleInput.value = data.subtitle || "";
+        setPickedSlideImage(data.imageUrl || "", data.title || "");
+        if (linkUrlInput) linkUrlInput.value = data.linkUrl || "";
+        if (linkTextInput) linkTextInput.value = data.linkText || "";
+        if (linkUrl2Input) linkUrl2Input.value = data.linkUrl2 || "";
+        if (linkText2Input) linkText2Input.value = data.linkText2 || "";
+        if (activeCheckbox) activeCheckbox.checked = Boolean(data.isActive);
+        if (slideModalTitle)
+          slideModalTitle.innerText = "Edit Slide Banner Hero";
+        slideModal?.classList.remove("hidden");
+        titleInput?.focus();
+      });
+    });
+
+    // Toggle slider status
+    document.querySelectorAll(".toggle-status-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.getAttribute("data-id");
+        if (!id) return;
+        try {
+          const res = await fetch(`/api/admin/sliders/${id}/toggle`, {
+            method: "PUT",
+          });
+          const json = await res.json();
+          if (json.success) {
+            window.location.reload();
+          } else {
+            showStatus(json.error || "Gagal mengubah status slide", "error");
+          }
+        } catch {
+          showStatus("Koneksi server gagal", "error");
+        }
+      });
+    });
+
+    // Delete slider
+    document.querySelectorAll(".delete-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.getAttribute("data-id");
+        const title = btn.getAttribute("data-title");
+        const confirmed = await (window as any).confirmDialog({
+          title: "Hapus Slide Banner",
+          message: `Hapus slide banner "${title}"?\nTindakan ini tidak dapat dibatalkan.`,
+          confirmText: "Ya, Hapus",
+          cancelText: "Batal",
+          type: "danger",
+        });
+        if (!confirmed) return;
+        try {
+          const res = await fetch(`/api/admin/sliders/${id}`, {
+            method: "DELETE",
+          });
+          const json = await res.json();
+          if (json.success) {
+            window.location.reload();
+          } else {
+            showStatus(json.error || "Gagal menghapus slide", "error");
+          }
+        } catch {
+          showStatus("Koneksi server gagal", "error");
+        }
+      });
+    });
+
+    // Submit Slider Form
+    slideForm?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!imageUrlInput.value.trim()) {
+        alert("Pilih gambar banner terlebih dahulu");
+        openSliderMediaPicker();
+        return;
+      }
+
+      submitSlideBtn.disabled = true;
+      submitSlideBtn.innerText = "Menyimpan...";
+
+      const id = slideIdInput.value.trim();
+      const orderVal = slideOrderInput?.value.trim();
+      const payload: any = {
+        tagline: taglineInput ? taglineInput.value.trim() : "",
+        title: titleInput.value.trim(),
+        subtitle: subtitleInput.value.trim(),
+        imageUrl: imageUrlInput.value.trim(),
+        linkUrl: linkUrlInput.value.trim(),
+        linkText: linkTextInput.value.trim(),
+        linkUrl2: linkUrl2Input.value.trim(),
+        linkText2: linkText2Input.value.trim(),
+        isActive: activeCheckbox.checked,
+      };
+
+      if (orderVal && !isNaN(Number(orderVal)) && Number(orderVal) > 0) {
+        payload.orderNumber = Number(orderVal);
+      }
+
+      const url = id ? `/api/admin/sliders/${id}` : "/api/admin/sliders";
+      const method = id ? "PUT" : "POST";
+
+      try {
+        const res = await fetch(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const json = await res.json();
+        if (json.success) {
+          window.location.reload();
+        } else {
+          showStatus(json.error || "Gagal menyimpan slide", "error");
+          submitSlideBtn.disabled = false;
+          submitSlideBtn.innerText = "Simpan Slide";
+        }
+      } catch {
+        showStatus("Koneksi server gagal", "error");
+        submitSlideBtn.disabled = false;
+        submitSlideBtn.innerText = "Simpan Slide";
+      }
+    });
+
+    // Slider Drag and drop reordering
+    const sliderTableBody = document.getElementById("slider-tbody");
+    const reorderSpinner = document.getElementById("reorder-spinner");
+    if (sliderTableBody) {
+      let draggedRow: HTMLElement | null = null;
+      let initialOrderIds: string[] = [];
+
+      function getSliderRowIds(): string[] {
+        return Array.from(sliderTableBody.querySelectorAll(".slide-row"))
+          .map((r) => r.getAttribute("data-id") || "")
+          .filter(Boolean);
+      }
+
+      function updateSliderOrderBadges() {
+        const rows = sliderTableBody.querySelectorAll(".slide-row");
+        rows.forEach((row, i) => {
+          const badge = row.querySelector(".order-badge");
+          if (badge) badge.textContent = String(i + 1);
+        });
+      }
+
+      sliderTableBody.addEventListener("dragstart", (e: DragEvent) => {
+        const target = (e.target as HTMLElement).closest(
+          ".slide-row",
+        ) as HTMLElement;
+        if (!target) return;
+        draggedRow = target;
+        initialOrderIds = getSliderRowIds();
+        draggedRow.classList.add("opacity-40", "bg-primary-light");
+      });
+
+      sliderTableBody.addEventListener("dragover", (e: DragEvent) => {
+        e.preventDefault();
+        if (!draggedRow) return;
+        const targetRow = (e.target as HTMLElement).closest(
+          ".slide-row",
+        ) as HTMLElement;
+        if (!targetRow || targetRow === draggedRow) return;
+        const bounding = targetRow.getBoundingClientRect();
+        const offset = e.clientY - bounding.top;
+        if (offset > bounding.height / 2) {
+          targetRow.after(draggedRow);
+        } else {
+          targetRow.before(draggedRow);
+        }
+      });
+
+      sliderTableBody.addEventListener("dragend", async () => {
+        if (!draggedRow) return;
+        draggedRow.classList.remove("opacity-40", "bg-primary-light");
+        draggedRow = null;
+
+        const newOrderIds = getSliderRowIds();
+        if (JSON.stringify(initialOrderIds) === JSON.stringify(newOrderIds))
+          return;
+
+        updateSliderOrderBadges();
+        reorderSpinner?.classList.remove("hidden");
+        try {
+          const res = await fetch("/api/admin/sliders/reorder", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ids: newOrderIds }),
+          });
+          const json = await res.json();
+          reorderSpinner?.classList.add("hidden");
+          if (json.success) {
+            showStatus("Urutan banner slider berhasil disimpan", "success");
+          } else {
+            showStatus(json.error || "Gagal menyimpan urutan", "error");
+          }
+        } catch {
+          reorderSpinner?.classList.add("hidden");
+          showStatus("Koneksi server gagal", "error");
+        }
+      });
+    }
+
+    // ========================================================
+    // 3. NAVIGASI WEBSITE DINAMIS LOGIC
+    // ========================================================
+    const navModal = document.getElementById("nav-modal");
+    const navForm = document.getElementById("nav-form") as HTMLFormElement;
+    const navItemIdInput = document.getElementById(
+      "nav-item-id",
+    ) as HTMLInputElement;
+    const navLabelInput = document.getElementById(
+      "nav-label",
+    ) as HTMLInputElement;
+    const navParentSelect = document.getElementById(
+      "nav-parent-id",
+    ) as HTMLSelectElement;
+    const navPresetSelect = document.getElementById(
+      "nav-preset-select",
+    ) as HTMLSelectElement;
+    const navHrefInput = document.getElementById(
+      "nav-href",
+    ) as HTMLInputElement;
+    const navIsActiveInput = document.getElementById(
+      "nav-is-active",
+    ) as HTMLInputElement;
+    const navNewTabInput = document.getElementById(
+      "nav-new-tab",
+    ) as HTMLInputElement;
+    const navModalTitle = document.getElementById("nav-modal-title");
+    const submitNavBtn = document.getElementById(
+      "submit-nav-btn",
+    ) as HTMLButtonElement;
+
+    const radioTypePage = document.getElementById(
+      "radio-type-page",
+    ) as HTMLInputElement;
+    const radioTypeDropdown = document.getElementById(
+      "radio-type-dropdown",
+    ) as HTMLInputElement;
+    const typeOptPage = document.getElementById("type-opt-page");
+    const typeOptDropdown = document.getElementById("type-opt-dropdown");
+
+    const radioDestInternal = document.getElementById(
+      "radio-dest-internal",
+    ) as HTMLInputElement;
+    const radioDestExternal = document.getElementById(
+      "radio-dest-external",
+    ) as HTMLInputElement;
+    const tabDestInternal = document.getElementById("tab-dest-internal");
+    const tabDestExternal = document.getElementById("tab-dest-external");
+    const destInternalBox = document.getElementById("dest-internal-box");
+    const destExternalBox = document.getElementById("dest-external-box");
+
+    const wrapperNavParent = document.getElementById("wrapper-nav-parent");
+    const wrapperNavDest = document.getElementById("wrapper-nav-destination");
+    const wrapperDropdownInfo = document.getElementById(
+      "wrapper-dropdown-info",
+    );
+    const wrapperNewTab = document.getElementById("wrapper-new-tab");
+
+    const tabVisAll = document.getElementById("tab-vis-all");
+    const tabVisDesktop = document.getElementById("tab-vis-desktop");
+    const tabVisMobile = document.getElementById("tab-vis-mobile");
+
+    // Ganti tipe menu (Halaman vs Dropdown)
+    function setNavType(type: "page" | "dropdown") {
+      if (type === "dropdown") {
+        radioTypeDropdown.checked = true;
+        radioTypePage.checked = false;
+        typeOptDropdown?.classList.add(
+          "border-primary",
+          "bg-surface",
+          "shadow-xs",
+        );
+        typeOptDropdown?.classList.remove("border-transparent");
+        typeOptPage?.classList.remove(
+          "border-primary",
+          "bg-surface",
+          "shadow-xs",
+        );
+        typeOptPage?.classList.add("border-transparent");
+
+        wrapperNavDest?.classList.add("hidden");
+        wrapperNavParent?.classList.add("hidden");
+        wrapperDropdownInfo?.classList.remove("hidden");
+        wrapperNewTab?.classList.add("hidden");
+        if (navParentSelect) navParentSelect.value = "";
+      } else {
+        radioTypePage.checked = true;
+        radioTypeDropdown.checked = false;
+        typeOptPage?.classList.add("border-primary", "bg-surface", "shadow-xs");
+        typeOptPage?.classList.remove("border-transparent");
+        typeOptDropdown?.classList.remove(
+          "border-primary",
+          "bg-surface",
+          "shadow-xs",
+        );
+        typeOptDropdown?.classList.add("border-transparent");
+
+        wrapperNavDest?.classList.remove("hidden");
+        wrapperNavParent?.classList.remove("hidden");
+        wrapperDropdownInfo?.classList.add("hidden");
+        wrapperNewTab?.classList.remove("hidden");
+      }
+    }
+
+    radioTypePage?.addEventListener("change", () => setNavType("page"));
+    radioTypeDropdown?.addEventListener("change", () => setNavType("dropdown"));
+
+    // Ganti sumber tujuan (Halaman Internal vs URL Eksternal)
+    function setDestSource(source: "internal" | "external") {
+      if (source === "external") {
+        radioDestExternal.checked = true;
+        radioDestInternal.checked = false;
+        tabDestExternal?.classList.add(
+          "bg-surface",
+          "text-heading",
+          "shadow-xs",
+        );
+        tabDestExternal?.classList.remove("text-muted");
+        tabDestInternal?.classList.remove(
+          "bg-surface",
+          "text-heading",
+          "shadow-xs",
+        );
+        tabDestInternal?.classList.add("text-muted");
+
+        destInternalBox?.classList.add("hidden");
+        destExternalBox?.classList.remove("hidden");
+        navHrefInput?.focus();
+      } else {
+        radioDestInternal.checked = true;
+        radioDestExternal.checked = false;
+        tabDestInternal?.classList.add(
+          "bg-surface",
+          "text-heading",
+          "shadow-xs",
+        );
+        tabDestInternal?.classList.remove("text-muted");
+        tabDestExternal?.classList.remove(
+          "bg-surface",
+          "text-heading",
+          "shadow-xs",
+        );
+        tabDestExternal?.classList.add("text-muted");
+
+        destInternalBox?.classList.remove("hidden");
+        destExternalBox?.classList.add("hidden");
+      }
+    }
+
+    tabDestInternal?.addEventListener("click", () => setDestSource("internal"));
+    tabDestExternal?.addEventListener("click", () => setDestSource("external"));
+
+    // Ganti visibilitas perangkat
+    function setVisibility(val: "all" | "desktop" | "mobile") {
+      const radio = document.getElementById(`vis-${val}`) as HTMLInputElement;
+      if (radio) radio.checked = true;
+
+      [
+        { id: "all", el: tabVisAll },
+        { id: "desktop", el: tabVisDesktop },
+        { id: "mobile", el: tabVisMobile },
+      ].forEach((item) => {
+        if (item.id === val) {
+          item.el?.classList.add("bg-surface", "text-heading", "shadow-xs");
+          item.el?.classList.remove("text-muted");
+        } else {
+          item.el?.classList.remove("bg-surface", "text-heading", "shadow-xs");
+          item.el?.classList.add("text-muted");
+        }
+      });
+    }
+
+    tabVisAll?.addEventListener("click", () => setVisibility("all"));
+    tabVisDesktop?.addEventListener("click", () => setVisibility("desktop"));
+    tabVisMobile?.addEventListener("click", () => setVisibility("mobile"));
+
+    // Cegah siklus / parent ke dirinya sendiri
+    function filterParentOptions(currentId = "") {
+      if (!navParentSelect) return;
+      Array.from(navParentSelect.options).forEach((opt) => {
+        const parentIdAttr = opt.getAttribute("data-parent-id");
+        if (currentId && parentIdAttr === currentId) {
+          opt.disabled = true;
+          opt.hidden = true;
+        } else {
+          opt.disabled = false;
+          opt.hidden = false;
+        }
+      });
+    }
+
+    // Auto-fill dari Preset Halaman Internal
+    navPresetSelect?.addEventListener("change", () => {
+      if (navPresetSelect.value) {
+        navHrefInput.value = navPresetSelect.value;
+        if (!navLabelInput.value.trim()) {
+          const text =
+            navPresetSelect.options[navPresetSelect.selectedIndex]?.text || "";
+          navLabelInput.value = text.split(" (")[0].trim();
+        }
+      }
+    });
+
+    // Dirty check saat form diubah
+    let initialNavSnapshot = "";
+
+    function getNavFormSnapshot(): string {
+      const visVal =
+        (
+          document.querySelector(
+            'input[name="visibility"]:checked',
+          ) as HTMLInputElement
+        )?.value || "all";
+      return JSON.stringify({
+        id: navItemIdInput.value,
+        label: navLabelInput.value.trim(),
+        type: radioTypeDropdown.checked ? "dropdown" : "page",
+        destSource: radioDestExternal.checked ? "external" : "internal",
+        preset: navPresetSelect.value,
+        href: navHrefInput.value.trim(),
+        parent: navParentSelect.value,
+        vis: visVal,
+        isActive: navIsActiveInput.checked,
+        newTab: navNewTabInput.checked,
+      });
+    }
+
+    async function closeNavModalGraceful() {
+      if (navModal?.classList.contains("hidden")) return;
+      if (getNavFormSnapshot() !== initialNavSnapshot) {
+        const confirmed = await (window as any).confirmDialog({
+          title: "Perubahan Belum Disimpan",
+          message: "Buang perubahan navigasi yang belum disimpan?",
+          confirmText: "Buang Perubahan",
+          cancelText: "Batal",
+          type: "warning",
+        });
+        if (!confirmed) return;
+      }
+      navModal?.classList.add("hidden");
+    }
+
+    document
+      .getElementById("close-nav-modal-btn")
+      ?.addEventListener("click", closeNavModalGraceful);
+    document
+      .getElementById("cancel-nav-modal-btn")
+      ?.addEventListener("click", closeNavModalGraceful);
+
+    navModal?.addEventListener("click", (e) => {
+      if (
+        e.target === navModal ||
+        (e.target as HTMLElement)?.classList?.contains("min-h-full")
+      ) {
+        closeNavModalGraceful();
+      }
+    });
+
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !navModal?.classList.contains("hidden")) {
+        closeNavModalGraceful();
+      }
+    });
+
+    // Buka Modal Tambah Menu
+    function openNavModalCreate(parentId = "", parentName = "") {
+      navForm.reset();
+      navItemIdInput.value = "";
+      filterParentOptions("");
+
+      if (navModalTitle) {
+        navModalTitle.innerText = parentId
+          ? `Tambah Submenu untuk "${parentName}"`
+          : "Tambah Menu Navigasi";
+      }
+
+      setNavType("page");
+      setDestSource("internal");
+      setVisibility("all");
+      navIsActiveInput.checked = true;
+      navNewTabInput.checked = false;
+      navPresetSelect.value = "";
+      navHrefInput.value = "";
+
+      if (parentId && navParentSelect) {
+        navParentSelect.value = parentId;
+      } else if (navParentSelect) {
+        navParentSelect.value = "";
+      }
+
+      initialNavSnapshot = getNavFormSnapshot();
+      navModal?.classList.remove("hidden");
+      navLabelInput.focus();
+    }
+
+    btnActionNav?.addEventListener("click", () => openNavModalCreate());
+
+    // Tombol tambah submenu
+    document.querySelectorAll(".btn-add-submenu").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const parentId = btn.getAttribute("data-parent-id") || "";
+        const parentName = btn.getAttribute("data-parent-name") || "";
+        openNavModalCreate(parentId, parentName);
+      });
+    });
+
+    // Edit menu navigasi
+    document.querySelectorAll(".btn-edit-nav").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const data = JSON.parse(btn.getAttribute("data-item") || "{}");
+        navForm.reset();
+        navItemIdInput.value = data.id || "";
+        navLabelInput.value = data.label || "";
+        filterParentOptions(data.id || "");
+
+        if (navParentSelect) {
+          navParentSelect.value = data.parentId || "";
+        }
+
+        if (data.type === "dropdown") {
+          setNavType("dropdown");
+          setDestSource("internal");
+          navHrefInput.value = "";
+          navPresetSelect.value = "";
+        } else {
+          setNavType("page");
+          // Deteksi apakah href cocok dengan preset internal
+          const presetMatch = Array.from(navPresetSelect.options).some(
+            (o) => o.value && o.value === data.href,
+          );
+          if (presetMatch) {
+            setDestSource("internal");
+            navPresetSelect.value = data.href || "";
+            navHrefInput.value = data.href || "";
+          } else {
+            setDestSource("external");
+            navPresetSelect.value = "";
+            navHrefInput.value = data.href || "";
+          }
+        }
+
+        navIsActiveInput.checked = Boolean(data.isActive !== false);
+        navNewTabInput.checked = Boolean(data.openInNewTab);
+
+        if (data.showDesktop && !data.showMobile) {
+          setVisibility("desktop");
+        } else if (!data.showDesktop && data.showMobile) {
+          setVisibility("mobile");
+        } else {
+          setVisibility("all");
+        }
+
+        if (navModalTitle) {
+          navModalTitle.innerText = `Edit Menu: ${data.label}`;
+        }
+
+        initialNavSnapshot = getNavFormSnapshot();
+        navModal?.classList.remove("hidden");
+        navLabelInput.focus();
+      });
+    });
+
+    // Toggle status menu navigasi
+    document.querySelectorAll(".toggle-nav-status-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.getAttribute("data-id");
+        if (!id) return;
+        try {
+          const res = await fetch(`/api/admin/navigation/${id}/toggle`, {
+            method: "PUT",
+          });
+          const json = await res.json();
+          if (json.success) {
+            window.location.reload();
+          } else {
+            showStatus(json.error || "Gagal mengubah status", "error");
+          }
+        } catch {
+          showStatus("Koneksi server gagal", "error");
+        }
+      });
+    });
+
+    // Hapus menu navigasi
+    document.querySelectorAll(".btn-delete-nav").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.getAttribute("data-id");
+        const name = btn.getAttribute("data-name");
+        const confirmed = await (window as any).confirmDialog({
+          title: "Hapus Menu Navigasi",
+          message: `Hapus menu "${name}"?\nJika ini adalah dropdown, seluruh submenu di dalamnya juga akan terhapus.`,
+          confirmText: "Ya, Hapus Menu",
+          cancelText: "Batal",
+          type: "danger",
+        });
+        if (!confirmed) return;
+
+        try {
+          const res = await fetch(`/api/admin/navigation/${id}`, {
+            method: "DELETE",
+          });
+          const json = await res.json();
+          if (json.success) {
+            window.location.reload();
+          } else {
+            showStatus(json.error || "Gagal menghapus menu", "error");
+          }
+        } catch {
+          showStatus("Koneksi server gagal", "error");
+        }
+      });
+    });
+
+    // Submit Nav Form (Tambah / Edit)
+    navForm?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const id = navItemIdInput.value.trim();
+      const type = radioTypeDropdown.checked ? "dropdown" : "page";
+      const destSource = radioDestExternal.checked ? "external" : "internal";
+      const visVal =
+        (
+          document.querySelector(
+            'input[name="visibility"]:checked',
+          ) as HTMLInputElement
+        )?.value || "all";
+
+      let finalHref: string | null = null;
+      let finalParentId: string | null = null;
+      let finalOpenInNewTab = false;
+
+      if (type === "page") {
+        if (destSource === "internal") {
+          finalHref = navPresetSelect.value.trim();
+          if (!finalHref) {
+            showStatus("Silakan pilih salah satu Halaman Internal", "error");
+            navPresetSelect.focus();
+            return;
+          }
+        } else {
+          finalHref = navHrefInput.value.trim();
+          if (!finalHref) {
+            showStatus("Silakan masukkan URL Eksternal / Khusus", "error");
+            navHrefInput.focus();
+            return;
+          }
+        }
+
+        finalParentId = navParentSelect.value.trim() || null;
+        finalOpenInNewTab = navNewTabInput.checked;
+      }
+
+      submitNavBtn.disabled = true;
+      submitNavBtn.innerText = "Menyimpan...";
+
+      const payload = {
+        label: navLabelInput.value.trim(),
+        type,
+        href: finalHref,
+        parentId: finalParentId,
+        isActive: navIsActiveInput.checked,
+        showDesktop: visVal !== "mobile",
+        showMobile: visVal !== "desktop",
+        openInNewTab: finalOpenInNewTab,
+      };
+
+      const url = id ? `/api/admin/navigation/${id}` : "/api/admin/navigation";
+      const method = id ? "PUT" : "POST";
+
+      try {
+        const res = await fetch(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const json = await res.json();
+        if (json.success) {
+          window.location.reload();
+        } else {
+          showStatus(json.error || "Gagal menyimpan menu navigasi", "error");
+          submitNavBtn.disabled = false;
+          submitNavBtn.innerText = "Simpan Menu";
+        }
+      } catch {
+        showStatus("Koneksi server gagal", "error");
+        submitNavBtn.disabled = false;
+        submitNavBtn.innerText = "Simpan Menu";
+      }
+    });
+
+    // Reordering Nav Items (Up / Down & Drag-and-Drop)
+    const navContainer = document.getElementById("nav-hierarchy-container");
+
+    // Snapshot function to read current hierarchical state from DOM
+    function getCurrentNavSnapshot(): {
+      id: string;
+      parentId: string | null;
+      sortOrder: number;
+    }[] {
+      if (!navContainer) return [];
+      const snapshot: {
+        id: string;
+        parentId: string | null;
+        sortOrder: number;
+      }[] = [];
+
+      // Direct items inside navContainer are top-level items (parentId = null)
+      const topElements = Array.from(navContainer.children).filter(
+        (el) => el instanceof HTMLElement && el.hasAttribute("data-id"),
+      ) as HTMLElement[];
+
+      topElements.forEach((el, idx) => {
+        const id = el.getAttribute("data-id");
+        if (id) {
+          snapshot.push({ id, parentId: null, sortOrder: idx });
+        }
+      });
+
+      // Submenu items inside each .nav-submenu-container
+      const subContainers = Array.from(
+        navContainer.querySelectorAll(".nav-submenu-container"),
+      ) as HTMLElement[];
+      subContainers.forEach((sub) => {
+        const pId = sub.getAttribute("data-parent-id");
+        if (!pId) return;
+        const childElements = Array.from(sub.children).filter(
+          (el) => el instanceof HTMLElement && el.hasAttribute("data-id"),
+        ) as HTMLElement[];
+
+        childElements.forEach((child, cIdx) => {
+          const cId = child.getAttribute("data-id");
+          if (cId) {
+            snapshot.push({ id: cId, parentId: pId, sortOrder: cIdx });
+          }
+        });
+      });
+
+      return snapshot;
+    }
+
+    // Drag and drop reordering & cross-level hierarchy for Nav Items
+    if (navContainer) {
+      let draggedElement: HTMLElement | null = null;
+      let draggedType: string = "page";
+      let initialSnapshot: {
+        id: string;
+        parentId: string | null;
+        sortOrder: number;
+      }[] = [];
+
+      navContainer.addEventListener("dragstart", (e: DragEvent) => {
+        const target = e.target as HTMLElement;
+
+        // Jangan drag jika mengklik tombol interaktif, tautan, atau form field
+        if (target.closest("button, a, input, select, textarea")) {
+          e.preventDefault();
+          return;
+        }
+
+        // Jika klik di area kosong submenu, jangan drag dropdown induknya
+        if (
+          target.closest(".nav-submenu-container") &&
+          !target.closest(".nav-child-item")
+        ) {
+          e.preventDefault();
+          return;
+        }
+
+        // 1. Cek apakah yang di-drag adalah item submenu
+        const childTarget = target.closest(
+          ".nav-child-item",
+        ) as HTMLElement | null;
+        if (childTarget) {
+          e.stopPropagation();
+          draggedElement = childTarget;
+          draggedType = childTarget.getAttribute("data-type") || "page";
+          initialSnapshot = getCurrentNavSnapshot();
+
+          setTimeout(() => {
+            if (draggedElement) {
+              draggedElement.classList.add(
+                "opacity-40",
+                "ring-2",
+                "ring-primary",
+                "bg-primary-light/40",
+              );
+            }
+          }, 0);
+          return;
+        }
+
+        // 2. Cek apakah yang di-drag adalah menu utama (top-level)
+        const topTarget = target.closest(
+          ".nav-tree-item",
+        ) as HTMLElement | null;
+        if (topTarget) {
+          draggedElement = topTarget;
+          draggedType = topTarget.getAttribute("data-type") || "page";
+          initialSnapshot = getCurrentNavSnapshot();
+
+          setTimeout(() => {
+            if (draggedElement) {
+              draggedElement.classList.add(
+                "opacity-40",
+                "ring-2",
+                "ring-primary",
+                "bg-primary-light/40",
+              );
+            }
+          }, 0);
+        }
+      });
+
+      navContainer.addEventListener("dragover", (e: DragEvent) => {
+        e.preventDefault();
+        if (!draggedElement) return;
+
+        const target = e.target as HTMLElement;
+        const submenuContainer = target.closest(
+          ".nav-submenu-container",
+        ) as HTMLElement | null;
+
+        // Dropdown tidak boleh menjadi anak di dalam dropdown lain (hanya reorder di level utama)
+        if (draggedType === "dropdown") {
+          const targetTop = target.closest(
+            ".nav-tree-item",
+          ) as HTMLElement | null;
+          if (!targetTop || targetTop === draggedElement) return;
+
+          const header =
+            (targetTop.querySelector(".nav-tree-header") as HTMLElement) ||
+            targetTop;
+          const rect = header.getBoundingClientRect();
+          const midY = rect.top + rect.height / 2;
+
+          if (e.clientY < midY) {
+            if (targetTop.previousElementSibling === draggedElement) return;
+            targetTop.before(draggedElement);
+          } else {
+            if (targetTop.nextElementSibling === draggedElement) return;
+            targetTop.after(draggedElement);
+          }
+          return;
+        }
+
+        // Item Non-Dropdown (dapat masuk ke submenu ATAU menjadi menu utama):
+        // A. Jika di-drag ke atas wadah submenu:
+        if (submenuContainer) {
+          if (draggedElement.contains(submenuContainer)) return;
+
+          // Beri sorotan visual pada dropdown tujuan
+          document.querySelectorAll(".nav-submenu-container").forEach((s) => {
+            if (s === submenuContainer) {
+              s.classList.add(
+                "ring-2",
+                "ring-primary/40",
+                "bg-primary-light/20",
+              );
+            } else {
+              s.classList.remove(
+                "ring-2",
+                "ring-primary/40",
+                "bg-primary-light/20",
+              );
+            }
+          });
+
+          const targetChild = target.closest(
+            ".nav-child-item",
+          ) as HTMLElement | null;
+          if (targetChild && targetChild !== draggedElement) {
+            const rect = targetChild.getBoundingClientRect();
+            const midY = rect.top + rect.height / 2;
+            if (e.clientY < midY) {
+              if (targetChild.previousElementSibling === draggedElement) return;
+              targetChild.before(draggedElement);
+            } else {
+              if (targetChild.nextElementSibling === draggedElement) return;
+              targetChild.after(draggedElement);
+            }
+          } else if (!targetChild) {
+            if (submenuContainer.lastElementChild !== draggedElement) {
+              submenuContainer.appendChild(draggedElement);
+            }
+          }
+          return;
+        }
+
+        // Bersihkan sorotan jika kursor keluar dari submenu
+        document.querySelectorAll(".nav-submenu-container").forEach((s) => {
+          s.classList.remove(
+            "ring-2",
+            "ring-primary/40",
+            "bg-primary-light/20",
+          );
+        });
+
+        // B. Jika di-drag ke area menu utama (top-level):
+        const targetTop = target.closest(
+          ".nav-tree-item",
+        ) as HTMLElement | null;
+        if (targetTop && targetTop !== draggedElement) {
+          const header =
+            (targetTop.querySelector(".nav-tree-header") as HTMLElement) ||
+            targetTop;
+          const rect = header.getBoundingClientRect();
+          const midY = rect.top + rect.height / 2;
+
+          if (e.clientY < midY) {
+            if (targetTop.previousElementSibling === draggedElement) return;
+            targetTop.before(draggedElement);
+          } else {
+            if (targetTop.nextElementSibling === draggedElement) return;
+            targetTop.after(draggedElement);
+          }
+          return;
+        }
+
+        // C. Jika di-drag ke bagian paling bawah kontainer utama
+        if (
+          target === navContainer &&
+          navContainer.lastElementChild !== draggedElement
+        ) {
+          navContainer.appendChild(draggedElement);
+        }
+      });
+
+      navContainer.addEventListener("dragend", async () => {
+        if (!draggedElement) return;
+
+        const el = draggedElement;
+        el.classList.remove(
+          "opacity-40",
+          "ring-2",
+          "ring-primary",
+          "bg-primary-light/40",
+        );
+        draggedElement = null;
+
+        // Bersihkan semua sorotan submenu
+        document.querySelectorAll(".nav-submenu-container").forEach((s) => {
+          s.classList.remove(
+            "ring-2",
+            "ring-primary/40",
+            "bg-primary-light/20",
+          );
+        });
+
+        const newSnapshot = getCurrentNavSnapshot();
+
+        // Periksa apakah ada perubahan struktur / urutan
+        const isChanged =
+          JSON.stringify(initialSnapshot) !== JSON.stringify(newSnapshot);
+        if (!isChanged) return;
+
+        // Periksa apakah ada item yang berubah induk (promosi / demosi / pindah dropdown)
+        const parentChanged = newSnapshot.some((newItem) => {
+          const oldItem = initialSnapshot.find((o) => o.id === newItem.id);
+          return !oldItem || oldItem.parentId !== newItem.parentId;
+        });
+
+        const payload = newSnapshot.map((item) => ({
+          id: item.id,
+          sortOrder: item.sortOrder,
+          parentId: item.parentId,
+        }));
+
+        try {
+          const res = await fetch("/api/admin/navigation/reorder", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ items: payload }),
+          });
+          const json = await res.json();
+          if (json.success) {
+            showStatus(
+              parentChanged
+                ? "Struktur menu dan submenu berhasil diperbarui"
+                : "Urutan menu berhasil disimpan",
+              "success",
+            );
+            if (parentChanged) {
+              setTimeout(() => {
+                window.location.reload();
+              }, 350);
+            }
+          } else {
+            showStatus(json.error || "Gagal mengubah urutan", "error");
+            setTimeout(() => window.location.reload(), 800);
+          }
+        } catch {
+          showStatus("Koneksi server gagal", "error");
+        }
+      });
+    }
+
+    // Reset to default navigation
+    document
+      .getElementById("btn-reset-nav-defaults")
+      ?.addEventListener("click", async () => {
+        const confirmed = await (window as any).confirmDialog({
+          title: "Reset Navigasi",
+          message:
+            "Apakah Anda yakin ingin mereset susunan menu navigasi ke konfigurasi standar sekolah? Menu yang telah dibuat akan digantikan.",
+          confirmText: "Ya, Reset Navigasi",
+          cancelText: "Batal",
+          type: "warning",
+        });
+        if (!confirmed) return;
+        try {
+          const res = await fetch("/api/admin/navigation/reset-defaults", {
+            method: "POST",
+          });
+          const json = await res.json();
+          if (json.success) {
+            window.location.reload();
+          } else {
+            showStatus(json.error || "Gagal mereset navigasi", "error");
+          }
+        } catch {
+          showStatus("Koneksi server gagal", "error");
+        }
+      });
+  </script>
+
+  <style>
+    .nav-submenu-container:has(> [data-id]) .nav-empty-placeholder {
+      display: none !important;
+    }
+  </style>
+</AdminLayout>

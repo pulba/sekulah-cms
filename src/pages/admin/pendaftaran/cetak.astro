@@ -1,0 +1,493 @@
+---
+import PrintLayout from "../../../layouts/PrintLayout.astro";
+import { db, settings, registrations } from "../../../db";
+import { eq, sql } from "drizzle-orm";
+
+export const prerender = false;
+
+// 1. Ambil ID pendaftar dari URL query
+const id = Astro.url.searchParams.get("id");
+const autoPrint = Astro.url.searchParams.get("print") === "true";
+
+// 2. Ambil data pendaftar dari database (fallback ke pendaftar terbaru jika id tidak disertakan saat preview)
+let student: typeof registrations.$inferSelect | undefined;
+
+if (id) {
+  student = await db
+    .select()
+    .from(registrations)
+    .where(eq(registrations.id, id))
+    .limit(1)
+    .then((r) => r[0]);
+} else {
+  student = await db
+    .select()
+    .from(registrations)
+    .orderBy(sql`${registrations.createdAt} DESC`)
+    .limit(1)
+    .then((r) => r[0]);
+}
+
+if (!student) {
+  return new Response("Data pendaftar tidak ditemukan.", { status: 404 });
+}
+
+// 3. Ambil konfigurasi sekolah untuk Kop Surat resmi
+const allSettings = await db.select().from(settings);
+const settingMap = allSettings.reduce(
+  (acc, curr) => {
+    acc[curr.key] = curr.value;
+    return acc;
+  },
+  {} as Record<string, string>,
+);
+
+const schoolName = settingMap["school_name"] || "SMAN 1 Unggulan";
+const schoolType = (settingMap["school_type"] || settingMap["school_level"] || "SMA").toUpperCase();
+const schoolStatus = settingMap["school_status"] || "Negeri";
+const npsn = settingMap["npsn"] || settingMap["school_npsn"] || "20108921";
+const schoolAddress = settingMap["address"] || "Jl. Pendidikan No. 45";
+const schoolCity = settingMap["city"] || "Kota Jakarta Selatan";
+const schoolProvince = settingMap["province"] || "DKI Jakarta";
+const schoolPostal = settingMap["postal_code"] || "12340";
+const schoolPhone = settingMap["phone"] || "(021) 555-0199";
+const schoolEmail = settingMap["email"] || "info@sekolah.sch.id";
+const schoolWebsite = settingMap["website"] || settingMap["school_website"] || "www.sekolah.sch.id";
+const logoUrl = settingMap["logo_url"] || "";
+const admissionsLabel = settingMap["admissions_label"] || "";
+const admissionsTitle = settingMap["admissions_title"] || (
+  admissionsLabel.toUpperCase() === "PSB"
+    ? "PENERIMAAN SISWA BARU"
+    : admissionsLabel.toUpperCase() === "SPMB"
+      ? "SISTEM PENERIMAAN SISWA BARU"
+      : admissionsLabel.toUpperCase() === "PPDB"
+        ? "PENERIMAAN PESERTA DIDIK BARU"
+        : admissionsLabel ? `PENDAFTARAN (${admissionsLabel.toUpperCase()})` : "PENDAFTARAN SISWA BARU"
+);
+const docTitle = `FORMULIR ${admissionsTitle.toUpperCase()} & BUKTI VERIFIKASI`;
+
+// Kementerian pembina
+const isMadrasah = ["MA", "MTS", "MI"].includes(schoolType);
+const isVocational = schoolType === "SMK";
+const ministryTitle = isMadrasah
+  ? "KEMENTERIAN AGAMA REPUBLIK INDONESIA"
+  : isVocational
+    ? "KEMENTERIAN PENDIDIKAN, KEBUDAYAAN, RISET DAN TEKNOLOGI"
+    : "PEMERINTAH DAERAH PROVINSI / KEMENTERIAN PENDIDIKAN";
+
+const subMinistryTitle = isMadrasah
+  ? "KANTOR KEMENTERIAN AGAMA KABUPATEN/KOTA"
+  : "DINAS PENDIDIKAN DAN KEBUDAYAAN";
+
+// Format tanggal
+const createdDate = student.createdAt
+  ? new Date(student.createdAt).toLocaleDateString("id-ID", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }) + " WIB"
+  : "-";
+
+const currentDateStr = new Date().toLocaleDateString("id-ID", {
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+});
+
+const statusLabels: Record<string, { label: string; class: string }> = {
+  submitted: { label: "MENUNGGU VERIFIKASI", class: "text-warning-text" },
+  verified: { label: "TERVERIFIKASI SAH", class: "text-primary" },
+  accepted: { label: "DITERIMA", class: "text-primary" },
+  rejected: { label: "TIDAK LOLOS", class: "text-error-text" },
+};
+
+const currentStatus = statusLabels[student.status] || { label: (student.status || "").toUpperCase(), class: "border-border text-muted bg-surface-subtle" };
+---
+
+<PrintLayout title={`Bukti Pendaftaran A4 - ${student.fullName} (${student.registrationNumber})`} autoPrint={autoPrint}>
+  <!-- Floating Top Toolbar (Non-Printable) -->
+  <aside slot="toolbar" aria-label="Aksi Cetak" class="no-print top-toolbar">
+    <div class="toolbar-inner">
+      <div class="flex items-center gap-2">
+        <a href="/admin/pendaftaran/pendaftar" class="btn-nav-back" title="Kembali ke Data Pendaftar">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+          <span>Kembali ke Data Pendaftar</span>
+        </a>
+        <span class="text-muted/60">|</span>
+        <span class="font-mono font-bold text-heading">{student.registrationNumber}</span>
+        <span class="text-muted/60">&bull;</span>
+        <span class="font-medium text-heading">{student.fullName}</span>
+        <span class="text-muted/60">|</span>
+        <span class="text-muted text-[11px]">Kode Akses:</span>
+        <strong class="font-mono text-primary bg-primary-light border border-border px-1.5 py-0.5 rounded text-xs">{student.verificationCode || "-"}</strong>
+        <button
+          type="button"
+          onclick={`navigator.clipboard.writeText('${student.verificationCode || ""}'); this.textContent = 'Tersalin!'; setTimeout(() => this.textContent = 'Salin Kode', 2000)`}
+          class="bg-primary text-white hover:bg-primary-hover px-2 py-0.5 rounded text-[11px] font-semibold cursor-pointer border border-border transition-colors"
+        >
+          Salin Kode
+        </button>
+      </div>
+
+      <div class="flex items-center gap-2.5">
+        <span class="text-muted text-[11px]">Format: Kertas A4 Portrait (PDF)</span>
+        <button
+          type="button"
+          onclick="window.print()"
+          class="btn-print-doc"
+          title="Cetak Formulir atau Simpan sebagai PDF"
+        >
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+          </svg>
+          <span>Cetak / Simpan PDF</span>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+    <!-- Lembar Dokumen A4 -->
+    <main class="a4-container">
+      
+
+      <!-- KOP SURAT RESMI LEMBAGA                                  -->
+
+      <header class="kop-surat">
+        <div class="school-logo-wrapper">
+          {logoUrl ? (
+            <img src={logoUrl} alt="Logo Sekolah" />
+          ) : (
+            <div class="logo-placeholder">
+              {schoolName.charAt(0)}
+            </div>
+          )}
+        </div>
+
+        <!-- Teks Kop Surat -->
+        <div class="kop-text">
+          <h4 class="kop-min-title">
+            {ministryTitle}
+          </h4>
+          <h5 class="kop-sub-title">
+            {subMinistryTitle}
+          </h5>
+          <h2 class="kop-school-name">
+            {schoolName}
+          </h2>
+          <p class="kop-address">
+            {schoolAddress}, {schoolCity}, {schoolProvince} {schoolPostal} <br />
+            Telepon: {schoolPhone} &bull; Email: {schoolEmail} &bull; Website: {schoolWebsite} <br />
+            <strong>NPSN: {npsn}</strong> &bull; Status: {schoolStatus} ({schoolType})
+          </p>
+        </div>
+      </header>
+
+
+      <!-- JUDUL FORMULIR & NOMOR REGISTRASI                        -->
+
+      <div class="form-header">
+        <h3 class="form-title">
+          {docTitle}
+        </h3>
+        <p class="form-subtitle">
+          TAHUN AJARAN {student.academicYear}
+        </p>
+      </div>
+
+      <!-- Kotak Metadata Registrasi -->
+      <div class="meta-box">
+        <div class="meta-item">
+          <span>No. Registrasi</span>
+          <strong class="font-mono">{student.registrationNumber}</strong>
+        </div>
+        <div class="meta-item">
+          <span>Kode Akses</span>
+          <strong class="font-mono">{student.verificationCode || "-"}</strong>
+        </div>
+        <div class="meta-item">
+          <span>Gelombang</span>
+          <strong>{student.wave || "Gelombang 1"}</strong>
+        </div>
+        <div class="meta-item">
+          <span>Waktu Pendaftaran</span>
+          <strong class="text-[7.5pt]">{createdDate}</strong>
+        </div>
+        <div class="meta-item text-right">
+          <span>Status Seleksi</span>
+          <span class={`inline-block text-[10pt] font-bold uppercase ${currentStatus.class}`}>
+            {currentStatus.label}
+          </span>
+        </div>
+      </div>
+
+
+      <!-- BAGIAN I: IDENTITAS CALON SISWA                          -->
+
+      <section class="doc-section">
+        <div class="section-badge">
+          I. DATA IDENTITAS CALON PESERTA DIDIK
+        </div>
+        <table class="data-table">
+          <tbody>
+            <tr>
+              <td class="label-col">Nama Lengkap (Sesuai Ijazah)</td>
+              <td class="val-col font-bold uppercase" colspan="3">
+                {student.fullName}
+              </td>
+            </tr>
+            <tr>
+              <td class="label-col">NIK (No. Induk Kependudukan)</td>
+              <td class="val-col font-mono font-bold w-[28%]">{student.nik}</td>
+              <td class="label-col w-[20%]">NISN</td>
+              <td class="val-col font-mono w-[27%]">{student.nisn || "-"}</td>
+            </tr>
+            <tr>
+              <td class="label-col">Jenis Kelamin</td>
+              <td class="val-col">{student.gender === "L" ? "Laki-laki" : "Perempuan"}</td>
+              <td class="label-col">Agama</td>
+              <td class="val-col">{student.religion}</td>
+            </tr>
+            <tr>
+              <td class="label-col">Tempat, Tanggal Lahir</td>
+              <td class="val-col">{student.birthPlace}, {student.birthDate}</td>
+              <td class="label-col">Jenis Registrasi</td>
+              <td class="val-col">{student.regType}</td>
+            </tr>
+            <tr>
+              <td class="label-col">Asal Sekolah / Madrasah</td>
+              <td class="val-col font-semibold">{student.prevSchool}</td>
+              <td class="label-col">WhatsApp / Telp</td>
+              <td class="val-col font-mono">{student.phoneStudent}</td>
+            </tr>
+            <tr>
+              <td class="label-col">Alamat Email Siswa</td>
+              <td class="val-col font-mono" colspan="3">{student.emailStudent || "-"}</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+
+      <!-- BAGIAN II: PILIHAN JALUR & PROGRAM / PEMINATAN           -->
+
+      <section class="doc-section">
+        <div class="section-badge">
+          II. PILIHAN JALUR PENERIMAAN &amp; PEMINATAN
+        </div>
+        <table class="data-table">
+          <tbody>
+            <tr>
+              <td class="label-col">Jalur Pendaftaran</td>
+              <td class="val-col font-bold w-[28%]">{student.admissionPath}</td>
+              <td class="label-col w-[20%]">Layanan Asrama</td>
+              <td class="val-col font-semibold w-[27%]">{student.isBoarding ? "Ya (Pesantren / Boarding)" : "Tidak (Reguler)"}</td>
+            </tr>
+            <tr>
+              <td class="label-col">Pilihan Jurusan / Peminatan 1</td>
+              <td class="val-col font-bold">{student.majorChoice1 || "-"}</td>
+              <td class="label-col">Pilihan Jurusan 2</td>
+              <td class="val-col">{student.majorChoice2 || "-"}</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+
+      <!-- BAGIAN III: DATA ORANG TUA / WALI & ALAMAT DOMISILI      -->
+
+      <section class="doc-section">
+        <div class="section-badge">
+          III. DATA ORANG TUA / WALI &amp; ALAMAT DOMISILI
+        </div>
+        <table class="data-table">
+          <tbody>
+            <tr>
+              <td class="label-col">Nama Ayah Kandung</td>
+              <td class="val-col font-semibold w-[28%]">{student.fatherName} ({student.fatherStatus || "Hidup"})</td>
+              <td class="label-col w-[20%]">Pekerjaan / Telp Ayah</td>
+              <td class="val-col w-[27%]">{student.fatherJob || "-"} / {student.fatherPhone || "-"}</td>
+            </tr>
+            <tr>
+              <td class="label-col">Nama Ibu Kandung</td>
+              <td class="val-col font-semibold">{student.motherName} ({student.motherStatus || "Hidup"})</td>
+              <td class="label-col">Pekerjaan / Telp Ibu</td>
+              <td class="val-col">{student.motherJob || "-"} / {student.motherPhone || "-"}</td>
+            </tr>
+            {student.guardianName && (
+              <tr>
+                <td class="label-col">Nama Wali (Jika Ada)</td>
+                <td class="val-col">{student.guardianName}</td>
+                <td class="label-col">Pekerjaan / Telp Wali</td>
+                <td class="val-col">{student.guardianJob || "-"} / {student.guardianPhone || "-"}</td>
+              </tr>
+            )}
+            <tr>
+              <td class="label-col">Alamat Tempat Tinggal</td>
+              <td class="val-col" colspan="3">
+                {student.address} {student.rtRw ? `RT/RW ${student.rtRw}` : ""}, Kel/Desa {student.village}, Kec. {student.district}, {student.city}, Prov. {student.province || schoolProvince} {student.postalCode ? `(${student.postalCode})` : ""}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+
+      <!-- BAGIAN IV: PERSYARATAN BERKAS & DOKUMEN YANG DIUNGGAH    -->
+
+      <section class="doc-section">
+        <div class="section-badge">
+          IV. CHECKLIST KELENGKAPAN &amp; VERIFIKASI PERSYARATAN BERKAS
+        </div>
+        <table class="checklist-table">
+          <thead>
+            <tr>
+              <th class="w-[5%] text-center">No</th>
+              <th class="w-[40%] text-left pl-1.5">Nama Dokumen Persyaratan</th>
+              <th class="w-[20%] text-center">Status Unggah</th>
+              <th class="w-[17%] text-center">Tautan Berkas</th>
+              <th class="w-[18%] text-center">Hasil Validasi</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="text-center font-semibold">1</td>
+              <td class="font-semibold text-heading pl-1.5">Kartu Keluarga (KK)</td>
+              <td class="text-center font-bold">
+                {student.fileKk ? (
+                  <span class="text-success-text font-bold">&#10003; TERUNGGAH</span>
+                ) : (
+                  <span class="text-muted font-bold">&#10007; BELUM ADA</span>
+                )}
+              </td>
+              <td class="text-center font-mono">
+                {student.fileKk ? (
+                  <a href={student.fileKk} target="_blank" class="text-primary hover:text-primary-hover underline font-semibold">Buka Berkas &rarr;</a>
+                ) : (
+                  <span class="text-muted">-</span>
+                )}
+              </td>
+              <td class="text-center font-bold text-heading">
+                {student.fileKk ? "✓  Lengkap" : "✗ Tidak Lengkap"}
+              </td>
+            </tr>
+
+            <tr>
+              <td class="text-center font-semibold">2</td>
+              <td class="font-semibold text-heading pl-1.5">Akta Kelahiran Calon Siswa</td>
+              <td class="text-center font-bold">
+                {student.fileAkta ? (
+                  <span class="text-success-text font-bold">&#10003; TERUNGGAH</span>
+                ) : (
+                  <span class="text-muted font-bold">&#10007; BELUM ADA</span>
+                )}
+              </td>
+              <td class="text-center font-mono">
+                {student.fileAkta ? (
+                  <a href={student.fileAkta} target="_blank" class="text-primary hover:text-primary-hover underline font-semibold">Buka Berkas &rarr;</a>
+                ) : (
+                  <span class="text-muted">-</span>
+                )}
+              </td>
+              <td class="text-center font-bold text-heading">
+                {student.fileAkta ? "✓  Lengkap" : "✗ Tidak Lengkap"}
+              </td>
+            </tr>
+
+            <tr>
+              <td class="text-center font-semibold">3</td>
+              <td class="font-semibold text-heading pl-1.5">Surat Keterangan Lulus (SKL) / Ijazah</td>
+              <td class="text-center font-bold">
+                {student.fileSkl ? (
+                  <span class="text-success-text font-bold">&#10003; TERUNGGAH</span>
+                ) : (
+                  <span class="text-muted font-bold">&#10007; BELUM ADA</span>
+                )}
+              </td>
+              <td class="text-center font-mono">
+                {student.fileSkl ? (
+                  <a href={student.fileSkl} target="_blank" class="text-primary hover:text-primary-hover underline font-semibold">Buka Berkas &rarr;</a>
+                ) : (
+                  <span class="text-muted">-</span>
+                )}
+              </td>
+              <td class="text-center font-bold text-heading">
+                {student.fileSkl ? "✓  Lengkap" : "✗ Tidak Lengkap"}
+              </td>
+            </tr>
+
+            <tr>
+              <td class="text-center font-semibold">4</td>
+              <td class="font-semibold text-heading pl-1.5">Dokumen Pendukung (Rapor / Tahfidz / Sertifikat)</td>
+              <td class="text-center font-bold">
+                {student.fileAdditional ? (
+                  <span class="text-success-text font-bold">&#10003; TERUNGGAH</span>
+                ) : (
+                  <span class="text-muted font-bold">&#10007; BELUM ADA</span>
+                )}
+              </td>
+              <td class="text-center font-mono">
+                {student.fileAdditional ? (
+                  <a href={student.fileAdditional} target="_blank" class="text-primary hover:text-primary-hover underline font-semibold">Buka Berkas &rarr;</a>
+                ) : (
+                  <span class="text-muted">-</span>
+                )}
+              </td>
+              <td class="text-center font-bold text-heading">
+                {student.fileAdditional ? "✓  Lengkap" : " Opsional"}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <!-- Catatan Panitia Verifikasi -->
+        <div class="notes-box">
+          <strong class="text-heading">Catatan Panitia Verifikasi / Keputusan Seleksi:</strong>
+          <span class="text-muted ml-1 italic">{student.notes || "Seluruh berkas persyaratan telah dicatat ke dalam sistem pendaftaran resmi."}</span>
+        </div>
+      </section>
+
+
+      <!-- BAGIAN V: PENGESAHAN TANDA TANGAN (A4 FOOTER)            -->
+
+      <footer class="doc-footer">
+        <p class="statement-text">
+          Pernyataan: Data dan dokumen yang tercantum dalam formulir ini adalah benar, sah, dan dapat dipertanggungjawabkan menurut hukum yang berlaku. Apabila di kemudian hari ditemukan pemalsuan data, maka status penerimaan calon peserta didik baru dapat dibatalkan.
+        </p>
+
+        <div class="signatures-grid">
+          <div>
+            <p class="text-muted m-0">Calon Peserta Didik / Orang Tua Wali,</p>
+            <div class="sig-space"></div>
+            <p class="font-bold underline uppercase m-0 text-heading">
+              ({student.fullName})
+            </p>
+            <p class="text-[7pt] text-muted mt-0.5">Tanda Tangan &amp; Nama Terang</p>
+          </div>
+
+          <div>
+            <p class="text-muted m-0">{schoolCity}, {currentDateStr}</p>
+            <p class="text-heading font-semibold mt-0.5 m-0">Panitia Penerimaan / Verifikator Pendaftaran,</p>
+            <div class="sig-space">
+              <span class="stamp-box">
+                Cap / Stempel Resmi
+              </span>
+            </div>
+            <p class="font-bold underline uppercase m-0 text-heading">
+              PANITIA PENDAFTARAN SISWA BARU
+            </p>
+            <p class="text-[7pt] text-muted font-mono mt-0.5">NIP/ID: {student.verifiedBy || "PANITIA-VERIFIKASI"}</p>
+          </div>
+        </div>
+
+        <div class="doc-footnote">
+          <span>Dicetak otomatis dari Sistem Pendaftaran {schoolName} &bull; ID: {student.id}</span>
+          <span>Lembar Sah &bull; Halaman 1 dari 1</span>
+        </div>
+      </footer>
+
+    </main>
+</PrintLayout>

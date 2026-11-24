@@ -1,0 +1,772 @@
+---
+import AdminLayout from "../../../layouts/AdminLayout.astro";
+import Icon from "../../../components/Icon.astro";
+import {
+  db,
+  users,
+  articles,
+  agendas,
+  announcements,
+  teachers,
+  documents,
+  galleries,
+  media,
+  settings,
+  auditLogs,
+} from "../../../db";
+import { sql, desc, eq } from "drizzle-orm";
+
+export const prerender = false;
+
+// Pastikan hanya super_admin yang dapat mengakses halaman pemeliharaan
+const currentUser = Astro.locals.user;
+if (!currentUser || currentUser.role !== "super_admin") {
+  return Astro.redirect("/admin?error=unauthorized_role");
+}
+
+// Hitung statistik baris data tabel sistem
+const [
+  usersCount,
+  articlesCount,
+  agendasCount,
+  announcementsCount,
+  teachersCount,
+  documentsCount,
+  galleriesCount,
+  mediaCount,
+  settingsCount,
+  logsCount,
+  lastBackupLog,
+] = await Promise.all([
+  db
+    .select({ count: sql<number>`count(*)` })
+    .from(users)
+    .then((r) => Number(r[0]?.count || 0)),
+  db
+    .select({ count: sql<number>`count(*)` })
+    .from(articles)
+    .then((r) => Number(r[0]?.count || 0)),
+  db
+    .select({ count: sql<number>`count(*)` })
+    .from(agendas)
+    .then((r) => Number(r[0]?.count || 0)),
+  db
+    .select({ count: sql<number>`count(*)` })
+    .from(announcements)
+    .then((r) => Number(r[0]?.count || 0)),
+  db
+    .select({ count: sql<number>`count(*)` })
+    .from(teachers)
+    .then((r) => Number(r[0]?.count || 0)),
+  db
+    .select({ count: sql<number>`count(*)` })
+    .from(documents)
+    .then((r) => Number(r[0]?.count || 0)),
+  db
+    .select({ count: sql<number>`count(*)` })
+    .from(galleries)
+    .then((r) => Number(r[0]?.count || 0)),
+  db
+    .select({ count: sql<number>`count(*)` })
+    .from(media)
+    .then((r) => Number(r[0]?.count || 0)),
+  db
+    .select({ count: sql<number>`count(*)` })
+    .from(settings)
+    .then((r) => Number(r[0]?.count || 0)),
+  db
+    .select({ count: sql<number>`count(*)` })
+    .from(auditLogs)
+    .then((r) => Number(r[0]?.count || 0)),
+  db
+    .select({ createdAt: auditLogs.createdAt, details: auditLogs.details })
+    .from(auditLogs)
+    .where(eq(auditLogs.action, "BACKUP_EXPORT"))
+    .orderBy(desc(auditLogs.createdAt))
+    .limit(1)
+    .then((r) => r[0] || null),
+]);
+
+const tablesSummary = [
+  { name: "Pengaturan Identitas", key: "settings", count: settingsCount },
+  { name: "Pengguna & Akun Staf", key: "users", count: usersCount },
+  { name: "Berita & Artikel", key: "articles", count: articlesCount },
+  { name: "Direktori Pendidik", key: "teachers", count: teachersCount },
+  { name: "Pustaka Media & Berkas", key: "media", count: mediaCount },
+  { name: "Repositori Dokumen", key: "documents", count: documentsCount },
+  { name: "Agenda Kegiatan", key: "agendas", count: agendasCount },
+  { name: "Galeri Visual", key: "galleries", count: galleriesCount },
+  {
+    name: "Banner Pengumuman",
+    key: "announcements",
+    count: announcementsCount,
+  },
+  { name: "Audit Trail Keamanan", key: "audit_logs", count: logsCount },
+];
+
+const totalRecords = tablesSummary.reduce((acc, t) => acc + t.count, 0);
+
+// Format waktu cadangan terakhir jika ada
+let formattedLastBackup = "Belum pernah diekspor pada sesi ini";
+if (lastBackupLog?.createdAt) {
+  try {
+    const d = new Date(lastBackupLog.createdAt);
+    formattedLastBackup = d.toLocaleDateString("id-ID", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    formattedLastBackup = String(lastBackupLog.createdAt);
+  }
+}
+---
+
+<AdminLayout
+  title="Pemeliharaan & Cadangan Basis Data"
+  activeNav="pemeliharaan"
+>
+  <div class="space-y-6 max-w-5xl">
+    <!-- 1. Header Halaman -->
+    <div class="pb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <h1 class="font-display text-2xl font-bold tracking-tight text-heading">
+          Pemeliharaan & Cadangan Sistem
+        </h1>
+        <p class="mt-1 font-body text-xs text-muted">
+          Pusat Disaster Recovery (DR), ekspor snapshot terstruktur, dan
+          pemulihan data institusi.
+        </p>
+      </div>
+
+      <div class="flex items-center gap-2 shrink-0">
+        <a
+          href="/admin/logs"
+          class="inline-flex h-9 items-center justify-center gap-2 rounded-[6px] border border-border bg-surface px-4 text-xs font-semibold text-heading hover:bg-surface-subtle transition-colors shadow-xs"
+        >
+          <Icon name="list" class="h-4 w-4 text-muted" />
+          <span>Audit Log Aktivitas</span>
+        </a>
+      </div>
+    </div>
+
+    <!-- 2. Satu Panel Status Basis Data -->
+    <div class="rounded-[8px] border border-border bg-surface p-5 shadow-xs space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2">
+        <div>
+          <h2 class="font-display text-sm font-bold text-heading">
+            Status Basis Data
+          </h2>
+          <p class="text-xs text-muted">
+            Informasi koneksi dan integritas data.
+          </p>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="inline-flex items-center rounded-full bg-success px-2.5 py-1 text-xs font-medium text-white border border-success">
+            Terhubung
+          </span>
+          <span class="text-xs text-muted font-mono">WAL Mode</span>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-1 *:space-y-0.5">
+        <div>
+          <span class="text-[11px] font-medium text-muted uppercase tracking-wider block">
+            Database
+          </span>
+          <p class="font-display text-sm font-semibold text-heading mt-0.5">
+            SQLite
+          </p>
+          <span class="text-[11px] text-muted">Drizzle ORM</span>
+        </div>
+
+        <div>
+          <span class="text-[11px] font-medium text-muted uppercase tracking-wider block">
+            Total Rekaman
+          </span>
+          <p class="font-display text-sm font-semibold text-heading mt-0.5">
+            {totalRecords.toLocaleString("id-ID")}
+          </p>
+          <span class="text-[11px] text-muted font-mono">
+            {tablesSummary.length} tabel tercakup
+          </span>
+        </div>
+
+        <div>
+          <span class="text-[11px] font-medium text-muted uppercase tracking-wider block">
+            Algoritma Integritas
+          </span>
+          <p class="font-display text-sm font-semibold text-heading mt-0.5">
+            SHA-256
+          </p>
+          <span class="text-[11px] text-muted">Tersedia untuk verifikasi</span>
+        </div>
+
+        <div>
+          <span class="text-[11px] font-medium text-muted uppercase tracking-wider block">
+            Cadangan Terakhir
+          </span>
+          <p
+            class="font-display text-xs font-medium text-heading mt-0.5 truncate"
+            title={formattedLastBackup}
+          >
+            {formattedLastBackup}
+          </p>
+          <span class="text-[11px] text-muted font-mono">Snapshot JSON</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Dua Card Utama: Buat Cadangan & Pulihkan Data -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+      <!-- Card Ekspor Cadangan -->
+      <div class="rounded-[12px] border border-border bg-surface p-5 space-y-4 shadow-xs flex flex-col justify-between h-full">
+        <div class="space-y-3">
+          <div class="pb-2">
+            <h2 class="font-display text-sm font-bold text-heading">
+              Buat Cadangan
+            </h2>
+            <p class="text-xs text-muted mt-0.5">
+              Ekspor seluruh data sistem ke berkas cadangan mandiri.
+            </p>
+          </div>
+
+          <div class="space-y-2 text-xs">
+            <div class="flex items-center justify-between py-1.5 px-2.5 rounded-[4px] bg-surface-subtle">
+              <span class="text-muted">Format Berkas</span>
+              <span class="font-mono font-semibold text-heading">
+                JSON (.json)
+              </span>
+            </div>
+            <div class="flex items-center justify-between py-1.5 px-2.5 rounded-[4px] bg-surface-subtle">
+              <span class="text-muted">Cakupan</span>
+              <span class="font-medium text-heading">
+                {tablesSummary.length} tabel database
+              </span>
+            </div>
+            <div class="flex items-center justify-between py-1.5 px-2.5 rounded-[4px] bg-surface-subtle">
+              <span class="text-muted">Integritas</span>
+              <span class="font-mono font-semibold text-heading">
+                SHA-256 Digest
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div class="pt-3 space-y-2.5">
+          <a
+            href="/api/admin/backup/download"
+            target="_blank"
+            class="w-full inline-flex h-[38px] items-center justify-center gap-2 rounded-[6px] bg-primary px-4 font-body text-xs font-semibold text-white transition-all duration-200 hover:bg-primary-hover shadow-xs cursor-pointer"
+          >
+            <Icon name="download" class="h-4 w-4 text-white" />
+            <span>Unduh Cadangan (.json)</span>
+          </a>
+
+          <a
+            href="/api/admin/backup/sqlite"
+            target="_blank"
+            class="w-full inline-flex h-[38px] items-center justify-center gap-2 rounded-[6px] border border-border bg-surface px-4 font-body text-xs font-semibold text-heading transition-colors hover:bg-surface-subtle shadow-xs cursor-pointer"
+          >
+            <Icon name="download" class="h-4 w-4 text-muted" />
+            <span>Unduh Salinan Mentah (.db)</span>
+          </a>
+
+          <p class="text-[11px] text-muted leading-normal pt-1">
+            Unduh salinan mentah SQLite langsung dari berkas database lokal.
+            Disarankan diunduh saat aktivitas tulis pengguna sedang tenang.
+          </p>
+        </div>
+      </div>
+
+      <!-- Card Pulihkan Data (2 Tahap: Periksa -> Konfirmasi) -->
+      <div class="rounded-[12px] border border-border bg-surface p-5 space-y-4 shadow-xs">
+        <div class="pb-2">
+          <h2 class="font-display text-sm font-bold text-heading">
+            Pulihkan Data
+          </h2>
+          <p class="text-xs text-muted mt-0.5">
+            Kembalikan basis data dari berkas cadangan melalui proses validasi
+            bertahap.
+          </p>
+        </div>
+
+        <div class="space-y-3">
+          <div class="space-y-1.5">
+            <label
+              for="restore-file-input"
+              class="block font-body text-xs font-semibold text-heading"
+            >
+              Berkas Cadangan (.json) <span class="text-error">*</span>
+            </label>
+            <input
+              type="file"
+              id="restore-file-input"
+              accept=".json"
+              class="w-full text-xs font-body text-heading file:mr-3 file:py-1.5 file:px-3 file:rounded-[4px] file:border file:border-border file:text-xs file:font-semibold file:bg-surface-subtle file:text-heading cursor-pointer border border-border rounded-[6px] p-2 hover:border-primary transition-colors"
+            />
+          </div>
+
+          <!-- Status Pesan Error/Info Sederhana -->
+          <div
+            id="validation-error"
+            class="hidden p-3 rounded-[6px] text-xs bg-error-light text-error-text border border-error/20"
+          ></div>
+
+          <!-- Tahap 1: Tombol Periksa Cadangan -->
+          <button
+            type="button"
+            id="inspect-btn"
+            class="w-full inline-flex h-[38px] items-center justify-center gap-2 rounded-[6px] border border-border bg-surface px-4 font-body text-xs font-semibold text-heading hover:bg-surface-subtle transition-colors shadow-xs cursor-pointer"
+          >
+            <Icon name="search" class="h-4 w-4 text-muted" />
+            <span>Periksa Cadangan</span>
+          </button>
+
+          <!-- Tahap 2: Ringkasan Cadangan (Preview) & Konfirmasi -->
+          <div
+            id="preview-panel"
+            class="hidden rounded-[8px] border border-border bg-surface-subtle p-4 space-y-3"
+          >
+            <div class="flex items-center justify-between pb-1">
+              <h3 class="font-display text-xs font-bold text-heading">
+                Ringkasan Berkas Cadangan
+              </h3>
+              <span
+                id="preview-checksum-badge"
+                class="font-mono text-[10px] font-semibold px-2 py-0.5 rounded-full bg-success-light text-success-text border border-success"
+              >
+                Checksum Valid
+              </span>
+            </div>
+
+            <div class="space-y-1.5 text-xs">
+              <div class="flex items-center justify-between">
+                <span class="text-muted">Nama Berkas:</span>
+                <span
+                  id="preview-filename"
+                  class="font-mono text-heading truncate max-w-[200px]"
+                >
+                  -
+                </span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-muted">Waktu Ekspor:</span>
+                <span id="preview-date" class="text-heading font-mono">
+                  -
+                </span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-muted">Total Rekaman:</span>
+                <span
+                  id="preview-records"
+                  class="font-bold text-heading font-mono"
+                >
+                  -
+                </span>
+              </div>
+              <div class="flex items-center justify-between">
+                <span class="text-muted">Tabel Terdeteksi:</span>
+                <span id="preview-tables" class="font-mono text-heading">
+                  -
+                </span>
+              </div>
+            </div>
+
+            <div class="rounded-[6px] border border-border bg-surface p-2.5 text-[11px] text-muted space-y-1">
+              <p class="font-semibold text-heading">
+                Peringatan Tindakan Berisiko:
+              </p>
+              <p class="leading-relaxed">
+                Pemulihan akan menyinkronkan rekaman basis data saat ini dengan
+                isi berkas cadangan ini. Pastikan Anda telah membuat cadangan
+                kondisi saat ini sebelum melanjutkan.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              id="confirm-restore-btn"
+              class="w-full inline-flex h-[38px] items-center justify-center gap-2 rounded-[6px] bg-error px-4 font-body text-xs font-semibold text-white transition-colors hover:bg-error-hover shadow-xs cursor-pointer"
+            >
+              <Icon name="upload" class="h-4 w-4 text-white" />
+              <span>Konfirmasi & Pulihkan Basis Data</span>
+            </button>
+          </div>
+
+          <!-- Status Eksekusi Pemulihan -->
+          <div
+            id="restore-progress"
+            class="hidden rounded-[6px] p-3 text-xs space-y-2"
+          ></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4. Tabel Cakupan Cadangan Database -->
+    <div class="rounded-[8px] border border-border bg-surface overflow-hidden shadow-xs">
+      <div class="p-4 flex items-center justify-between bg-surface">
+        <div>
+          <h2 class="font-display text-sm font-bold text-heading">
+            Cakupan Cadangan Database
+          </h2>
+          <p class="text-[11px] text-muted font-body mt-0.5">
+            {tablesSummary.length} tabel ·{" "}
+            {totalRecords.toLocaleString("id-ID")} rekaman
+          </p>
+        </div>
+        <span class="text-[11px] text-muted font-mono hidden sm:inline">
+          Format JSON Standar v1.0
+        </span>
+      </div>
+
+      <div class="divide-y divide-border font-body text-xs">
+        <div class="grid grid-cols-12 bg-surface-subtle px-4 py-2.5 font-semibold text-[11px] text-muted uppercase tracking-wider">
+          <div class="col-span-6 sm:col-span-5">Nama Entitas</div>
+          <div class="col-span-3 sm:col-span-4 font-mono">Tabel DB</div>
+          <div class="col-span-3 sm:col-span-3 text-right">Jumlah Rekaman</div>
+        </div>
+
+        {tablesSummary.map((t) => (
+          <div class="grid grid-cols-12 px-4 py-3 items-center hover:bg-surface-subtle transition-colors">
+            <div class="col-span-6 sm:col-span-5 font-semibold text-heading">
+              {t.name}
+            </div>
+            <div class="col-span-3 sm:col-span-4 font-mono text-[11px] text-muted">
+              {t.key}
+            </div>
+            <div class="col-span-3 sm:col-span-3 text-right font-mono font-medium text-heading">
+              {t.count}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <!-- 5. Panduan SOP (Accordion Ringkas Single-Open) -->
+    <details
+      name="sop-accordion"
+      class="group rounded-[8px] border border-border bg-surface shadow-xs transition-colors"
+    >
+      <summary class="flex items-center justify-between p-4 cursor-pointer select-none text-heading font-display text-xs font-bold hover:bg-surface-subtle transition-colors">
+        <div class="flex items-center gap-2">
+          <Icon name="list" class="h-4 w-4 text-muted" />
+          <span>Panduan Pencadangan dan Pemulihan (SOP)</span>
+        </div>
+        <Icon
+          name="chevron-down"
+          class="h-4 w-4 text-muted transition-transform duration-200 group-open:rotate-180"
+        />
+      </summary>
+
+      <div class="px-5 pb-5 pt-1 space-y-3 text-xs text-muted leading-relaxed font-body">
+        <ol class="list-decimal list-inside space-y-1.5 text-[11px]">
+          <li>
+            <strong class="text-heading">
+              Jadwalkan pencadangan secara rutin
+            </strong>
+            , khususnya setiap akhir pekan atau sesaat sebelum melakukan
+            perubahan massal pengguna dan konfigurasi.
+          </li>
+          <li>
+            <strong class="text-heading">
+              Simpan berkas cadangan di media penyimpanan eksternal yang aman
+            </strong>{" "}
+            dan terpisah dari server web institusi.
+          </li>
+          <li>
+            <strong class="text-heading">
+              Periksa integritas checksum SHA-256
+            </strong>{" "}
+            sebelum melakukan tindakan pemulihan agar terhindar dari data korup.
+          </li>
+          <li>
+            <strong class="text-heading">
+              Uji proses pemulihan secara berkala
+            </strong>{" "}
+            di lingkungan pengujian untuk memastikan kelangsungan prosedur
+            disaster recovery.
+          </li>
+          <li>
+            <strong class="text-heading">
+              Setiap aktivitas ekspor dan pemulihan dicatat
+            </strong>{" "}
+            secara permanen di Audit Trail bersama IP operator untuk
+            akuntabilitas institusi.
+          </li>
+        </ol>
+
+        <div class="rounded-[6px] border border-border bg-surface-subtle p-3 text-[11px]">
+          <p class="font-semibold text-heading mb-0.5">
+            Catatan Keamanan Berkas:
+          </p>
+          <p>
+            Checksum SHA-256 berfungsi membuktikan integritas berkas terhadap
+            kerusakan data, bukan enkripsi kerahasiaan. Jika cadangan memuat
+            data pribadi siswa dan staf, pastikan media penyimpanan eksternal
+            dilindungi enkripsi saat disimpan (at-rest) dan dipindahkan
+            (in-transit).
+          </p>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <script>
+    // Client-side Script untuk Alur Restore 2 Tahap (Validasi -> Preview -> Konfirmasi)
+    const restoreFileInput = document.getElementById("restore-file-input");
+    const inspectBtn = document.getElementById("inspect-btn");
+    const validationError = document.getElementById("validation-error");
+    const previewPanel = document.getElementById("preview-panel");
+    const previewFilename = document.getElementById("preview-filename");
+    const previewDate = document.getElementById("preview-date");
+    const previewRecords = document.getElementById("preview-records");
+    const previewTables = document.getElementById("preview-tables");
+    const previewChecksumBadge = document.getElementById(
+      "preview-checksum-badge",
+    );
+    const confirmRestoreBtn = document.getElementById("confirm-restore-btn");
+    const restoreProgress = document.getElementById("restore-progress");
+
+    let validatedSnapshotData = null;
+
+    // Fungsi SHA-256 di browser untuk verifikasi kecocokan checksum sebelum kirim ke server
+    async function calculateSha256(content) {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(content);
+      const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+      return Array.from(new Uint8Array(hashBuffer))
+        .map((b) => b.toString(16).padStart(2, "0"))
+        .join("");
+    }
+
+    function showValidationError(message) {
+      if (validationError) {
+        validationError.textContent = message;
+        validationError.classList.remove("hidden");
+      }
+      if (previewPanel) previewPanel.classList.add("hidden");
+      validatedSnapshotData = null;
+    }
+
+    function hideValidationError() {
+      if (validationError) {
+        validationError.classList.add("hidden");
+        validationError.textContent = "";
+      }
+    }
+
+    // Reset preview saat pengguna memilih berkas baru
+    restoreFileInput?.addEventListener("change", () => {
+      hideValidationError();
+      if (previewPanel) previewPanel.classList.add("hidden");
+      if (restoreProgress) restoreProgress.classList.add("hidden");
+      validatedSnapshotData = null;
+    });
+
+    // Tahap 1: Periksa Cadangan
+    inspectBtn?.addEventListener("click", async () => {
+      const file = restoreFileInput?.files?.[0];
+      if (!file) {
+        showValidationError(
+          "Silakan pilih berkas cadangan (.json) terlebih dahulu.",
+        );
+        return;
+      }
+
+      hideValidationError();
+      if (restoreProgress) restoreProgress.classList.add("hidden");
+
+      inspectBtn.disabled = true;
+      inspectBtn.innerHTML = `
+        <svg class="animate-spin h-4 w-4 text-heading" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+        </svg>
+        <span>Memeriksa Berkas...</span>
+      `;
+
+      try {
+        const text = await file.text();
+        let parsed;
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          showValidationError(
+            "Format berkas tidak valid: Berkas bukan JSON yang terbaca.",
+          );
+          return;
+        }
+
+        // Validasi struktur standar snapshot v1.0
+        if (
+          !parsed ||
+          parsed.version !== "1.0" ||
+          !parsed.data ||
+          !parsed.checksum
+        ) {
+          showValidationError(
+            "Struktur cadangan tidak kompatibel: Berkas tidak memiliki format standar snapshot v1.0.",
+          );
+          return;
+        }
+
+        // Verifikasi checksum SHA-256
+        const serialized = JSON.stringify(parsed.data);
+        const actualChecksum = await calculateSha256(serialized);
+
+        if (actualChecksum !== parsed.checksum) {
+          showValidationError(
+            "Integritas berkas gagal: Checksum SHA-256 tidak cocok. Berkas kemungkinan rusak atau telah diubah.",
+          );
+          return;
+        }
+
+        // Hitung total rekaman dari data
+        let totalCount = 0;
+        let detectedTableCount = 0;
+        if (typeof parsed.data === "object" && parsed.data !== null) {
+          for (const key of Object.keys(parsed.data)) {
+            if (Array.isArray(parsed.data[key])) {
+              detectedTableCount++;
+              totalCount += parsed.data[key].length;
+            }
+          }
+        }
+
+        validatedSnapshotData = parsed;
+
+        // Tampilkan hasil preview
+        if (previewFilename) previewFilename.textContent = file.name;
+        if (previewDate) {
+          try {
+            previewDate.textContent = new Date(
+              parsed.exportedAt,
+            ).toLocaleString("id-ID");
+          } catch {
+            previewDate.textContent = parsed.exportedAt || "-";
+          }
+        }
+        if (previewRecords)
+          previewRecords.textContent = `${totalCount} rekaman`;
+        if (previewTables)
+          previewTables.textContent = `${detectedTableCount} tabel`;
+        if (previewChecksumBadge) {
+          previewChecksumBadge.textContent = "Checksum Valid";
+          previewChecksumBadge.className =
+            "font-mono text-[10px] font-semibold px-2 py-0.5 rounded-full bg-success-light text-success-text border border-success";
+        }
+
+        if (previewPanel) previewPanel.classList.remove("hidden");
+      } catch (err) {
+        showValidationError(
+          "Gagal membaca berkas: " + (err.message || "Kesalahan lokal."),
+        );
+      } finally {
+        inspectBtn.disabled = false;
+        inspectBtn.innerHTML = `
+          <svg class="h-4 w-4 text-muted"><use href="#icon-search"></use></svg>
+          <span>Periksa Cadangan</span>
+        `;
+      }
+    });
+
+    // Tahap 2: Konfirmasi & Eksekusi Pemulihan
+    confirmRestoreBtn?.addEventListener("click", async () => {
+      if (!validatedSnapshotData) {
+        showValidationError(
+          "Silakan periksa cadangan terlebih dahulu sebelum memulihkan.",
+        );
+        return;
+      }
+
+      const userAgreed = await (window as any).confirmDialog({
+        title: "Konfirmasi Pemulihan Basis Data",
+        message:
+          "Anda akan memulihkan data sistem dari berkas cadangan ini.\nRekaman saat ini akan disinkronkan dan ditimpa sesuai isi cadangan.\n\nLanjutkan proses pemulihan?",
+        confirmText: "Ya, Pulihkan Basis Data",
+        cancelText: "Batal",
+        type: "danger",
+      });
+      if (!userAgreed) return;
+
+      confirmRestoreBtn.disabled = true;
+      confirmRestoreBtn.innerHTML = `
+        <svg class="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+        </svg>
+        <span>Memulihkan Basis Data...</span>
+      `;
+
+      if (restoreProgress) {
+        restoreProgress.classList.remove("hidden");
+        restoreProgress.className =
+          "rounded-[6px] border border-border bg-surface-subtle p-3 text-xs text-heading space-y-1 block";
+        restoreProgress.innerHTML =
+          '<p class="font-semibold">Mengirim data dan mengeksekusi pemulihan di server...</p>';
+      }
+
+      try {
+        const res = await fetch("/api/admin/backup/restore", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(validatedSnapshotData),
+        });
+
+        const result = await res.json();
+        confirmRestoreBtn.disabled = false;
+        confirmRestoreBtn.innerHTML = `
+          <svg class="h-4 w-4 text-white"><use href="#icon-upload"></use></svg>
+          <span>Konfirmasi & Pulihkan Basis Data</span>
+        `;
+
+        if (result.success) {
+          const detailList = Object.entries(result.restoredCounts || {})
+            .map(
+              ([tbl, cnt]) =>
+                `<span class="font-mono bg-surface px-1.5 py-0.5 rounded border border-success text-[11px]">${tbl}: ${cnt}</span>`,
+            )
+            .join(" ");
+
+          if (restoreProgress) {
+            restoreProgress.className =
+              "rounded-[6px] border border-success bg-success-light p-4 text-xs text-success-text space-y-2 block";
+            restoreProgress.innerHTML = `
+              <div class="flex items-center gap-2 font-bold text-success-text">
+                <svg class="h-5 w-5 text-success shrink-0"><use href="#icon-check"></use></svg>
+                <span>Pemulihan Basis Data Berhasil!</span>
+              </div>
+              <p class="text-[11px] text-success-text">Tabel berhasil disinkronkan:</p>
+              <div class="flex flex-wrap gap-1 pt-1">${detailList}</div>
+              <p class="text-[11px] text-muted italic pt-1">Halaman akan disegarkan dalam 2 detik...</p>
+            `;
+          }
+
+          setTimeout(() => {
+            window.location.reload();
+          }, 2500);
+        } else {
+          if (restoreProgress) {
+            restoreProgress.className =
+              "rounded-[6px] border border-error/30 bg-error-light text-error-text p-3 text-xs space-y-1 block";
+            restoreProgress.innerHTML = `<p class="font-semibold">Gagal Memulihkan Data:</p><p class="text-[11px]">${result.error || "Terjadi kesalahan pada server."}</p>`;
+          }
+        }
+      } catch (err) {
+        confirmRestoreBtn.disabled = false;
+        confirmRestoreBtn.innerHTML = `
+          <svg class="h-4 w-4 text-white"><use href="#icon-upload"></use></svg>
+          <span>Konfirmasi & Pulihkan Basis Data</span>
+        `;
+        if (restoreProgress) {
+          restoreProgress.className =
+            "rounded-[6px] border border-error/30 bg-error-light text-error-text p-3 text-xs space-y-1 block";
+          restoreProgress.innerHTML = `<p class="font-semibold">Kesalahan Jaringan:</p><p class="text-[11px]">${err.message || "Gagal menghubungi server."}</p>`;
+        }
+      }
+    });
+  </script>
+</AdminLayout>

@@ -1,0 +1,2039 @@
+---
+import AdminLayout from "../../../layouts/AdminLayout.astro";
+import Icon from "../../../components/Icon.astro";
+import Pagination from "../../../components/Pagination.astro";
+import { db, settings, registrations, graduations } from "../../../db";
+import { eq, desc, asc, sql } from "drizzle-orm";
+
+export const prerender = false;
+
+// 1. Ambil Pengaturan Sekolah & Kelulusan
+const allSettings = await db.select().from(settings);
+const settingMap = allSettings.reduce(
+  (acc, curr) => {
+    acc[curr.key] = curr.value;
+    return acc;
+  },
+  {} as Record<string, string>,
+);
+
+const schoolName = settingMap["school_name"] || "SMAN 1 Unggulan";
+const schoolType = (settingMap["school_type"] || settingMap["school_level"] || "SMA").toUpperCase();
+const admissionsLabel = settingMap["admissions_label"] || settingMap["ppdb_label"] || "PPDB";
+const admissionsYear = settingMap["ppdb_year"] || "2026/2027";
+const grade12Year = settingMap["graduation_grade12_year"] || "2025/2026";
+
+// Status Pengumuman
+const admissionsAnnouncementActive = settingMap["admissions_announcement_published"] !== "false";
+const admissionsAnnouncementDate = settingMap["admissions_announcement_date"] || "";
+const admissionsAnnouncementNotes = settingMap["admissions_announcement_notes"] || "Selamat kepada calon peserta didik baru yang dinyatakan lolos seleksi penerimaan.";
+
+const grade12AnnouncementActive = settingMap["graduation_grade12_published"] !== "false";
+const grade12AnnouncementDate = settingMap["graduation_grade12_date"] || "";
+const grade12AnnouncementNotes = settingMap["graduation_grade12_notes"] || "Pengumuman resmi kelulusan siswa tingkat akhir tahun ajaran 2025/2026.";
+const grade12DecreeNumber = settingMap["graduation_grade12_decree"] || "421.3/089/CADISDIK-WIL.IV/2026";
+
+// 2. Ambil Statistik & Data Pendaftar (Siswa Baru)
+const allRegistrations = await db
+  .select({
+    id: registrations.id,
+    registrationNumber: registrations.registrationNumber,
+    fullName: registrations.fullName,
+    nisn: registrations.nisn,
+    gender: registrations.gender,
+    prevSchool: registrations.prevSchool,
+    admissionPath: registrations.admissionPath,
+    majorChoice1: registrations.majorChoice1,
+    wave: registrations.wave,
+    academicYear: registrations.academicYear,
+    status: registrations.status,
+    verificationStatus: registrations.verificationStatus,
+    selectionStatus: registrations.selectionStatus,
+    createdAt: registrations.createdAt,
+  })
+  .from(registrations)
+  .orderBy(desc(registrations.createdAt));
+
+const statsAdmissions = {
+  total: allRegistrations.length,
+  accepted: allRegistrations.filter((r) => r.selectionStatus === "accepted").length,
+  waitlist: allRegistrations.filter((r) => r.selectionStatus === "waitlist").length,
+  rejected: allRegistrations.filter((r) => r.selectionStatus === "rejected").length,
+  notAnnounced: allRegistrations.filter((r) => !r.selectionStatus || r.selectionStatus === "not_announced").length,
+};
+
+// 3. Ambil Data Siswa Kelas 12
+const allGraduations = await db
+  .select()
+  .from(graduations)
+  .orderBy(asc(graduations.className), asc(graduations.name));
+
+const statsGrade12 = {
+  total: allGraduations.length,
+  lulus: allGraduations.filter((g) => g.status === "LULUS").length,
+  tidakLulus: allGraduations.filter((g) => g.status === "TIDAK_LULUS").length,
+  ditunda: allGraduations.filter((g) => g.status === "DITUNDA").length,
+};
+
+// Filter kelas unik untuk dropdown
+const classOptions = Array.from(new Set(allGraduations.map((g) => g.className).filter(Boolean))).sort();
+const pathOptions = Array.from(new Set(allRegistrations.map((r) => r.admissionPath).filter(Boolean))).sort();
+
+// Label tingkat akhir dinamis (SMA/SMK: Kelas 12, SMP: Kelas 9, SD: Kelas 6)
+const gradeFinalLabel = ["SD", "MI"].includes(schoolType)
+  ? "Kelas 6"
+  : ["SMP", "MTS"].includes(schoolType)
+    ? "Kelas 9"
+    : "Kelas 12";
+---
+
+<AdminLayout title="Pengumuman Kelulusan" activeNav="kelulusan" settingsMap={settingMap}>
+  <div class="space-y-6">
+    <!-- Header Halaman -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5">
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="font-display text-xl font-bold tracking-tight text-heading">
+            Pusat Pengumuman Kelulusan
+          </h1>
+        </div>
+        <p class="text-xs text-muted mt-1 leading-relaxed">
+          Kelola hasil seleksi pendaftaran siswa baru ({admissionsLabel}) dan kelulusan siswa tingkat akhir ({gradeFinalLabel}).
+        </p>
+      </div>
+
+      <div class="flex items-center gap-2.5 shrink-0">
+        <a
+          href="/kelulusan"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex h-9 items-center justify-center gap-1.5 rounded-[6px] border border-border bg-surface px-3.5 text-xs font-semibold text-heading transition-colors hover:bg-surface-subtle shadow-xs"
+        >
+          <svg class="h-3.5 w-3.5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+          </svg>
+          <span>Lihat Tabel Publik</span>
+        </a>
+      </div>
+    </div>
+
+    <!-- Alert Status Feedback -->
+    <div id="status-banner" class="hidden rounded-lg p-3.5 text-xs font-medium"></div>
+
+    <!-- Tab Utama Pemisah Kategori -->
+    <div class="flex border-b border-border *:flex *:items-center *:gap-2 *:border-b-2 *:px-5 *:py-3 *:text-xs *:transition-all *:cursor-pointer">
+      <button
+        type="button"
+        id="tab-btn-admissions"
+        class="main-tab-btn border-primary font-bold text-primary"
+        data-tab="pane-admissions"
+      >
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+        </svg>
+        <span>1. Kelulusan {admissionsLabel}</span>
+      </button>
+
+      <button
+        type="button"
+        id="tab-btn-grade12"
+        class="main-tab-btn border-transparent font-semibold text-muted hover:text-heading"
+        data-tab="pane-grade12"
+      >
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l9-5-9-5-9 5 9 5z M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z M12 14v7" />
+        </svg>
+        <span>2. Kelulusan {gradeFinalLabel}</span>
+      </button>
+    </div>
+
+    
+    <!-- PANEL 1: KELULUSAN SELEKSI SISWA BARU                    -->
+    
+    <div id="pane-admissions" class="tab-pane space-y-6">
+      
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 *:p-4 *:rounded-lg *:border *:shadow-2xs">
+        <div class="bg-primary border-primary text-primary-foreground">
+          <span class="text-[11px] font-semibold text-primary-foreground block">Total Calon Siswa</span>
+          <p class="font-display text-2xl font-bold text-primary-foreground mt-0.5">{statsAdmissions.total}</p>
+          <span class="text-[10px] text-primary-foreground/80">Seluruh berkas masuk</span>
+        </div>
+        <div class="bg-success border-success text-white">
+          <span class="text-[11px] font-semibold text-white block">Diterima / Lolos</span>
+          <p class="font-display text-2xl font-bold text-white mt-0.5">{statsAdmissions.accepted}</p>
+          <span class="text-[10px] text-white/80">Dinyatakan lulus seleksi</span>
+        </div>
+        <div class="bg-warning border-warning text-white">
+          <span class="text-[11px] font-semibold text-white block">Cadangan</span>
+          <p class="font-display text-2xl font-bold text-white mt-0.5">{statsAdmissions.waitlist}</p>
+          <span class="text-[10px] text-white/80">Menunggu kuota tersedia</span>
+        </div>
+        <div class="bg-secondary border-secondary text-secondary-foreground">
+          <span class="text-[11px] font-semibold text-secondary-foreground block">Belum Diumumkan</span>
+          <p class="font-display text-2xl font-bold text-secondary-foreground mt-0.5">{statsAdmissions.notAnnounced}</p>
+          <span class="text-[10px] text-secondary-foreground/80">Belum ditetapkan panitia</span>
+        </div>
+      </div>
+
+      <!-- Pengaturan Publikasi Pengumuman Seleksi -->
+      <div class="rounded-lg border border-border bg-surface p-5 space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/70 pb-3">
+          <div>
+            <h3 class="font-display text-sm font-bold text-heading">
+              Status Publikasi Pengumuman {admissionsLabel} ke Website Publik
+            </h3>
+            <p class="text-[11px] text-muted mt-0.5">
+              Tentukan apakah hasil seleksi pendaftar dibuka atau ditutup untuk akses publik.
+            </p>
+          </div>
+          <button
+            type="button"
+            id="btn-save-admissions-settings"
+            class="inline-flex h-8 items-center justify-center gap-1.5 rounded-[6px] bg-primary hover:bg-primary-hover px-4 text-xs font-semibold text-white transition-all shadow-xs cursor-pointer shrink-0"
+          >
+            <span>Simpan Pengaturan</span>
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs *:space-y-1.5">
+          <div>
+            <label class="block font-semibold text-heading">Status Akses Publik:</label>
+            <div class="flex items-center gap-4 pt-1">
+              <label class="inline-flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="adm_announcement_published"
+                  value="true"
+                  checked={admissionsAnnouncementActive}
+                  class="text-primary"
+                />
+                <span class="font-medium text-heading">Dibuka</span>
+              </label>
+              <label class="inline-flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="adm_announcement_published"
+                  value="false"
+                  checked={!admissionsAnnouncementActive}
+                  class="text-primary"
+                />
+                <span class="font-medium text-muted">Ditutup</span>
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <label for="adm_announcement_date" class="block font-semibold text-heading">
+              Jadwal Waktu Rilis (Opsional):
+            </label>
+            <input
+              type="datetime-local"
+              id="adm_announcement_date"
+              value={admissionsAnnouncementDate}
+              class="h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading"
+            />
+            <span class="text-[10px] text-muted block">Jika diisi, pengumuman otomatis terkunci sampai jadwal</span>
+          </div>
+
+          <div class="sm:col-span-1">
+            <label for="adm_announcement_notes" class="block font-semibold text-heading">
+              Pesan Sambutan Panitia:
+            </label>
+            <input
+              type="text"
+              id="adm_announcement_notes"
+              value={admissionsAnnouncementNotes}
+              class="h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading"
+              placeholder="Selamat kepada calon peserta didik..."
+            />
+          </div>
+        </div>
+      </div>
+
+      <!-- Toolbar & Tabel Data Kelulusan Calon Siswa -->
+      <div class="rounded-lg border border-border bg-surface overflow-hidden shadow-xs space-y-3 p-4">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div class="flex flex-wrap items-center gap-2">
+            <!-- Search Box -->
+            <div class="relative w-full sm:w-64">
+              <input
+                type="text"
+                id="search-admissions"
+                placeholder="Cari No. Daftar, Nama, Asal..."
+                class="h-9 w-full rounded-[6px] border border-border bg-surface pl-8 pr-3 text-xs text-heading"
+              />
+              <Icon name="search" class="absolute left-2.5 top-2.5 h-4 w-4 text-muted pointer-events-none" />
+            </div>
+
+            <!-- Filter Jalur -->
+            <select
+              id="filter-admissions-path"
+              class="h-9 rounded-[6px] border border-border bg-surface px-3 text-xs text-heading"
+            >
+              <option value="">Semua Jalur Pendaftaran</option>
+              {pathOptions.map((p) => (
+                <option value={p}>{p}</option>
+              ))}
+            </select>
+
+            <!-- Filter Status Kelulusan -->
+            <select
+              id="filter-admissions-status"
+              class="h-9 rounded-[6px] border border-border bg-surface px-3 text-xs text-heading"
+            >
+              <option value="">Semua Status Seleksi</option>
+              <option value="accepted">Diterima / Lolos</option>
+              <option value="waitlist">Cadangan</option>
+              <option value="rejected">Tidak Diterima</option>
+              <option value="not_announced">Belum Ditetapkan</option>
+            </select>
+          </div>
+
+          <!-- Bulk Actions Select -->
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] text-muted hidden sm:inline" id="selected-admissions-count">0 dipilih</span>
+            <select
+              id="select-bulk-admissions"
+              class="h-9 rounded-[6px] border border-border bg-surface px-3 text-xs text-heading cursor-pointer transition-colors"
+              aria-label="Aksi massal status seleksi"
+            >
+              <option value="" selected disabled>Aksi Massal...</option>
+              <option value="accepted">Set Diterima</option>
+              <option value="waitlist">Set Cadangan</option>
+              <option value="rejected">Set Ditolak</option>
+              <option value="not_announced">Set Belum Ditetapkan</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Grafik Distribusi Keputusan Seleksi Calon Siswa Baru -->
+        <div class="p-4 rounded-lg border border-border bg-surface-subtle space-y-3">
+          <div class="flex items-center justify-between text-xs">
+            <span class="font-semibold text-heading flex items-center gap-1.5">
+              <Icon name="bar-chart" class="h-3.5 w-3.5 text-primary" />
+              <span>Grafik Rasio Keputusan Seleksi {admissionsLabel}</span>
+            </span>
+            <span class="font-mono text-muted text-[11px]">
+              {statsAdmissions.total} Total Calon Siswa
+            </span>
+          </div>
+          <!-- Progress Bar Multi-Segment -->
+          <div class="h-3.5 w-full rounded-full bg-surface overflow-hidden flex shadow-inner border border-border/60">
+            {statsAdmissions.total > 0 ? (
+              <>
+                <div
+                  class="bg-success h-full transition-all"
+                  style={`width: ${(statsAdmissions.accepted / statsAdmissions.total) * 100}%;`}
+                  title={`Diterima: ${statsAdmissions.accepted} (${Math.round((statsAdmissions.accepted / statsAdmissions.total) * 100)}%)`}
+                ></div>
+                <div
+                  class="bg-warning h-full transition-all"
+                  style={`width: ${(statsAdmissions.waitlist / statsAdmissions.total) * 100}%;`}
+                  title={`Cadangan: ${statsAdmissions.waitlist} (${Math.round((statsAdmissions.waitlist / statsAdmissions.total) * 100)}%)`}
+                ></div>
+                <div
+                  class="bg-error h-full transition-all"
+                  style={`width: ${(statsAdmissions.rejected / statsAdmissions.total) * 100}%;`}
+                  title={`Tidak Diterima: ${statsAdmissions.rejected} (${Math.round((statsAdmissions.rejected / statsAdmissions.total) * 100)}%)`}
+                ></div>
+              </>
+            ) : (
+              <div class="w-full h-full bg-border"></div>
+            )}
+          </div>
+          <!-- Legend -->
+          <div class="flex flex-wrap items-center justify-between gap-2 text-[11px] pt-2 text-muted">
+            <span class="inline-flex items-center gap-1.5">
+              <span class="font-semibold text-success">Diterima:</span>
+              <strong class="text-heading font-mono">{statsAdmissions.accepted}</strong> ({statsAdmissions.total > 0 ? Math.round((statsAdmissions.accepted / statsAdmissions.total) * 100) : 0}%)
+            </span>
+            <span class="inline-flex items-center gap-1.5">
+              <span class="font-semibold text-warning">Cadangan:</span>
+              <strong class="text-heading font-mono">{statsAdmissions.waitlist}</strong> ({statsAdmissions.total > 0 ? Math.round((statsAdmissions.waitlist / statsAdmissions.total) * 100) : 0}%)
+            </span>
+            <span class="inline-flex items-center gap-1.5">
+              <span class="font-semibold text-error">Tidak Lolos:</span>
+              <strong class="text-heading font-mono">{statsAdmissions.rejected}</strong> ({statsAdmissions.total > 0 ? Math.round((statsAdmissions.rejected / statsAdmissions.total) * 100) : 0}%)
+            </span>
+          </div>
+        </div>
+
+        <!-- Tabel Pendaftar -->
+        <div class="overflow-x-auto border border-border rounded-md">
+          <table class="w-full text-left text-xs" id="table-admissions">
+            <thead class="bg-surface-subtle border-b border-border text-[11px] font-semibold text-muted uppercase tracking-wider">
+              <tr class="*:py-2.5 *:px-3">
+                <th class="w-8 text-center">
+                  <input type="checkbox"id="check-all-admissions"class="rounded border-border text-primary cursor-pointer"/>
+                </th>
+                <th>No. Pendaftaran</th>
+                <th>Nama Lengkap &amp; Asal Sekolah</th>
+                <th>Jalur &amp; Pilihan</th>
+                <th class="text-center">Status Berkas</th>
+                <th class="text-center">Keputusan Seleksi</th>
+                <th class="text-right"> Status</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-border" id="tbody-admissions">
+              {allRegistrations.map((item) => (
+                <tr class="hover:bg-surface-subtle/60 transition-colors row-admission *:py-2.5 *:px-3" data-id={item.id} data-path={item.admissionPath} data-status={item.selectionStatus || 'not_announced'}>
+                  <td class="text-center">
+                    <input type="checkbox"class="check-item-admissions rounded border-border text-primary cursor-pointer"value={item.id} />
+                  </td>
+                  <td class="font-mono font-semibold text-heading whitespace-nowrap">
+                    {item.registrationNumber}
+                    <span class="block text-[10px] text-muted font-normal">{item.wave || 'Gelombang 1'}</span>
+                  </td>
+                  <td>
+                    <span class="font-bold text-heading block">{item.fullName}</span>
+                    <span class="text-[11px] text-muted block">{item.prevSchool || '—'} &bull; NISN: {item.nisn || '—'}</span>
+                  </td>
+                  <td class="whitespace-nowrap">
+                    <span class="inline-block rounded-[4px] bg-surface-subtle border border-border px-2 py-0.5 text-[10px] font-medium text-heading">
+                      {item.admissionPath}
+                    </span>
+                    {item.majorChoice1 && <span class="block text-[10px] text-muted mt-0.5">{item.majorChoice1}</span>}
+                  </td>
+                  <td class="text-center whitespace-nowrap">
+                    <span class:list={[
+                      "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold",
+                      item.verificationStatus === "verified" ? "bg-success-light text-success-text" :
+                      item.verificationStatus === "revision_required" ? "bg-warning-light text-warning-text" :
+                      "bg-surface-subtle text-muted"
+                    ]}>
+                      {item.verificationStatus === "verified" ? "Terverifikasi" : item.verificationStatus === "revision_required" ? "Revisi" : "Menunggu"}
+                    </span>
+                  </td>
+                  <td class="text-center whitespace-nowrap">
+                    <span class:list={[
+                      "badge-selection-status inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase",
+                      item.selectionStatus === "accepted" ? "bg-success text-white" :
+                      item.selectionStatus === "waitlist" ? "bg-warning text-white" :
+                      item.selectionStatus === "rejected" ? "bg-error text-white" :
+                      "bg-surface-subtle text-muted border border-border"
+                    ]}>
+                      {item.selectionStatus === "accepted" ? "Diterima" :
+                       item.selectionStatus === "waitlist" ? "Cadangan" :
+                       item.selectionStatus === "rejected" ? "Tidak Lulus" : "Belum Rilis"}
+                    </span>
+                  </td>
+                  <td class="text-right whitespace-nowrap">
+                    <select
+                      class="quick-select-status h-7 rounded border border-border bg-surface px-1.5 text-[11px] text-heading font-medium cursor-pointer"
+                      data-id={item.id}
+                    >
+                      <option value="not_announced" selected={!item.selectionStatus || item.selectionStatus === 'not_announced'}>Belum Rilis</option>
+                      <option value="accepted" selected={item.selectionStatus === 'accepted'}>Diterima</option>
+                      <option value="waitlist" selected={item.selectionStatus === 'waitlist'}>Cadangan</option>
+                      <option value="rejected" selected={item.selectionStatus === 'rejected'}>Tidak Lulus</option>
+                    </select>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <!-- Empty State jika tidak ada yang cocok -->
+          <div id="empty-admissions" class="hidden py-10 text-center text-muted text-xs">
+            Tidak ada calon siswa yang cocok dengan filter atau kata kunci pencarian.
+          </div>
+
+          <!-- Komponen Pagination Terpusat: Calon Siswa -->
+          <Pagination
+            id="admissions-pagination-container"
+            currentPage={1}
+            totalPages={Math.max(1, Math.ceil(allRegistrations.length / 10))}
+            totalItems={allRegistrations.length}
+            pageSize={10}
+            itemLabel="calon siswa"
+          />
+        </div>
+      </div>
+    </div>
+
+    
+    <!-- PANEL 2: KELULUSAN SISWA KELAS 12 (TINGKAT AKHIR)        -->
+    
+    <div id="pane-grade12" class="tab-pane hidden space-y-6">
+      <!-- 4 Kartu Statistik Kelulusan Kelas 12 (Warna Solid Berbeda Sesuai Token Semantik) -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 *:p-4 *:rounded-lg *:border *:shadow-2xs">
+        <div class="bg-primary border-primary text-primary-foreground">
+          <span class="text-[11px] font-semibold text-primary-foreground block">Total Siswa {gradeFinalLabel}</span>
+          <p class="font-display text-2xl font-bold text-primary-foreground mt-0.5" id="stat-grade12-total">{statsGrade12.total}</p>
+          <span class="text-[10px] text-primary-foreground/80">Peserta kelulusan terdata</span>
+        </div>
+        <div class="bg-success border-success text-white">
+          <span class="text-[11px] font-semibold text-white block">Dinyatakan LULUS</span>
+          <p class="font-display text-2xl font-bold text-white mt-0.5" id="stat-grade12-lulus">{statsGrade12.lulus}</p>
+          <span class="text-[10px] text-white/80">Memenuhi kriteria kelulusan</span>
+        </div>
+        <div class="bg-error border-error text-white">
+          <span class="text-[11px] font-semibold text-white block">Tidak Lulus</span>
+          <p class="font-display text-2xl font-bold text-white mt-0.5" id="stat-grade12-tidak">{statsGrade12.tidakLulus}</p>
+          <span class="text-[10px] text-white/80">Belum memenuhi syarat</span>
+        </div>
+        <div class="bg-warning border-warning text-white">
+          <span class="text-[11px] font-semibold text-white block">Ditunda</span>
+          <p class="font-display text-2xl font-bold text-white mt-0.5" id="stat-grade12-tunda">{statsGrade12.ditunda}</p>
+          <span class="text-[10px] text-white/80">Menunggu perbaikan berkas</span>
+        </div>
+      </div>
+
+      <!-- Pengaturan Publikasi Pengumuman Kelas 12 -->
+      <div class="rounded-lg border border-border bg-surface p-5 space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/70 pb-3">
+          <div>
+            <h3 class="font-display text-sm font-bold text-heading">
+              Pengaturan Rilis Kelulusan {gradeFinalLabel}
+            </h3>
+            <p class="text-[11px] text-muted mt-0.5">
+              Atur tanggal pengumuman resmi dan nomor surat keputusan kelulusan.
+            </p>
+          </div>
+          <button
+            type="button"
+            id="btn-save-grade12-settings"
+            class="inline-flex h-8 items-center justify-center gap-1.5 rounded-[6px] bg-primary hover:bg-primary-hover px-4 text-xs font-semibold text-white transition-all shadow-xs cursor-pointer shrink-0"
+          >
+            <span>Simpan Pengaturan</span>
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 text-xs *:space-y-1.5">
+          <div>
+            <label class="block font-semibold text-heading">Status Pengumuman:</label>
+            <div class="flex items-center gap-4 pt-1">
+              <label class="inline-flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="grade12_published"
+                  value="true"
+                  checked={grade12AnnouncementActive}
+                  class="text-primary"
+                />
+                <span class="font-medium text-heading">Dibuka</span>
+              </label>
+              <label class="inline-flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="grade12_published"
+                  value="false"
+                  checked={!grade12AnnouncementActive}
+                  class="text-primary"
+                />
+                <span class="font-medium text-muted">Terkunci</span>
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <label for="grade12_date" class="block font-semibold text-heading">
+              Jadwal Rilis Jam &amp; Tanggal:
+            </label>
+            <input
+              type="datetime-local"
+              id="grade12_date"
+              value={grade12AnnouncementDate}
+              class="h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading"
+            />
+          </div>
+
+          <div>
+            <label for="grade12_decree" class="block font-semibold text-heading">
+              Nomor SK Kelulusan:
+            </label>
+            <input
+              type="text"
+              id="grade12_decree"
+              value={grade12DecreeNumber}
+              class="h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading font-mono"
+              placeholder="Contoh: 421/105/DISDIK/2026"
+            />
+          </div>
+
+          <div>
+            <label for="grade12_year" class="block font-semibold text-heading">
+              Tahun Ajaran Kelulusan:
+            </label>
+            <input
+              type="text"
+              id="grade12_year"
+              value={grade12Year}
+              class="h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading"
+              placeholder="2025/2026"
+            />
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Box: Upload Excel & Copy-Paste Cepat -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Opsi 1: Upload File Excel -->
+        <div class="rounded-lg border border-dashed border-border bg-surface p-5 space-y-3 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center gap-2">
+              <div class="h-8 w-8 rounded-full bg-primary flex items-center justify-center text-surface">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+              </div>
+              <div>
+                <h4 class="font-display text-xs font-bold text-heading">Metode 1: Upload File Excel (.xlsx / .csv)</h4>
+                <p class="text-[11px] text-muted">Upload berkas spreadsheet daftar nama dan kelulusan siswa.</p>
+              </div>
+            </div>
+          </div>
+          <div class="flex flex-wrap items-center gap-2 pt-2 *:inline-flex *:h-9 *:items-center *:justify-center *:gap-1.5 *:rounded-[6px] *:text-xs *:font-semibold *:transition-colors *:cursor-pointer *:shadow-xs">
+            <label class="bg-primary hover:bg-primary-hover px-4 text-white">
+              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+              </svg>
+              <span>Pilih File Excel</span>
+              <input type="file" id="input-file-excel" accept=".xlsx,.xls,.csv" class="hidden" />
+            </label>
+            <button
+              type="button"
+              id="btn-download-template"
+              class="border border-border bg-surface hover:bg-surface-subtle px-3 text-heading"
+            >
+              <svg class="h-3.5 w-3.5 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              <span>Download Format Excel</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Opsi 2: Copy-Paste Langsung dari Spreadsheet -->
+        <div class="rounded-lg border border-border bg-surface p-5 space-y-3 flex flex-col justify-between">
+          <div>
+            <div class="flex items-center gap-2">
+              <div class="h-8 w-8 rounded-full bg-surface-subtle border border-border flex items-center justify-center text-heading">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+              </div>
+              <div>
+                <h4 class="font-display text-xs font-bold text-heading">Metode 2: Copy-Paste Tabel Langsung</h4>
+                <p class="text-[11px] text-muted">Salin deretan sel dari Excel / Google Sheets dan tempelkan langsung di sini.</p>
+              </div>
+            </div>
+          </div>
+          <div class="pt-2">
+            <button
+              type="button"
+              id="btn-open-paste-modal"
+              class="inline-flex h-9 items-center justify-center gap-1.5 rounded-[6px] border border-border bg-surface hover:bg-surface-subtle px-4 text-xs font-semibold text-heading transition-colors cursor-pointer shadow-xs"
+            >
+              <svg class="h-4 w-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+              </svg>
+              <span>Buka Kotak Paste Spreadsheet</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Toolbar & Tabel Data Kelulusan Kelas 12 -->
+      <div class="rounded-lg border border-border bg-surface overflow-hidden shadow-xs space-y-3 p-4">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="relative w-full sm:w-64">
+              <input
+                type="text"
+                id="search-grade12"
+                placeholder="Cari NISN, Nama, No SKL..."
+                class="h-9 w-full rounded-[6px] border border-border bg-surface pl-8 pr-3 text-xs text-heading"
+              />
+              <Icon name="search" class="absolute left-2.5 top-2.5 h-4 w-4 text-muted pointer-events-none" />
+            </div>
+
+            <select
+              id="filter-grade12-class"
+              class="h-9 rounded-[6px] border border-border bg-surface px-3 text-xs text-heading"
+            >
+              <option value="">Semua Rombel Kelas</option>
+              {classOptions.map((c) => (
+                <option value={c}>{c}</option>
+              ))}
+            </select>
+
+            <select
+              id="filter-grade12-status"
+              class="h-9 rounded-[6px] border border-border bg-surface px-3 text-xs text-heading"
+            >
+              <option value="">Semua Status Kelulusan</option>
+              <option value="LULUS">LULUS</option>
+              <option value="TIDAK_LULUS">TIDAK LULUS</option>
+              <option value="DITUNDA">DITUNDA</option>
+            </select>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] text-muted hidden sm:inline" id="selected-grade12-count">0 dipilih</span>
+            <button
+              type="button"
+              id="btn-clear-grade12"
+              class="h-9 inline-flex items-center gap-1.5 rounded-[6px] border border-border bg-surface text-error px-3 text-xs font-semibold transition-colors shadow-xs opacity-40 cursor-not-allowed"
+              title="Pilih lebih dari 1 siswa untuk menghapus sekaligus"
+            >
+              <Icon name="trash" class="h-3.5 w-3.5" />
+              <span id="btn-clear-grade12-label">Hapus Semua</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Grafik Distribusi Kelulusan Tingkat Akhir -->
+        <div class="p-4 rounded-lg border border-border bg-surface-subtle space-y-3">
+          <div class="flex items-center justify-between text-xs">
+            <span class="font-semibold text-heading flex items-center gap-1.5">
+              <Icon name="bar-chart" class="h-3.5 w-3.5 text-primary" />
+              <span>Grafik Rasio Kelulusan {gradeFinalLabel}</span>
+            </span>
+            <span class="font-mono text-muted text-[11px]">
+              {statsGrade12.total} Total Siswa
+            </span>
+          </div>
+          <!-- Progress Bar Multi-Segment -->
+          <div class="h-3.5 w-full rounded-full bg-surface overflow-hidden flex shadow-inner border border-border/60">
+            {statsGrade12.total > 0 ? (
+              <>
+                <div
+                  class="bg-success h-full transition-all"
+                  style={`width: ${(statsGrade12.passed / statsGrade12.total) * 100}%;`}
+                  title={`Lulus: ${statsGrade12.passed} (${Math.round((statsGrade12.passed / statsGrade12.total) * 100)}%)`}
+                ></div>
+                <div
+                  class="bg-warning h-full transition-all"
+                  style={`width: ${((statsGrade12.pending + statsGrade12.conditional) / statsGrade12.total) * 100}%;`}
+                  title={`Ditunda / Bersyarat: ${statsGrade12.pending + statsGrade12.conditional} (${Math.round(((statsGrade12.pending + statsGrade12.conditional) / statsGrade12.total) * 100)}%)`}
+                ></div>
+                <div
+                  class="bg-error h-full transition-all"
+                  style={`width: ${(statsGrade12.failed / statsGrade12.total) * 100}%;`}
+                  title={`Tidak Lulus: ${statsGrade12.failed} (${Math.round((statsGrade12.failed / statsGrade12.total) * 100)}%)`}
+                ></div>
+              </>
+            ) : (
+              <div class="w-full h-full bg-border"></div>
+            )}
+          </div>
+          <!-- Legend -->
+          <div class="flex flex-wrap items-center justify-between gap-2 text-[11px] pt-2 text-muted">
+            <span class="inline-flex items-center gap-1.5">
+              <span class="font-semibold text-success">Lulus:</span>
+              <strong class="text-heading font-mono">{statsGrade12.passed}</strong> ({statsGrade12.total > 0 ? Math.round((statsGrade12.passed / statsGrade12.total) * 100) : 0}%)
+            </span>
+            <span class="inline-flex items-center gap-1.5">
+              <span class="font-semibold text-warning">Ditunda / Bersyarat:</span>
+              <strong class="text-heading font-mono">{statsGrade12.pending + statsGrade12.conditional}</strong> ({statsGrade12.total > 0 ? Math.round(((statsGrade12.pending + statsGrade12.conditional) / statsGrade12.total) * 100) : 0}%)
+            </span>
+            <span class="inline-flex items-center gap-1.5">
+              <span class="font-semibold text-error">Tidak Lulus:</span>
+              <strong class="text-heading font-mono">{statsGrade12.failed}</strong> ({statsGrade12.total > 0 ? Math.round((statsGrade12.failed / statsGrade12.total) * 100) : 0}%)
+            </span>
+          </div>
+        </div>
+
+        <!-- Tabel Siswa Kelas 12 -->
+        <div class="overflow-x-auto border border-border rounded-md">
+          <table class="w-full text-left text-xs" id="table-grade12">
+            <thead class="bg-surface-subtle border-b border-border text-[11px] font-semibold text-muted uppercase tracking-wider">
+              <tr class="*:py-2.5 *:px-3">
+                <th class="w-8 text-center">
+                  <input type="checkbox" id="check-all-grade12" class="rounded border-border text-primary cursor-pointer" title="Pilih Semua" />
+                </th>
+                <th class="w-10 text-center">No</th>
+                <th>NISN / NIS</th>
+                <th>Nama Lengkap Siswa</th>
+                <th>Kelas &amp; Jurusan</th>
+                <th class="text-center">Status Kelulusan</th>
+                <th>No. SKL / Keterangan</th>
+                <th class="text-right">Aksi</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-border" id="tbody-grade12">
+              {allGraduations.length === 0 ? (
+                <tr>
+                  <td colspan="8" class="py-8 text-center text-muted">
+                    Belum ada data kelulusan kelas 12. Silakan upload file Excel atau paste data spreadsheet di atas.
+                  </td>
+                </tr>
+              ) : (
+                allGraduations.map((item, idx) => (
+                  <tr class="hover:bg-surface-subtle/60 transition-colors row-grade12 *:py-2.5 *:px-3" data-id={item.id} data-class={item.className} data-status={item.status}>
+                    <td class="text-center">
+                      <input type="checkbox" class="check-item-grade12 rounded border-border text-primary cursor-pointer" value={item.id} data-name={item.name} />
+                    </td>
+                    <td class="text-center text-muted font-mono">{idx + 1}</td>
+                    <td class="font-mono text-heading">
+                      <span class="font-semibold block">{item.nisn}</span>
+                      {item.nis && <span class="text-[10px] text-muted">NIS: {item.nis}</span>}
+                    </td>
+                    <td class="font-bold text-heading">
+                      {item.name}
+                    </td>
+                    <td>
+                      <span class="font-semibold text-heading block">{item.className}</span>
+                      {item.major && <span class="text-[10px] text-muted">{item.major}</span>}
+                    </td>
+                    <td class="text-center">
+                      <span class:list={[
+                        "inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase",
+                        item.status === "LULUS" ? "bg-success text-white" :
+                        item.status === "DITUNDA" ? "bg-warning text-white" :
+                        "bg-error text-white"
+                      ]}>
+                        {item.status.replace('_', ' ')}
+                      </span>
+                    </td>
+                    <td>
+                      <span class="font-mono text-[11px] text-heading block">{item.letterNumber || '—'}</span>
+                      {item.notes && <span class="text-[10px] text-muted block truncate max-w-xs">{item.notes}</span>}
+                    </td>
+                    <td class="text-right whitespace-nowrap">
+                      <div class="inline-flex items-center justify-end gap-1.5 *:inline-flex *:h-7 *:w-7 *:items-center *:justify-center *:rounded-[6px] *:border *:transition-colors *:shadow-2xs *:cursor-pointer">
+                        <button
+                          type="button"
+                          class="btn-edit-student border-border bg-surface text-muted hover:text-primary hover:border-primary/40 hover:bg-surface-subtle"
+                          title={`Edit ${item.name}`}
+                          aria-label={`Edit ${item.name}`}
+                          data-student={JSON.stringify({
+                            id: item.id,
+                            academicYear: item.academicYear,
+                            nisn: item.nisn,
+                            nis: item.nis || '',
+                            name: item.name,
+                            className: item.className,
+                            major: item.major || '',
+                            status: item.status,
+                            letterNumber: item.letterNumber || '',
+                            averageScore: item.averageScore || '',
+                            notes: item.notes || ''
+                          })}
+                        >
+                          <Icon name="edit" class="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          class="btn-delete-student border-border bg-surface text-error hover:text-white hover:bg-error hover:border-error"
+                          title={`Hapus ${item.name}`}
+                          aria-label={`Hapus ${item.name}`}
+                          data-id={item.id}
+                          data-name={item.name}
+                        >
+                          <Icon name="trash" class="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+
+          <!-- Empty State jika tidak ada yang cocok -->
+          <div id="empty-grade12" class="hidden py-10 text-center text-muted text-xs">
+            Tidak ada siswa kelas 12 yang cocok dengan filter atau kata kunci pencarian.
+          </div>
+
+          <!-- Komponen Pagination Terpusat: Siswa Kelas 12 -->
+          <Pagination
+            id="grade12-pagination-container"
+            currentPage={1}
+            totalPages={Math.max(1, Math.ceil(allGraduations.length / 10))}
+            totalItems={allGraduations.length}
+            pageSize={10}
+            itemLabel="siswa"
+          />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  
+  <!-- MODAL 1: COPY PASTE SPREADSHEET CERDAS                   -->
+  
+  <div id="modal-paste" class="fixed inset-0 z-50 hidden bg-heading/50 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-surface rounded-xl border border-border shadow-xl max-w-2xl w-full p-6 space-y-4">
+      <div class="flex items-center justify-between border-b border-border pb-3">
+        <div>
+          <h3 class="font-display text-sm font-bold text-heading">Paste Data dari Excel / Google Sheets</h3>
+          <p class="text-xs text-muted mt-0.5">Copy baris dan kolom spreadsheet Anda, lalu tempelkan (Ctrl+V) langsung di bawah.</p>
+        </div>
+        <button type="button" class="btn-close-modal text-muted hover:text-heading cursor-pointer p-1" aria-label="Tutup modal">
+          <Icon name="close" class="h-5 w-5" />
+        </button>
+      </div>
+
+      <div class="space-y-2">
+        <label class="block text-xs font-semibold text-heading">
+          Susunan Kolom yang Didukung (Bebas / Fleksibel):
+        </label>
+        <div class="p-2.5 rounded bg-surface-subtle border border-border text-[11px] text-muted space-y-1">
+          <p class="font-mono">Format 1: [NISN] [Nama] [Kelas] [Jurusan] [Status: LULUS/TIDAK LULUS] [No SKL]</p>
+          <p class="font-mono">Format 2: [NISN] [NIS] [Nama] [Kelas] [Status] [Nilai]</p>
+        </div>
+        <textarea
+          id="paste-textarea"
+          rows="8"
+          class="w-full rounded-lg border border-border bg-surface p-3 font-mono text-xs text-heading leading-relaxed"
+          placeholder="0061234567	Ahmad Rizki	XII MIPA 1	MIPA	LULUS	SKL-2026/001
+0061234568	Siti Nurhaliza	XII MIPA 1	MIPA	LULUS	SKL-2026/002"
+        ></textarea>
+        <div class="flex items-center justify-between text-xs text-muted">
+          <span id="paste-parsed-count">0 baris terdeteksi</span>
+          <label class="inline-flex items-center gap-1.5 cursor-pointer">
+            <input type="checkbox"id="paste-replace-mode"class="rounded border-border text-primary"/>
+            <span>Ganti semua data tahun ini (Replace)</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-2 border-t border-border *:h-9 *:rounded-[6px] *:text-xs *:font-semibold *:transition-colors *:cursor-pointer">
+        <button type="button" class="btn-close-modal px-4 border border-border text-heading hover:bg-surface-subtle">
+          Batal
+        </button>
+        <button type="button" id="btn-submit-paste" class="px-5 bg-primary hover:bg-primary-hover text-white shadow-xs">
+          Simpan Data Siswa
+        </button>
+      </div>
+    </div>
+  </div>
+
+  
+  <!-- MODAL 2: PRATINJAU FILE EXCEL SEBELUM SIMPAN             -->
+  
+  <div id="modal-excel-preview" class="fixed inset-0 z-50 hidden bg-heading/50 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-surface rounded-xl border border-border shadow-xl max-w-3xl w-full p-6 space-y-4">
+      <div class="flex items-center justify-between border-b border-border pb-3">
+        <div>
+          <h3 class="font-display text-sm font-bold text-heading">Pratinjau Hasil Pembacaan File Excel</h3>
+          <p class="text-xs text-muted mt-0.5" id="excel-file-info">Nama file: -</p>
+        </div>
+        <button type="button" class="btn-close-modal text-muted hover:text-heading cursor-pointer p-1" aria-label="Tutup modal">
+          <Icon name="close" class="h-5 w-5" />
+        </button>
+      </div>
+
+      <div class="max-h-72 overflow-y-auto border border-border rounded-md">
+        <table class="w-full text-left text-xs" id="table-excel-preview">
+          <thead class="bg-surface-subtle text-[11px] font-semibold text-muted sticky top-0 border-b border-border">
+            <tr class="*:p-2">
+              <th>NISN</th>
+              <th>Nama</th>
+              <th>Kelas</th>
+              <th>Jurusan</th>
+              <th>Status</th>
+              <th>No SKL</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-border" id="tbody-excel-preview"></tbody>
+        </table>
+      </div>
+
+      <div class="flex items-center justify-between text-xs text-muted pt-2 border-t border-border">
+        <label class="inline-flex items-center gap-1.5 cursor-pointer">
+          <input type="checkbox"id="excel-replace-mode"class="rounded border-border text-primary"/>
+          <span>Ganti semua data tahun ini (Replace)</span>
+        </label>
+        <div class="flex items-center gap-2 *:h-9 *:rounded-[6px] *:text-xs *:font-semibold *:transition-colors *:cursor-pointer">
+          <button type="button" class="btn-close-modal px-4 border border-border text-heading hover:bg-surface-subtle">
+            Batal
+          </button>
+          <button type="button" id="btn-confirm-save-excel" class="px-5 bg-primary hover:bg-primary-hover text-white shadow-xs">
+            Konfirmasi Simpan ke Database
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: EDIT DATA SISWA KELULUSAN -->
+  <div id="modal-edit-student" class="fixed inset-0 z-50 hidden bg-heading/50 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-surface rounded-xl border border-border shadow-xl max-w-lg w-full p-6 space-y-4">
+      <div class="flex items-center justify-between border-b border-border pb-3">
+        <div>
+          <h3 class="font-display text-sm font-bold text-heading" id="student-modal-title">
+            Edit Data Kelulusan Siswa
+          </h3>
+          <p class="text-xs text-muted mt-0.5">
+            Perbarui data diri, keputusan kelulusan, atau nomor SKL siswa.
+          </p>
+        </div>
+        <button type="button" class="btn-close-modal text-muted hover:text-heading cursor-pointer p-1" aria-label="Tutup modal">
+          <Icon name="close" class="h-5 w-5" />
+        </button>
+      </div>
+
+      <form id="form-student" class="space-y-3.5" onsubmit="return false;">
+        <input type="hidden" id="student-form-id" value="" />
+        <input type="hidden" id="student-form-year" value={grade12Year} />
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 *:space-y-1">
+          <div>
+            <label for="student-form-nisn" class="block text-xs font-semibold text-heading">
+              NISN <span class="text-error">*</span>
+            </label>
+            <input
+              type="text"
+              id="student-form-nisn"
+              required
+              maxlength="20"
+              class="h-9 w-full rounded-[6px] border border-border bg-surface px-3 text-xs text-heading font-mono focus:border-primary focus:outline-none"
+              placeholder="Contoh: 0061234567"
+            />
+          </div>
+          <div>
+            <label for="student-form-nis" class="block text-xs font-semibold text-heading">
+              NIS (Nomor Induk Lokal)
+            </label>
+            <input
+              type="text"
+              id="student-form-nis"
+              maxlength="20"
+              class="h-9 w-full rounded-[6px] border border-border bg-surface px-3 text-xs text-heading font-mono focus:border-primary focus:outline-none"
+              placeholder="Contoh: 21221004"
+            />
+          </div>
+        </div>
+
+        <div class="space-y-1">
+          <label for="student-form-name" class="block text-xs font-semibold text-heading">
+            Nama Lengkap Siswa <span class="text-error">*</span>
+          </label>
+          <input
+            type="text"
+            id="student-form-name"
+            required
+            class="h-9 w-full rounded-[6px] border border-border bg-surface px-3 text-xs text-heading focus:border-primary focus:outline-none"
+            placeholder="Masukkan nama lengkap siswa"
+          />
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 *:space-y-1">
+          <div>
+            <label for="student-form-class" class="block text-xs font-semibold text-heading">
+              Rombel / Kelas <span class="text-error">*</span>
+            </label>
+            <input
+              type="text"
+              id="student-form-class"
+              list="student-class-datalist"
+              required
+              class="h-9 w-full rounded-[6px] border border-border bg-surface px-3 text-xs text-heading focus:border-primary focus:outline-none"
+              placeholder="Contoh: XII MIPA 1"
+            />
+            <datalist id="student-class-datalist">
+              {classOptions.map((c) => (
+                <option value={c} />
+              ))}
+            </datalist>
+          </div>
+          <div>
+            <label for="student-form-major" class="block text-xs font-semibold text-heading">
+              Peminatan / Jurusan
+            </label>
+            <input
+              type="text"
+              id="student-form-major"
+              class="h-9 w-full rounded-[6px] border border-border bg-surface px-3 text-xs text-heading focus:border-primary focus:outline-none"
+              placeholder="Contoh: MIPA / TKJ"
+            />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 *:space-y-1">
+          <div>
+            <label for="student-form-status" class="block text-xs font-semibold text-heading">
+              Keputusan Kelulusan <span class="text-error">*</span>
+            </label>
+            <select
+              id="student-form-status"
+              class="h-9 w-full rounded-[6px] border border-border bg-surface px-3 text-xs text-heading focus:border-primary focus:outline-none cursor-pointer"
+            >
+              <option value="LULUS">LULUS</option>
+              <option value="TIDAK_LULUS">TIDAK LULUS</option>
+              <option value="DITUNDA">DITUNDA</option>
+            </select>
+          </div>
+          <div>
+            <label for="student-form-score" class="block text-xs font-semibold text-heading">
+              Nilai Rata-rata Ijazah
+            </label>
+            <input
+              type="text"
+              id="student-form-score"
+              class="h-9 w-full rounded-[6px] border border-border bg-surface px-3 text-xs text-heading font-mono focus:border-primary focus:outline-none"
+              placeholder="Contoh: 88.50"
+            />
+          </div>
+        </div>
+
+        <div class="space-y-1">
+          <label for="student-form-letter" class="block text-xs font-semibold text-heading">
+            Nomor Surat Keterangan Lulus (SKL) / Ijazah
+          </label>
+          <input
+            type="text"
+            id="student-form-letter"
+            class="h-9 w-full rounded-[6px] border border-border bg-surface px-3 text-xs text-heading font-mono focus:border-primary focus:outline-none"
+            placeholder="Contoh: 421.3/089/CADISDIK-WIL.IV/2026"
+          />
+        </div>
+
+        <div class="space-y-1">
+          <label for="student-form-notes" class="block text-xs font-semibold text-heading">
+            Catatan Tambahan / Keterangan
+          </label>
+          <input
+            type="text"
+            id="student-form-notes"
+            class="h-9 w-full rounded-[6px] border border-border bg-surface px-3 text-xs text-heading focus:border-primary focus:outline-none"
+            placeholder="Catatan opsional untuk siswa bersangkutan"
+          />
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-3 border-t border-border *:h-9 *:rounded-[6px] *:text-xs *:font-semibold *:transition-colors *:cursor-pointer">
+          <button
+            type="button"
+            class="btn-close-modal px-4 border border-border text-heading hover:bg-surface-subtle"
+          >
+            Batal
+          </button>
+          <button
+            type="button"
+            id="btn-save-student"
+            class="px-5 bg-primary hover:bg-primary-hover text-white shadow-xs inline-flex items-center gap-1.5"
+          >
+            <span id="btn-save-student-label">Simpan Perubahan</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Client Scripts & XLSX parser -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+  <script is:inline>
+    function initKelulusan() {
+      // 1. Tab Switcher
+      const tabAdmissions = document.getElementById("tab-btn-admissions");
+      const tabGrade12 = document.getElementById("tab-btn-grade12");
+
+      const paneAdmissions = document.getElementById("pane-admissions");
+      const paneGrade12 = document.getElementById("pane-grade12");
+
+      const banner = document.getElementById("status-banner");
+
+      function showBanner(msg, type = "success") {
+        banner.className = type === "success"
+          ? "rounded-lg border border-success bg-success-light p-3.5 text-xs text-success-text font-medium block"
+          : "rounded-lg border border-error bg-error-light p-3.5 text-xs text-error font-medium block";
+        banner.textContent = msg;
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        setTimeout(() => banner.classList.add("hidden"), 5000);
+      }
+
+      const tabs = [
+        { btn: tabAdmissions, pane: paneAdmissions },
+        { btn: tabGrade12, pane: paneGrade12 },
+      ];
+
+      function switchTab(targetIndex) {
+        tabs.forEach((t, i) => {
+          if (i === targetIndex) {
+            t.btn?.setAttribute("class", "main-tab-btn border-primary font-bold text-primary");
+            t.pane?.classList.remove("hidden");
+          } else {
+            t.btn?.setAttribute("class", "main-tab-btn border-transparent font-semibold text-muted hover:text-heading");
+            t.pane?.classList.add("hidden");
+          }
+        });
+      }
+
+      tabs.forEach((t, i) => {
+        t.btn?.addEventListener("click", () => switchTab(i));
+      });
+
+      // 2. Simpan Pengaturan Rilis Siswa Baru
+      const btnSaveAdmissionsSettings = document.getElementById("btn-save-admissions-settings");
+      btnSaveAdmissionsSettings?.addEventListener("click", async () => {
+        btnSaveAdmissionsSettings.disabled = true;
+        btnSaveAdmissionsSettings.textContent = "Menyimpan...";
+
+        const published = document.querySelector('input[name="adm_announcement_published"]:checked')?.value || "true";
+        const date = document.getElementById("adm_announcement_date")?.value || "";
+        const notes = document.getElementById("adm_announcement_notes")?.value || "";
+
+        try {
+          const res = await fetch("/api/admin/settings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              admissions_announcement_published: published,
+              admissions_announcement_date: date,
+              admissions_announcement_notes: notes,
+            }),
+          });
+          const json = await res.json();
+          btnSaveAdmissionsSettings.disabled = false;
+          btnSaveAdmissionsSettings.textContent = "Simpan Pengaturan Rilis";
+          if (json.success) {
+            showBanner("Pengaturan rilis kelulusan pendaftar berhasil disimpan.", "success");
+          } else {
+            showBanner(json.error || "Gagal menyimpan pengaturan.", "error");
+          }
+        } catch {
+          btnSaveAdmissionsSettings.disabled = false;
+          btnSaveAdmissionsSettings.textContent = "Simpan Pengaturan Rilis";
+          showBanner("Terjadi kesalahan jaringan.", "error");
+        }
+      });
+
+      // 3. Simpan Pengaturan Rilis Kelas 12
+      const btnSaveGrade12Settings = document.getElementById("btn-save-grade12-settings");
+      btnSaveGrade12Settings?.addEventListener("click", async () => {
+        btnSaveGrade12Settings.disabled = true;
+        btnSaveGrade12Settings.textContent = "Menyimpan...";
+
+        const published = document.querySelector('input[name="grade12_published"]:checked')?.value || "true";
+        const date = document.getElementById("grade12_date")?.value || "";
+        const decree = document.getElementById("grade12_decree")?.value || "";
+        const year = document.getElementById("grade12_year")?.value || "2025/2026";
+
+        try {
+          const res = await fetch("/api/admin/settings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              graduation_grade12_published: published,
+              graduation_grade12_date: date,
+              graduation_grade12_decree: decree,
+              graduation_grade12_year: year,
+            }),
+          });
+          const json = await res.json();
+          btnSaveGrade12Settings.disabled = false;
+          btnSaveGrade12Settings.textContent = "Simpan Pengaturan Rilis";
+          if (json.success) {
+            showBanner("Pengaturan rilis kelulusan kelas 12 berhasil disimpan.", "success");
+          } else {
+            showBanner(json.error || "Gagal menyimpan pengaturan.", "error");
+          }
+        } catch {
+          btnSaveGrade12Settings.disabled = false;
+          btnSaveGrade12Settings.textContent = "Simpan Pengaturan Rilis";
+          showBanner("Terjadi kesalahan jaringan.", "error");
+        }
+      });
+
+      // 4. Quick Update Status Seleksi Calon Siswa (Single select change)
+      document.querySelectorAll(".quick-select-status").forEach((sel) => {
+        sel.addEventListener("change", async () => {
+          const id = sel.getAttribute("data-id");
+          const val = sel.value;
+          try {
+            const res = await fetch("/api/admin/admissions/bulk-selection-status", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                registrationIds: [id],
+                selectionStatus: val,
+              }),
+            });
+            const json = await res.json();
+            if (json.success) {
+              const tr = sel.closest("tr");
+              const badge = tr?.querySelector(".badge-selection-status");
+              if (badge) {
+                if (val === "accepted") {
+                  badge.className = "badge-selection-status inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase bg-success text-white";
+                  badge.textContent = "Diterima";
+                } else if (val === "waitlist") {
+                  badge.className = "badge-selection-status inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase bg-warning text-white";
+                  badge.textContent = "Cadangan";
+                } else if (val === "rejected") {
+                  badge.className = "badge-selection-status inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase bg-error text-white";
+                  badge.textContent = "Tidak Lulus";
+                } else {
+                  badge.className = "badge-selection-status inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase bg-surface-subtle text-muted border border-border";
+                  badge.textContent = "Belum Rilis";
+                }
+              }
+            } else {
+              alert(json.error || "Gagal mengubah status");
+            }
+          } catch {
+            alert("Kesalahan jaringan.");
+          }
+        });
+      });
+
+      // 5. Bulk Action Seleksi Calon Siswa
+      const checkAllAdm = document.getElementById("check-all-admissions");
+      const checkItemsAdm = document.querySelectorAll(".check-item-admissions");
+      const selectedCountSpan = document.getElementById("selected-admissions-count");
+
+      function updateSelectedAdmCount() {
+        const count = Array.from(checkItemsAdm).filter((c) => c.checked).length;
+        if (selectedCountSpan) selectedCountSpan.textContent = `${count} dipilih`;
+      }
+
+      checkAllAdm?.addEventListener("change", () => {
+        const visibleRows = Array.from(document.querySelectorAll(".row-admission:not(.hidden)"));
+        visibleRows.forEach((row) => {
+          const chk = row.querySelector(".check-item-admissions");
+          if (chk) chk.checked = checkAllAdm.checked;
+        });
+        updateSelectedAdmCount();
+      });
+
+      checkItemsAdm.forEach((c) => c.addEventListener("change", updateSelectedAdmCount));
+
+      const selectBulkAdm = document.getElementById("select-bulk-admissions");
+      selectBulkAdm?.addEventListener("change", async () => {
+        const status = selectBulkAdm.value;
+        if (!status) return;
+
+        const selectedIds = Array.from(checkItemsAdm)
+          .filter((c) => c.checked)
+          .map((c) => c.value);
+
+        if (selectedIds.length === 0) {
+          alert("Pilih minimal satu calon siswa dari tabel terlebih dahulu.");
+          selectBulkAdm.value = "";
+          return;
+        }
+
+        const selectedOption = selectBulkAdm.options[selectBulkAdm.selectedIndex];
+        const statusLabel = selectedOption ? selectedOption.text.replace(/^[✓⟳✕○]\s*/, "") : status;
+
+        const confirmed = await window.confirmDialog({
+          title: "Ubah Status Seleksi Masal",
+          message: `Ubah status ${selectedIds.length} calon siswa yang dipilih menjadi '${statusLabel}'?`,
+          confirmText: "Ya, Ubah Status",
+          cancelText: "Batal",
+          type: "warning",
+        });
+        if (!confirmed) {
+          selectBulkAdm.value = "";
+          return;
+        }
+
+        try {
+          const res = await fetch("/api/admin/admissions/bulk-selection-status", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              registrationIds: selectedIds,
+              selectionStatus: status,
+            }),
+          });
+          const json = await res.json();
+          if (json.success) {
+            window.location.reload();
+          } else {
+            alert(json.error || "Gagal mengubah status massal.");
+            selectBulkAdm.value = "";
+          }
+        } catch {
+          alert("Kesalahan jaringan.");
+          selectBulkAdm.value = "";
+        }
+      });
+
+      // Helper Pagination Buttons
+      function renderPaginationButtons(validPage, totalPages) {
+        let html = "";
+        for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+          if (
+            pageNum === 1 ||
+            pageNum === totalPages ||
+            (pageNum >= validPage - 1 && pageNum <= validPage + 1)
+          ) {
+            const isActive = pageNum === validPage;
+            const classes = isActive
+              ? "pagination-btn bg-primary text-white font-semibold shadow-xs"
+              : "pagination-btn border border-border bg-surface text-heading hover:bg-surface-subtle";
+            html += `<button type="button" data-page="${pageNum}" class="${classes}">${pageNum}</button>`;
+          } else if (pageNum === validPage - 2 || pageNum === validPage + 2) {
+            html += '<span class="px-1 text-muted text-xs">...</span>';
+          }
+        }
+        return html;
+      }
+
+      function renderPaginationBar(containerEl, currentPage, totalPages, totalItems, pageSize, label = "data") {
+        if (!containerEl) return;
+        if (totalItems === 0) {
+          containerEl.innerHTML = "";
+          return;
+        }
+
+        const fromIdx = (currentPage - 1) * pageSize + 1;
+        const toIdx = Math.min(currentPage * pageSize, totalItems);
+
+        let html = `
+          <div class="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-border px-4 py-3 bg-surface text-xs text-muted">
+            <div>
+              Menampilkan <span class="font-semibold text-heading">${fromIdx}</span>–<span class="font-semibold text-heading">${toIdx}</span> dari <span class="font-semibold text-heading">${totalItems}</span> ${label}
+            </div>
+        `;
+
+        if (totalPages > 1) {
+          html += `
+            <div class="flex items-center gap-1.5 *:inline-flex *:h-[30px] *:items-center *:justify-center *:rounded-[6px] *:font-medium *:transition-colors *:text-xs">
+              <button
+                type="button"
+                data-page="${currentPage - 1}"
+                class="pagination-btn border border-border px-2.5 ${currentPage <= 1 ? "pointer-events-none opacity-40 bg-surface-subtle text-muted" : "bg-surface text-heading hover:bg-surface-subtle cursor-pointer"}"
+                ${currentPage <= 1 ? "disabled" : ""}
+              >
+                Sebelumnya
+              </button>
+              <div class="flex items-center gap-1 *:inline-flex *:h-[30px] *:min-w-[30px] *:px-2 *:items-center *:justify-center *:rounded-[6px] *:font-medium *:transition-colors *:text-xs *:cursor-pointer">
+                ${renderPaginationButtons(currentPage, totalPages)}
+              </div>
+              <button
+                type="button"
+                data-page="${currentPage + 1}"
+                class="pagination-btn border border-border px-2.5 ${currentPage >= totalPages ? "pointer-events-none opacity-40 bg-surface-subtle text-muted" : "bg-surface text-heading hover:bg-surface-subtle cursor-pointer"}"
+                ${currentPage >= totalPages ? "disabled" : ""}
+              >
+                Selanjutnya
+              </button>
+            </div>
+          `;
+        }
+
+        html += `</div>`;
+        containerEl.innerHTML = html;
+      }
+
+      // 6. Filter, Search & Pagination Client-Side untuk Calon Siswa
+      const searchAdm = document.getElementById("search-admissions");
+      const filterPathAdm = document.getElementById("filter-admissions-path");
+      const filterStatusAdm = document.getElementById("filter-admissions-status");
+      const paginationAdmContainer = document.getElementById("admissions-pagination-container");
+      const emptyAdm = document.getElementById("empty-admissions");
+
+      let currentAdmPage = 1;
+      const admPageSize = 10;
+
+      function filterAdmissionsRows() {
+        const q = (searchAdm?.value || "").toLowerCase().trim();
+        const p = filterPathAdm?.value || "";
+        const s = filterStatusAdm?.value || "";
+
+        const allRows = Array.from(document.querySelectorAll(".row-admission"));
+        const matchedRows = [];
+
+        allRows.forEach((row) => {
+          const text = row.textContent?.toLowerCase() || "";
+          const path = row.getAttribute("data-path") || "";
+          const status = row.getAttribute("data-status") || "";
+
+          const matchQ = !q || text.includes(q);
+          const matchP = !p || path === p;
+          const matchS = !s || status === s;
+
+          if (matchQ && matchP && matchS) {
+            matchedRows.push(row);
+          } else {
+            row.classList.add("hidden");
+          }
+        });
+
+        if (emptyAdm) {
+          emptyAdm.classList.toggle("hidden", matchedRows.length > 0 || allRows.length === 0);
+        }
+
+        const totalPages = Math.max(1, Math.ceil(matchedRows.length / admPageSize));
+        if (currentAdmPage > totalPages) currentAdmPage = totalPages;
+        if (currentAdmPage < 1) currentAdmPage = 1;
+
+        const startIdx = (currentAdmPage - 1) * admPageSize;
+        const endIdx = startIdx + admPageSize;
+
+        matchedRows.forEach((row, idx) => {
+          if (idx >= startIdx && idx < endIdx) {
+            row.classList.remove("hidden");
+          } else {
+            row.classList.add("hidden");
+          }
+        });
+
+        renderPaginationBar(paginationAdmContainer, currentAdmPage, totalPages, matchedRows.length, admPageSize, "calon siswa");
+      }
+
+      paginationAdmContainer?.addEventListener("click", (e) => {
+        const btn = e.target.closest(".pagination-btn");
+        if (btn && !btn.disabled) {
+          const targetPage = parseInt(btn.getAttribute("data-page") || "1", 10);
+          if (targetPage && targetPage !== currentAdmPage) {
+            currentAdmPage = targetPage;
+            filterAdmissionsRows();
+          }
+        }
+      });
+
+      searchAdm?.addEventListener("input", () => {
+        currentAdmPage = 1;
+        filterAdmissionsRows();
+      });
+      filterPathAdm?.addEventListener("change", () => {
+        currentAdmPage = 1;
+        filterAdmissionsRows();
+      });
+      filterStatusAdm?.addEventListener("change", () => {
+        currentAdmPage = 1;
+        filterAdmissionsRows();
+      });
+
+      // Inisialisasi awal pagination
+      filterAdmissionsRows();
+
+      // ==========================================
+      // 7. KELAS 12: COPY-PASTE PARSER SPREADSHEET
+      // ==========================================
+      const modalPaste = document.getElementById("modal-paste");
+      const btnOpenPaste = document.getElementById("btn-open-paste-modal");
+      const textareaPaste = document.getElementById("paste-textarea");
+      const parsedCountSpan = document.getElementById("paste-parsed-count");
+      const btnSubmitPaste = document.getElementById("btn-submit-paste");
+      const replaceModePaste = document.getElementById("paste-replace-mode");
+
+      btnOpenPaste?.addEventListener("click", () => {
+        modalPaste?.classList.remove("hidden");
+        textareaPaste?.focus();
+      });
+
+      document.querySelectorAll(".btn-close-modal").forEach((b) => {
+        b.addEventListener("click", () => {
+          modalPaste?.classList.add("hidden");
+          document.getElementById("modal-excel-preview")?.classList.add("hidden");
+          document.getElementById("modal-edit-student")?.classList.add("hidden");
+        });
+      });
+
+      function parsePasteText(text) {
+        const lines = text.trim().split("\n");
+        const rows = [];
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const parts = line.split("\t").map((p) => p.trim());
+          if (parts.length >= 2) {
+            // Deteksi format: NISN, Nama, Kelas, Jurusan, Status, No SKL
+            rows.push({
+              nisn: parts[0] || "",
+              name: parts[1] || "",
+              className: parts[2] || "XII",
+              major: parts[3] || "",
+              status: (parts[4] || "LULUS").toUpperCase().includes("TIDAK") ? "TIDAK_LULUS" : (parts[4] || "LULUS").toUpperCase(),
+              letterNumber: parts[5] || "",
+            });
+          }
+        }
+        return rows;
+      }
+
+      textareaPaste?.addEventListener("input", () => {
+        const rows = parsePasteText(textareaPaste.value);
+        if (parsedCountSpan) parsedCountSpan.textContent = `${rows.length} baris siswa terdeteksi`;
+      });
+
+      btnSubmitPaste?.addEventListener("click", async () => {
+        const text = textareaPaste?.value || "";
+        const rows = parsePasteText(text);
+
+        if (rows.length === 0) {
+          alert("Silakan paste minimal 1 baris data siswa yang valid.");
+          return;
+        }
+
+        btnSubmitPaste.disabled = true;
+        btnSubmitPaste.textContent = "Menyimpan...";
+
+        const academicYear = document.getElementById("grade12_year")?.value || "2025/2026";
+        const mode = replaceModePaste?.checked ? "replace" : "append";
+
+        try {
+          const res = await fetch("/api/admin/graduations/batch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ academicYear, mode, items: rows }),
+          });
+          const json = await res.json();
+          btnSubmitPaste.disabled = false;
+          btnSubmitPaste.textContent = "Simpan Data Siswa";
+
+          if (json.success) {
+            alert(json.message || "Data berhasil disimpan!");
+            window.location.reload();
+          } else {
+            alert(json.error || "Gagal menyimpan data.");
+          }
+        } catch {
+          btnSubmitPaste.disabled = false;
+          btnSubmitPaste.textContent = "Simpan Data Siswa";
+          alert("Kesalahan jaringan.");
+        }
+      });
+
+      // ==========================================
+      // 8. KELAS 12: UPLOAD EXCEL PARSER
+      // ==========================================
+      const inputFileExcel = document.getElementById("input-file-excel");
+      const modalExcelPreview = document.getElementById("modal-excel-preview");
+      const excelFileInfo = document.getElementById("excel-file-info");
+      const tbodyExcelPreview = document.getElementById("tbody-excel-preview");
+      const btnConfirmSaveExcel = document.getElementById("btn-confirm-save-excel");
+      const excelReplaceMode = document.getElementById("excel-replace-mode");
+
+      let currentParsedExcelRows = [];
+
+      inputFileExcel?.addEventListener("change", (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (excelFileInfo) excelFileInfo.textContent = `Nama file: ${file.name} (${Math.round(file.size / 1024)} KB)`;
+
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          try {
+            const data = new Uint8Array(evt.target.result);
+            const workbook = window.XLSX.read(data, { type: "array" });
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+            const jsonRows = window.XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+
+            if (!jsonRows || jsonRows.length === 0) {
+              alert("File Excel kosong atau format tidak sesuai.");
+              return;
+            }
+
+            // Normalisasi data kolom Excel
+            currentParsedExcelRows = jsonRows.map((r) => {
+              const nisn = r["NISN"] || r["nisn"] || r["No. NISN"] || Object.values(r)[0] || "";
+              const name = r["Nama"] || r["nama"] || r["Nama Siswa"] || r["Nama Lengkap"] || Object.values(r)[1] || "";
+              const className = r["Kelas"] || r["kelas"] || r["Rombel"] || Object.values(r)[2] || "XII";
+              const major = r["Jurusan"] || r["jurusan"] || r["Peminatan"] || Object.values(r)[3] || "";
+              const statusRaw = String(r["Status"] || r["status"] || r["Keterangan"] || "LULUS").toUpperCase();
+              const status = statusRaw.includes("TIDAK") ? "TIDAK_LULUS" : statusRaw.includes("TUNDA") ? "DITUNDA" : "LULUS";
+              const letterNumber = r["No SKL"] || r["no_skl"] || r["Nomor Surat"] || "";
+
+              return { nisn: String(nisn).trim(), name: String(name).trim(), className: String(className).trim(), major: String(major).trim(), status, letterNumber: String(letterNumber).trim() };
+            });
+
+            // Render ke tabel preview
+            tbodyExcelPreview.innerHTML = currentParsedExcelRows
+              .slice(0, 50)
+              .map(
+                (row) => `
+                <tr class="hover:bg-surface-subtle">
+                  <td class="p-2 font-mono">${row.nisn || "—"}</td>
+                  <td class="p-2 font-bold">${row.name}</td>
+                  <td class="p-2">${row.className}</td>
+                  <td class="p-2">${row.major || "—"}</td>
+                  <td class="p-2 font-bold ${row.status === "LULUS" ? "text-success" : "text-error"}">${row.status}</td>
+                  <td class="p-2 font-mono text-[11px]">${row.letterNumber || "—"}</td>
+                </tr>
+              `
+              )
+              .join("");
+
+            if (currentParsedExcelRows.length > 50) {
+              tbodyExcelPreview.innerHTML += `<tr><td colspan="6" class="p-2 text-center text-muted font-italic">... dan ${currentParsedExcelRows.length - 50} siswa lainnya</td></tr>`;
+            }
+
+            modalExcelPreview?.classList.remove("hidden");
+          } catch (err) {
+            alert("Gagal membaca berkas Excel: " + err.message);
+          }
+        };
+        reader.readAsArrayBuffer(file);
+      });
+
+      btnConfirmSaveExcel?.addEventListener("click", async () => {
+        if (currentParsedExcelRows.length === 0) return;
+
+        btnConfirmSaveExcel.disabled = true;
+        btnConfirmSaveExcel.textContent = "Menyimpan...";
+
+        const academicYear = document.getElementById("grade12_year")?.value || "2025/2026";
+        const mode = excelReplaceMode?.checked ? "replace" : "append";
+
+        try {
+          const res = await fetch("/api/admin/graduations/batch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ academicYear, mode, items: currentParsedExcelRows }),
+          });
+          const json = await res.json();
+          btnConfirmSaveExcel.disabled = false;
+          btnConfirmSaveExcel.textContent = "Konfirmasi Simpan ke Database";
+
+          if (json.success) {
+            alert(json.message || "Data Excel berhasil disimpan!");
+            window.location.reload();
+          } else {
+            alert(json.error || "Gagal menyimpan data.");
+          }
+        } catch {
+          btnConfirmSaveExcel.disabled = false;
+          btnConfirmSaveExcel.textContent = "Konfirmasi Simpan ke Database";
+          alert("Kesalahan jaringan.");
+        }
+      });
+
+      // 9. Download Template Excel Standar
+      document.getElementById("btn-download-template")?.addEventListener("click", () => {
+        const headers = [
+          ["NISN", "NIS", "Nama Lengkap", "Kelas", "Jurusan", "Status (LULUS/TIDAK LULUS)", "No SKL", "Nilai Rata-rata", "Keterangan"],
+          ["0061234567", "2021001", "Ahmad Rizki Pratama", "XII MIPA 1", "MIPA", "LULUS", "421/01/SKL/2026", "89.50", "Lulus Sangat Memuaskan"],
+          ["0061234568", "2021002", "Siti Nurhaliza Putri", "XII MIPA 1", "MIPA", "LULUS", "421/02/SKL/2026", "91.20", "Lulus Sangat Memuaskan"],
+          ["0061234569", "2021003", "Budi Santoso", "XII IPS 1", "IPS", "LULUS", "421/03/SKL/2026", "85.00", "Lulus Memuaskan"]
+        ];
+
+        const ws = window.XLSX.utils.aoa_to_sheet(headers);
+        const wb = window.XLSX.utils.book_new();
+        window.XLSX.utils.book_append_sheet(wb, ws, "Format_Kelulusan");
+        window.XLSX.writeFile(wb, "Template_Data_Kelulusan_Siswa.xlsx");
+      });
+
+      // 10. Modal Edit Siswa Kelas 12
+      const modalEditStudent = document.getElementById("modal-edit-student");
+      const studentModalTitle = document.getElementById("student-modal-title");
+      const btnSaveStudent = document.getElementById("btn-save-student");
+      const btnSaveStudentLabel = document.getElementById("btn-save-student-label");
+
+      const studentFormId = document.getElementById("student-form-id");
+      const studentFormYear = document.getElementById("student-form-year");
+      const studentFormNisn = document.getElementById("student-form-nisn");
+      const studentFormNis = document.getElementById("student-form-nis");
+      const studentFormName = document.getElementById("student-form-name");
+      const studentFormClass = document.getElementById("student-form-class");
+      const studentFormMajor = document.getElementById("student-form-major");
+      const studentFormStatus = document.getElementById("student-form-status");
+      const studentFormScore = document.getElementById("student-form-score");
+      const studentFormLetter = document.getElementById("student-form-letter");
+      const studentFormNotes = document.getElementById("student-form-notes");
+
+      // Tombol Edit Siswa (Event Delegation pada tbody)
+      document.getElementById("tbody-grade12")?.addEventListener("click", (e) => {
+        const editBtn = e.target.closest(".btn-edit-student");
+        if (!editBtn) return;
+
+        const dataRaw = editBtn.getAttribute("data-student");
+        if (!dataRaw) return;
+
+        try {
+          const student = JSON.parse(dataRaw);
+
+          if (studentFormId) studentFormId.value = student.id;
+          if (studentFormNisn) studentFormNisn.value = student.nisn || "";
+          if (studentFormNis) studentFormNis.value = student.nis || "";
+          if (studentFormName) studentFormName.value = student.name || "";
+          if (studentFormClass) studentFormClass.value = student.className || "";
+          if (studentFormMajor) studentFormMajor.value = student.major || "";
+          if (studentFormStatus) studentFormStatus.value = student.status || "LULUS";
+          if (studentFormScore) studentFormScore.value = student.averageScore || "";
+          if (studentFormLetter) studentFormLetter.value = student.letterNumber || "";
+          if (studentFormNotes) studentFormNotes.value = student.notes || "";
+
+          if (studentModalTitle) studentModalTitle.textContent = `Edit Siswa: ${student.name}`;
+          if (btnSaveStudentLabel) btnSaveStudentLabel.textContent = "Simpan Perubahan";
+
+          modalEditStudent?.classList.remove("hidden");
+          studentFormName?.focus();
+        } catch (err) {
+          console.error("Gagal membaca data siswa:", err);
+        }
+      });
+
+      // Submit Form Edit Siswa (PUT)
+      btnSaveStudent?.addEventListener("click", async () => {
+        const id = studentFormId?.value;
+        if (!id) return;
+
+        const nisn = studentFormNisn?.value.trim();
+        const nis = studentFormNis?.value.trim();
+        const name = studentFormName?.value.trim();
+        const className = studentFormClass?.value.trim();
+        const major = studentFormMajor?.value.trim();
+        const status = studentFormStatus?.value || "LULUS";
+        const averageScore = studentFormScore?.value.trim();
+        const letterNumber = studentFormLetter?.value.trim();
+        const notes = studentFormNotes?.value.trim();
+        const academicYear = studentFormYear?.value || document.getElementById("grade12_year")?.value || "2025/2026";
+
+        if (!nisn) {
+          alert("Nomor NISN wajib diisi.");
+          studentFormNisn?.focus();
+          return;
+        }
+        if (!name) {
+          alert("Nama lengkap siswa wajib diisi.");
+          studentFormName?.focus();
+          return;
+        }
+        if (!className) {
+          alert("Rombel / Kelas wajib diisi.");
+          studentFormClass?.focus();
+          return;
+        }
+
+        const payload = {
+          academicYear,
+          nisn,
+          nis: nis || null,
+          name,
+          className,
+          major: major || null,
+          status,
+          averageScore: averageScore || null,
+          letterNumber: letterNumber || null,
+          notes: notes || null,
+        };
+
+        try {
+          btnSaveStudent.disabled = true;
+          if (btnSaveStudentLabel) btnSaveStudentLabel.textContent = "Menyimpan...";
+
+          const res = await fetch(`/api/admin/graduations/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const json = await res.json();
+          btnSaveStudent.disabled = false;
+          if (btnSaveStudentLabel) btnSaveStudentLabel.textContent = "Simpan Perubahan";
+
+          if (json.success) {
+            modalEditStudent?.classList.add("hidden");
+            window.location.reload();
+          } else {
+            alert(json.error || "Gagal menyimpan data siswa.");
+          }
+        } catch {
+          btnSaveStudent.disabled = false;
+          if (btnSaveStudentLabel) btnSaveStudentLabel.textContent = "Simpan Perubahan";
+          alert("Terjadi kesalahan jaringan.");
+        }
+      });
+
+      // 11. Hapus Single Siswa Kelas 12 (Event Delegation pada tbody)
+      document.getElementById("tbody-grade12")?.addEventListener("click", async (e) => {
+        const deleteBtn = e.target.closest(".btn-delete-student");
+        if (!deleteBtn) return;
+
+        const id = deleteBtn.getAttribute("data-id");
+        const name = deleteBtn.getAttribute("data-name");
+        const confirmed = await window.confirmDialog({
+          title: "Hapus Data Kelulusan",
+          message: `Hapus data kelulusan siswa "${name}"?\nTindakan ini tidak dapat dibatalkan.`,
+          confirmText: "Ya, Hapus",
+          cancelText: "Batal",
+          type: "danger",
+        });
+        if (!confirmed) return;
+
+        try {
+          const res = await fetch(`/api/admin/graduations/${id}`, { method: "DELETE" });
+          const json = await res.json();
+          if (json.success) {
+            const tr = deleteBtn.closest("tr");
+            tr?.remove();
+            filterGrade12Rows();
+            updateSelectedG12Count();
+            window.showToast("Data siswa berhasil dihapus.", "success");
+          } else {
+            window.showToast(json.error || "Gagal menghapus data siswa.", "error");
+          }
+        } catch {
+          window.showToast("Kesalahan jaringan.", "error");
+        }
+      });
+
+      // 12. Checkbox Seleksi & Tombol "Hapus Semua" (Aktif jika > 1 terpilih)
+      const checkAllG12 = document.getElementById("check-all-grade12");
+      const selectedG12CountSpan = document.getElementById("selected-grade12-count");
+      const btnClearGrade12 = document.getElementById("btn-clear-grade12");
+      const btnClearGrade12Label = document.getElementById("btn-clear-grade12-label");
+
+      function updateSelectedG12Count() {
+        const checkItemsG12 = document.querySelectorAll(".check-item-grade12");
+        const checkedList = Array.from(checkItemsG12).filter((c) => c.checked);
+        const count = checkedList.length;
+
+        if (selectedG12CountSpan) {
+          selectedG12CountSpan.textContent = `${count} dipilih`;
+        }
+
+        if (btnClearGrade12) {
+          if (count > 1) {
+            btnClearGrade12.classList.remove("opacity-40", "cursor-not-allowed", "bg-surface", "text-error");
+            btnClearGrade12.classList.add("cursor-pointer", "bg-error", "text-white", "hover:bg-error-hover");
+            if (btnClearGrade12Label) btnClearGrade12Label.textContent = `Hapus Semua (${count})`;
+          } else {
+            btnClearGrade12.classList.remove("cursor-pointer", "bg-error", "text-white", "hover:bg-error-hover");
+            btnClearGrade12.classList.add("opacity-40", "cursor-not-allowed", "bg-surface", "text-error");
+            if (btnClearGrade12Label) btnClearGrade12Label.textContent = "Hapus Semua";
+          }
+        }
+      }
+
+      checkAllG12?.addEventListener("change", () => {
+        const visibleRows = Array.from(document.querySelectorAll(".row-grade12:not(.hidden)"));
+        visibleRows.forEach((row) => {
+          const chk = row.querySelector(".check-item-grade12");
+          if (chk) chk.checked = checkAllG12.checked;
+        });
+        updateSelectedG12Count();
+      });
+
+      document.getElementById("tbody-grade12")?.addEventListener("change", (e) => {
+        if (e.target.classList.contains("check-item-grade12")) {
+          updateSelectedG12Count();
+        }
+      });
+
+      btnClearGrade12?.addEventListener("click", async () => {
+        const checkedItems = Array.from(document.querySelectorAll(".check-item-grade12:checked"));
+        const count = checkedItems.length;
+
+        if (count <= 1) {
+          alert("Pilih lebih dari 1 siswa (centang kotak pilihan di tabel) untuk menggunakan tombol Hapus Semua.");
+          return;
+        }
+
+        const ids = checkedItems.map((c) => parseInt(c.value, 10)).filter((id) => !isNaN(id));
+
+        const confirmed = await window.confirmDialog({
+          title: "Hapus Siswa Terpilih",
+          message: `PERINGATAN: Apakah Anda yakin ingin MENGHAPUS ${ids.length} data siswa terpilih?\nTindakan ini tidak dapat dibatalkan.`,
+          confirmText: `Ya, Hapus (${ids.length})`,
+          cancelText: "Batal",
+          type: "danger",
+        });
+        if (!confirmed) return;
+
+        try {
+            btnClearGrade12.disabled = true;
+            if (btnClearGrade12Label) btnClearGrade12Label.textContent = "Menghapus...";
+
+            const res = await fetch("/api/admin/graduations/bulk-delete", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ ids }),
+            });
+            const json = await res.json();
+            if (json.success) {
+              window.location.reload();
+            } else {
+              alert(json.error || "Gagal menghapus siswa terpilih.");
+              btnClearGrade12.disabled = false;
+              updateSelectedG12Count();
+            }
+          } catch {
+            alert("Terjadi kesalahan jaringan.");
+            btnClearGrade12.disabled = false;
+            updateSelectedG12Count();
+          }
+      });
+
+      // 12. Filter, Search & Pagination Kelas 12
+      const searchG12 = document.getElementById("search-grade12");
+      const filterClassG12 = document.getElementById("filter-grade12-class");
+      const filterStatusG12 = document.getElementById("filter-grade12-status");
+      const paginationG12Container = document.getElementById("grade12-pagination-container");
+      const emptyG12 = document.getElementById("empty-grade12");
+
+      let currentG12Page = 1;
+      const g12PageSize = 10;
+
+      function filterGrade12Rows() {
+        const q = (searchG12?.value || "").toLowerCase().trim();
+        const c = filterClassG12?.value || "";
+        const s = filterStatusG12?.value || "";
+
+        const allRows = Array.from(document.querySelectorAll(".row-grade12"));
+        const matchedRows = [];
+
+        allRows.forEach((row) => {
+          const text = row.textContent?.toLowerCase() || "";
+          const cls = row.getAttribute("data-class") || "";
+          const st = row.getAttribute("data-status") || "";
+
+          const matchQ = !q || text.includes(q);
+          const matchC = !c || cls === c;
+          const matchS = !s || st === s;
+
+          if (matchQ && matchC && matchS) {
+            matchedRows.push(row);
+          } else {
+            row.classList.add("hidden");
+          }
+        });
+
+        if (emptyG12) {
+          emptyG12.classList.toggle("hidden", matchedRows.length > 0 || allRows.length === 0);
+        }
+
+        const totalPages = Math.max(1, Math.ceil(matchedRows.length / g12PageSize));
+        if (currentG12Page > totalPages) currentG12Page = totalPages;
+        if (currentG12Page < 1) currentG12Page = 1;
+
+        const startIdx = (currentG12Page - 1) * g12PageSize;
+        const endIdx = startIdx + g12PageSize;
+
+        matchedRows.forEach((row, idx) => {
+          if (idx >= startIdx && idx < endIdx) {
+            row.classList.remove("hidden");
+            const numCell = row.cells?.[1];
+            if (numCell) numCell.textContent = String(idx + 1);
+          } else {
+            row.classList.add("hidden");
+          }
+        });
+
+        renderPaginationBar(paginationG12Container, currentG12Page, totalPages, matchedRows.length, g12PageSize, "siswa");
+        updateSelectedG12Count();
+      }
+
+      paginationG12Container?.addEventListener("click", (e) => {
+        const btn = e.target.closest(".pagination-btn");
+        if (btn && !btn.disabled) {
+          const targetPage = parseInt(btn.getAttribute("data-page") || "1", 10);
+          if (targetPage && targetPage !== currentG12Page) {
+            currentG12Page = targetPage;
+            filterGrade12Rows();
+          }
+        }
+      });
+
+      searchG12?.addEventListener("input", () => {
+        currentG12Page = 1;
+        filterGrade12Rows();
+      });
+      filterClassG12?.addEventListener("change", () => {
+        currentG12Page = 1;
+        filterGrade12Rows();
+      });
+      filterStatusG12?.addEventListener("change", () => {
+        currentG12Page = 1;
+        filterGrade12Rows();
+      });
+
+      // Inisialisasi awal pagination Kelas 12
+      filterGrade12Rows();
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", initKelulusan);
+    } else {
+      initKelulusan();
+    }
+  </script>
+</AdminLayout>

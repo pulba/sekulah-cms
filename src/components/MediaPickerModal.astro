@@ -1,0 +1,473 @@
+---
+import Icon from './Icon.astro';
+
+interface Props {
+  modalId?: string;
+  id?: string;
+}
+
+const { modalId: propModalId, id: propId } = Astro.props;
+const modalId = propModalId || propId || "media-picker-modal";
+---
+
+<div
+  id={modalId}
+  role="dialog"
+  aria-modal="true"
+  aria-label="Pustaka Media Sekolah"
+  class="fixed inset-0 z-[60] hidden overflow-y-auto bg-heading/60 backdrop-blur-xs p-4 sm:p-6"
+>
+  <div class="flex min-h-full items-center justify-center">
+    <div class="w-full max-w-4xl max-h-[85dvh] rounded-[12px] border border-border bg-surface shadow-2xl flex flex-col overflow-hidden">
+    <!-- Header -->
+    <div class="flex items-center justify-between p-4 sm:px-5 sm:py-4 bg-surface-subtle shrink-0">
+      <div class="flex items-center gap-3">
+        <div class="flex h-8 w-8 items-center justify-center rounded-[6px] bg-primary text-primary-foreground shrink-0 shadow-2xs">
+          <Icon name="image" class="h-4 w-4" />
+        </div>
+        <div>
+          <h3 class="font-display text-sm sm:text-base font-bold text-heading">Pustaka Media Sekolah</h3>
+          <p class="text-[11px] text-muted">Pilih aset yang sudah ada atau unggah berkas baru langsung ke server.</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <a
+          href="/admin/media"
+          target="_blank"
+          class="hidden sm:inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary-hover hover:underline mr-1"
+          title="Buka Pustaka Media Penuh di Tab Baru"
+        >
+          <span>Buka Pustaka Lengkap</span>
+          <Icon name="external-link" class="h-3.5 w-3.5" />
+        </a>
+        <button
+          type="button"
+          id={`${modalId}-close-btn`}
+          class="p-1.5 rounded-[6px] text-muted hover:text-heading hover:bg-surface transition-colors cursor-pointer"
+          title="Tutup Pustaka Media"
+          aria-label="Tutup"
+        >
+          <Icon name="close" class="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs: Browse vs Upload (Modern Editorial Segmented Control) -->
+    <div class="px-4 sm:px-5 py-3 flex items-center justify-between bg-surface shrink-0 gap-3">
+      <div class="inline-flex items-center rounded-[8px] bg-surface-subtle p-1 border border-border-subtle text-xs font-medium">
+        <button
+          type="button"
+          id={`${modalId}-tab-browse`}
+          class="px-3.5 py-1.5 rounded-[6px] bg-surface font-semibold text-heading shadow-xs transition-colors cursor-pointer"
+        >
+          Jelajahi Pustaka
+        </button>
+        <button
+          type="button"
+          id={`${modalId}-tab-upload`}
+          class="px-3.5 py-1.5 rounded-[6px] text-muted hover:text-heading transition-colors cursor-pointer"
+        >
+          Unggah Cepat
+        </button>
+      </div>
+
+      <!-- Item Counter / Active Filter -->
+      <span id={`${modalId}-counter`} class="text-[11px] text-muted font-mono hidden sm:inline">
+        Memuat data...
+      </span>
+    </div>
+
+    <!-- Tab 1: Browse Media -->
+    <div id={`${modalId}-pane-browse`} class="flex-1 min-h-0 flex flex-col overflow-hidden">
+      <!-- Search & Filters -->
+      <div class="px-4 sm:px-5 py-3 bg-surface-subtle flex flex-col sm:flex-row items-center justify-between gap-2.5 shrink-0">
+        <div class="relative w-full sm:w-72">
+          <input
+            type="text"
+            id={`${modalId}-search`}
+            placeholder="Cari berkas atau judul..."
+            class="h-[34px] w-full rounded-[6px] border border-border bg-surface pl-8 pr-3 text-xs text-heading transition-colors placeholder:text-muted"
+          />
+          <Icon name="search" class="w-3.5 h-3.5 text-muted absolute left-2.5 top-2.5 pointer-events-none" />
+        </div>
+
+        <div class="flex items-center gap-2 overflow-x-auto w-full sm:w-auto no-scrollbar">
+          <select
+            id={`${modalId}-cat-select`}
+            class="h-[34px] rounded-[6px] border border-border bg-surface px-2.5 text-xs text-heading font-medium"
+          >
+            <option value="all">Semua Kategori</option>
+            <option value="Logo & Atribut">Logo & Atribut</option>
+            <option value="Foto Kegiatan">Foto Kegiatan</option>
+            <option value="Dokumen PPDB & Beasiswa">Dokumen Pendaftaran</option>
+            <option value="Materi Pembelajaran">Materi Belajar</option>
+            <option value="Umum">Umum</option>
+          </select>
+
+          <select
+            id={`${modalId}-type-select`}
+            class="h-[34px] rounded-[6px] border border-border bg-surface px-2.5 text-xs text-heading font-medium"
+          >
+            <option value="image" selected>Gambar Saja</option>
+            <option value="document">Dokumen / PDF</option>
+            <option value="all">Semua Format</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Grid of items -->
+      <div class="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5">
+        <div id={`${modalId}-loading`} class="flex flex-col items-center justify-center py-12 text-muted">
+          <svg class="animate-spin h-6 w-6 text-primary mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+          </svg>
+          <span class="text-xs font-mono">Memuat koleksi media...</span>
+        </div>
+
+        <div id={`${modalId}-empty`} class="hidden flex flex-col items-center justify-center py-12 text-center text-muted">
+          <div class="flex h-12 w-12 items-center justify-center rounded-full bg-surface-subtle border border-border text-muted mb-2">
+            <Icon name="folder" class="h-6 w-6" />
+          </div>
+          <p class="text-xs font-semibold text-heading">Tidak ada media yang cocok</p>
+          <p class="text-[11px] text-muted mt-0.5">Coba ubah kata kunci atau unggah berkas baru.</p>
+        </div>
+
+        <div id={`${modalId}-grid`} class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3"></div>
+      </div>
+    </div>
+
+    <!-- Tab 2: Quick Upload -->
+    <div id={`${modalId}-pane-upload`} class="flex-1 min-h-0 p-5 sm:p-6 overflow-y-auto hidden space-y-4">
+      <div
+        id={`${modalId}-dropzone`}
+        class="rounded-[8px] border-2 border-dashed border-border/80 bg-surface-subtle hover:bg-surface-subtle hover:border-primary/50 transition-all p-8 text-center cursor-pointer flex flex-col items-center justify-center gap-2 group"
+      >
+        <input type="file" id={`${modalId}-file-input`} accept="image/*,.pdf" class="hidden" />
+        <div class="h-10 w-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground group-hover:scale-110 transition-transform">
+          <Icon name="upload" class="h-5 w-5" />
+        </div>
+        <div>
+          <p class="text-xs font-semibold text-heading">Klik untuk memilih berkas atau seret ke area ini</p>
+          <p class="text-[11px] text-muted mt-0.5">JPG, PNG, WEBP, PDF (Maks 15 MB). Otomatis dioptimalkan.</p>
+        </div>
+        <div id={`${modalId}-upload-badge`} class="hidden text-xs font-semibold text-primary"></div>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div class="space-y-1">
+          <label class="block text-[11px] font-semibold text-heading">Kategori Virtual</label>
+          <select id={`${modalId}-upload-cat`} class="h-[34px] w-full rounded-[6px] border border-border bg-surface px-2.5 text-xs text-heading">
+            <option value="Foto Kegiatan">Foto Kegiatan / Lomba</option>
+            <option value="Logo & Atribut">Logo & Atribut</option>
+            <option value="Dokumen PPDB & Beasiswa">Dokumen Pendaftaran</option>
+            <option value="Materi Pembelajaran">Materi Belajar</option>
+            <option value="Umum" selected>Umum</option>
+          </select>
+        </div>
+
+        <div class="space-y-1">
+          <label class="block text-[11px] font-semibold text-heading">Judul / Label</label>
+          <input type="text" id={`${modalId}-upload-title`} placeholder="Opsional (nama berkas default)" class="h-[34px] w-full rounded-[6px] border border-border bg-surface px-2.5 text-xs text-heading" />
+        </div>
+      </div>
+
+      <div id={`${modalId}-upload-status`} class="hidden text-xs font-mono text-primary text-center py-1"></div>
+
+      <div class="flex justify-end">
+        <button
+          type="button"
+          id={`${modalId}-btn-do-upload`}
+          class="inline-flex h-[36px] items-center justify-center rounded-[6px] bg-primary px-4 text-xs font-semibold text-surface hover:bg-primary-hover transition-colors cursor-pointer"
+        >
+          Unggah & Pilih Berkas
+        </button>
+      </div>
+    </div>
+
+    <!-- Modal Footer -->
+    <div class="p-3.5 sm:px-5 sm:py-4 bg-surface-subtle flex items-center justify-between shrink-0">
+      <div id={`${modalId}-selected-info`} class="text-xs text-muted truncate max-w-sm">
+        Pilih salah satu berkas dari pustaka.
+      </div>
+
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          id={`${modalId}-cancel-btn`}
+          class="inline-flex h-[34px] items-center justify-center rounded-[6px] border border-border bg-surface px-3.5 text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+        >
+          Batal
+        </button>
+        <button
+          type="button"
+          id={`${modalId}-confirm-btn`}
+          disabled
+          class="inline-flex h-[34px] items-center justify-center rounded-[6px] bg-primary px-4 text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-xs"
+        >
+          Masukkan Berkas
+        </button>
+      </div>
+    </div>
+  </div>
+  </div>
+</div>
+
+<script define:vars={{ modalId }}>
+  (function () {
+    let currentSelected = null;
+    let items = [];
+    let onSelectCallback = null;
+    let targetType = 'image';
+
+    function portalSelf() {
+      const el = document.getElementById(modalId);
+      if (el && el.parentElement !== document.body) {
+        const existing = document.body.querySelector(`:scope > #${modalId}`);
+        if (existing && existing !== el) {
+          existing.remove();
+        }
+        document.body.appendChild(el);
+      }
+    }
+    portalSelf();
+    document.addEventListener('astro:page-load', portalSelf);
+
+    const modal = document.getElementById(modalId);
+    const closeBtn = document.getElementById(`${modalId}-close-btn`);
+    const cancelBtn = document.getElementById(`${modalId}-cancel-btn`);
+    const confirmBtn = document.getElementById(`${modalId}-confirm-btn`);
+    const tabBrowse = document.getElementById(`${modalId}-tab-browse`);
+    const tabUpload = document.getElementById(`${modalId}-tab-upload`);
+    const paneBrowse = document.getElementById(`${modalId}-pane-browse`);
+    const paneUpload = document.getElementById(`${modalId}-pane-upload`);
+    const grid = document.getElementById(`${modalId}-grid`);
+    const loading = document.getElementById(`${modalId}-loading`);
+    const empty = document.getElementById(`${modalId}-empty`);
+    const counter = document.getElementById(`${modalId}-counter`);
+    const selectedInfo = document.getElementById(`${modalId}-selected-info`);
+    const searchInput = document.getElementById(`${modalId}-search`);
+    const catSelect = document.getElementById(`${modalId}-cat-select`);
+    const typeSelect = document.getElementById(`${modalId}-type-select`);
+
+    // Upload Elements
+    const dropzone = document.getElementById(`${modalId}-dropzone`);
+    const fileInput = document.getElementById(`${modalId}-file-input`);
+    const uploadBadge = document.getElementById(`${modalId}-upload-badge`);
+    const uploadCat = document.getElementById(`${modalId}-upload-cat`);
+    const uploadTitle = document.getElementById(`${modalId}-upload-title`);
+    const uploadStatus = document.getElementById(`${modalId}-upload-status`);
+    const btnDoUpload = document.getElementById(`${modalId}-btn-do-upload`);
+
+    function switchTab(tab) {
+      if (tab === 'browse') {
+        tabBrowse.className = 'px-3.5 py-1.5 rounded-[6px] bg-surface font-semibold text-heading shadow-xs transition-colors cursor-pointer';
+        tabUpload.className = 'px-3.5 py-1.5 rounded-[6px] text-muted hover:text-heading transition-colors cursor-pointer';
+        paneBrowse.classList.remove('hidden');
+        paneUpload.classList.add('hidden');
+      } else {
+        tabUpload.className = 'px-3.5 py-1.5 rounded-[6px] bg-surface font-semibold text-heading shadow-xs transition-colors cursor-pointer';
+        tabBrowse.className = 'px-3.5 py-1.5 rounded-[6px] text-muted hover:text-heading transition-colors cursor-pointer';
+        paneUpload.classList.remove('hidden');
+        paneBrowse.classList.add('hidden');
+      }
+    }
+
+    tabBrowse?.addEventListener('click', () => switchTab('browse'));
+    tabUpload?.addEventListener('click', () => switchTab('upload'));
+
+    function closeModal() {
+      modal.classList.add('is-closing');
+      setTimeout(() => {
+        modal.classList.remove('is-closing');
+        modal.classList.add('hidden');
+        currentSelected = null;
+        confirmBtn.disabled = true;
+        selectedInfo.innerText = 'Pilih salah satu berkas dari pustaka.';
+      }, 180);
+    }
+
+    closeBtn?.addEventListener('click', closeModal);
+    cancelBtn?.addEventListener('click', closeModal);
+    modal?.addEventListener('click', (e) => {
+      if (
+        e.target === modal ||
+        (e.target && e.target.classList && e.target.classList.contains('min-h-full'))
+      ) {
+        closeModal();
+      }
+    });
+
+    async function fetchItems() {
+      loading.classList.remove('hidden');
+      empty.classList.add('hidden');
+      grid.innerHTML = '';
+      currentSelected = null;
+      confirmBtn.disabled = true;
+
+      const params = new URLSearchParams();
+      const cat = catSelect.value;
+      const type = typeSelect.value;
+      const search = searchInput.value.trim();
+
+      if (cat !== 'all') params.set('category', cat);
+      if (type !== 'all') params.set('type', type);
+      if (search) params.set('search', search);
+      params.set('limit', '50');
+
+      try {
+        const res = await fetch(`/api/admin/media?${params.toString()}`);
+        const data = await res.json();
+        loading.classList.add('hidden');
+
+        if (!data.success) return;
+
+        items = data.data || [];
+        counter.innerText = `${items.length} berkas`;
+
+        if (items.length === 0) {
+          empty.classList.remove('hidden');
+          return;
+        }
+
+        renderGrid();
+      } catch {
+        loading.classList.add('hidden');
+      }
+    }
+
+    function renderGrid() {
+      grid.innerHTML = items.map((item) => {
+        const isImg = item.fileType?.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp', 'avif'].includes(item.fileExtension);
+        const displayUrl = item.thumbnailUrl || item.mediumUrl || item.fileUrl;
+
+        return `
+          <div
+            class="picker-card group relative rounded-[6px] border border-border bg-surface overflow-hidden cursor-pointer hover:border-primary/60 transition-all flex flex-col"
+            data-id="${item.id}"
+          >
+            <div class="relative w-full aspect-square bg-surface-subtle flex items-center justify-center overflow-hidden">
+              ${isImg ? `
+                <img src="${displayUrl}" alt="${item.altText || item.title}" class="w-full h-full object-cover" />
+              ` : `
+                <div class="flex flex-col items-center justify-center text-muted p-2">
+                  <svg class="h-8 w-8 text-muted mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                  <span class="text-[10px] font-mono uppercase font-semibold text-muted">${item.fileExtension || 'DOC'}</span>
+                </div>
+              `}
+              <div class="picker-check absolute inset-0 bg-primary/20 border-2 border-primary hidden items-center justify-center">
+                <span class="bg-primary text-surface rounded-full p-1 shadow-xs">
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/>
+                  </svg>
+                </span>
+              </div>
+            </div>
+            <div class="p-2 text-[11px]">
+              <p class="font-semibold text-heading truncate">${item.title || item.originalName}</p>
+              <p class="text-[10px] text-muted truncate">${item.category || 'Umum'}</p>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      grid.querySelectorAll('.picker-card').forEach((card) => {
+        card.addEventListener('click', () => {
+          const id = Number(card.dataset.id);
+          const item = items.find((m) => m.id === id);
+          if (!item) return;
+
+          grid.querySelectorAll('.picker-check').forEach((chk) => chk.classList.add('hidden'));
+          card.querySelector('.picker-check')?.classList.remove('hidden');
+
+          currentSelected = item;
+          confirmBtn.disabled = false;
+          selectedInfo.innerHTML = `Terpilih: <strong class="text-heading">${item.title || item.originalName}</strong> (${item.fileExtension.toUpperCase()})`;
+        });
+      });
+    }
+
+    confirmBtn?.addEventListener('click', () => {
+      if (!currentSelected) return;
+      if (!currentSelected.url && currentSelected.fileUrl) {
+        currentSelected.url = currentSelected.fileUrl;
+      }
+      if (typeof onSelectCallback === 'function') {
+        onSelectCallback(currentSelected);
+      }
+      closeModal();
+    });
+
+    // Filtering inputs
+    catSelect?.addEventListener('change', fetchItems);
+    typeSelect?.addEventListener('change', fetchItems);
+
+    let searchTimer;
+    searchInput?.addEventListener('input', () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(fetchItems, 300);
+    });
+
+    // Quick Upload Dropzone
+    dropzone?.addEventListener('click', () => fileInput.click());
+    fileInput?.addEventListener('change', () => {
+      const f = fileInput.files?.[0];
+      if (f) {
+        uploadBadge.innerText = `Berkas dipilih: ${f.name}`;
+        uploadBadge.classList.remove('hidden');
+      }
+    });
+
+    btnDoUpload?.addEventListener('click', async () => {
+      const f = fileInput.files?.[0];
+      if (!f) {
+        alert('Pilih berkas yang mau diunggah.');
+        return;
+      }
+
+      uploadStatus.innerText = 'Mengunggah dan mengompresi berkas...';
+      uploadStatus.classList.remove('hidden');
+
+      const fd = new FormData();
+      fd.append('file', f);
+      fd.append('category', uploadCat.value);
+      if (uploadTitle.value.trim()) fd.append('title', uploadTitle.value.trim());
+
+      try {
+        const res = await fetch('/api/admin/media/upload', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (data.success && data.data) {
+          uploadStatus.innerText = 'Berhasil diunggah!';
+          fileInput.value = '';
+          uploadBadge.classList.add('hidden');
+          switchTab('browse');
+          await fetchItems();
+
+          // Auto select the newly uploaded item
+          currentSelected = data.data;
+          confirmBtn.disabled = false;
+          selectedInfo.innerHTML = `Terpilih: <strong class="text-heading">${data.data.title || data.data.originalName}</strong>`;
+        } else {
+          uploadStatus.innerText = `Gagal: ${data.error || 'Terjadi kesalahan'}`;
+        }
+      } catch {
+        uploadStatus.innerText = 'Gagal menghubungi server.';
+      }
+    });
+
+    // Global Window Helper
+    window.openMediaPicker = function (callback, options = {}) {
+      portalSelf();
+      if (typeof callback === 'object' && callback !== null && typeof callback.onSelect === 'function') {
+        options = callback;
+        callback = callback.onSelect;
+      }
+      onSelectCallback = callback;
+      targetType = options.type || 'image';
+      if (typeSelect) typeSelect.value = targetType;
+      switchTab('browse');
+      modal.classList.remove('hidden');
+      fetchItems();
+    };
+  })();
+</script>

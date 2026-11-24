@@ -1,0 +1,1690 @@
+---
+import AdminLayout from "../../../layouts/AdminLayout.astro";
+import MediaPickerModal from "../../../components/MediaPickerModal.astro";
+import Icon from "../../../components/Icon.astro";
+import { db, settings } from "../../../db";
+
+export const prerender = false;
+
+// Ambil semua data profil institusi dari tabel settings
+const allSettings = await db.select().from(settings);
+const settingMap = allSettings.reduce(
+  (acc, curr) => {
+    acc[curr.key] = curr.value;
+    return acc;
+  },
+  {} as Record<string, string>,
+);
+
+// 1. Informasi Resmi & Karakteristik Lembaga
+const schoolName = settingMap["school_name"] || "SMAN 1 Unggulan";
+const educationLevel = settingMap["education_level"] || "menengah_atas";
+
+// Mapping jenjang → jenis satuan pendidikan yang sah
+const SCHOOL_TYPE_MAP: Record<string, { value: string; label: string }[]> = {
+  dasar: [
+    { value: "SD", label: "SD (Kemendikbud)" },
+    { value: "MI", label: "MI (Kemenag)" },
+  ],
+  menengah_pertama: [
+    { value: "SMP", label: "SMP (Kemendikbud)" },
+    { value: "MTs", label: "MTs (Kemenag)" },
+  ],
+  menengah_atas: [
+    { value: "SMA", label: "SMA (Kemendikbud)" },
+    { value: "MA", label: "MA (Kemenag)" },
+    { value: "SMK", label: "SMK (Vokasi)" },
+  ],
+};
+
+const validSchoolTypeOptions = SCHOOL_TYPE_MAP[educationLevel] || SCHOOL_TYPE_MAP["menengah_atas"];
+const rawSchoolType = (settingMap["school_type"] || settingMap["school_level"] || "SMA").toUpperCase();
+const isSchoolTypeValid = validSchoolTypeOptions.some((opt) => opt.value === rawSchoolType);
+const schoolType = isSchoolTypeValid ? rawSchoolType : validSchoolTypeOptions[0].value;
+const schoolLevel = schoolType;
+const npsn = settingMap["npsn"] || "20101234";
+const accreditation = settingMap["accreditation"] || "A (Unggul)";
+const schoolStatus = settingMap["school_status"] || "Negeri";
+const boardingAvailable = settingMap["boarding_available"] === "true";
+const establishmentDecree =
+  settingMap["establishment_decree"] || "420/123/DISDIK/2005";
+const curriculum =
+  settingMap["curriculum"] || "Kurikulum Merdeka Mandiri Berbagi";
+const tagline =
+  settingMap["tagline"] ||
+  "Unggul dalam Riset, Santun dalam Budi Pekerti, Mandiri Berprestasi";
+const admissionsLabel =
+  settingMap["admissions_label"] || settingMap["ppdb_label"] || "PPDB";
+const admissionsTitle = settingMap["admissions_title"] || "";
+const admissionsSubtitle = settingMap["admissions_subtitle"] || "";
+const ppdbUrl = settingMap["ppdb_url"] || "https://siap-ppdb.com";
+
+// 2. Sambutan Kepala Sekolah
+const principalWelcomeActive =
+  settingMap["principal_welcome_active"] !== "false";
+const principalName = settingMap["principal_name"] || "Dr. H. Sulaiman, M.Pd.";
+const principalTitle = settingMap["principal_title"] || "Kepala Sekolah";
+const principalPhoto =
+  settingMap["principal_photo"] ||
+  "https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=600&q=80";
+const principalWelcomeQuote =
+  settingMap["principal_welcome_quote"] ||
+  "Selamat datang di portal resmi institusi kami. Kami berkomitmen menyelenggarakan ekosistem pendidikan berstandar tinggi yang mengintegrasikan kecakapan teknologi, kedalaman riset, dan budi pekerti luhur.";
+
+// 3. Sejarah & Tonggak Perkembangan
+const foundedYear = settingMap["founded_year"] || "1995";
+const schoolHistoryP1 = settingMap["school_history_p1"] || settingMap["school_history"] || "";
+const schoolHistoryP2 = settingMap["school_history_p2"] || "";
+const schoolHistoryP3 = settingMap["school_history_p3"] || "";
+const schoolHistoryImage =
+  settingMap["school_history_image"] ||
+  "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80";
+const schoolHistoryMilestones =
+  settingMap["school_history_milestones"] ||
+  "1995 | Peresmian pendirian dan operasional perdana satuan pendidikan.\n2012 | Perintisan kelas riset olimpiade sains dan laboratorium komputer terpadu.\n2025 | Re-akreditasi predikat A (Unggul) dengan nilai ketercapaian SPM mutu prima.";
+
+// 4. Sekilas Profil & Video Profil Beranda
+const schoolProfileActive = settingMap["school_profile_active"] !== "false";
+const schoolProfileTitle =
+  settingMap["school_profile_title"] ||
+  "Membina Generasi Unggul, Berkarakter & Berdaya Saing Global";
+const schoolProfileDesc =
+  settingMap["school_profile_desc"] ||
+  "SMAN 1 Unggulan mengintegrasikan kurikulum riset mutakhir, penguasaan sains dan teknologi kecerdasan buatan, serta pembinaan akhlak mulia dalam ekosistem kampus modern berstandar nasional.";
+const schoolVision =
+  settingMap["school_vision"] ||
+  "Menjadi pusat keunggulan pendidikan yang melahirkan cendekiawan berakhlak mulia, berjiwa riset, dan kompetitif di kancah internasional.";
+const schoolMission =
+  settingMap["school_mission"] ||
+  "1. Menyelenggarakan pembelajaran berbasis riset sains terapan dan literasi digital berstandar global.\n2. Menempa kepribadian siswa yang berintegritas, mandiri, dan peduli sesama.\n3. Memfasilitasi sarana prasarana modern berwawasan lingkungan hijau.";
+const schoolVideoUrl =
+  settingMap["school_video_url"] ||
+  "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+const schoolVideoThumbnail =
+  settingMap["school_video_thumbnail"] ||
+  "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=1200&q=80";
+const schoolProfileCtaText =
+  settingMap["school_profile_cta_text"] || "Selengkapnya Tentang Sekolah";
+const schoolProfileCtaUrl = settingMap["school_profile_cta_url"] || "/profil";
+
+// 5. Lokasi & Jam Operasional
+const address =
+  settingMap["address"] || "Jl. Pendidikan No. 45, Kota Pendidikan";
+const city = settingMap["city"] || "Kota Jakarta Selatan";
+const province = settingMap["province"] || "DKI Jakarta";
+const postalCode = settingMap["postal_code"] || "12340";
+const mapsEmbed =
+  settingMap["maps_embed"] ||
+  "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d126922.385!2d106.78!3d-6.22!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2zNsKwMTMnMTIuMCJTIDEwNsKwNDYnNDguMCJF!5e0!3m2!1sid!2sid!4v1600000000000";
+const operationalHours =
+  settingMap["operational_hours"] || "Senin – Jumat: 07.00 – 16.00 WIB";
+const operationalNotes =
+  settingMap["operational_notes"] ||
+  "Sabtu, Minggu & Hari Libur Nasional: Tutup";
+
+// 6. Testimoni & Kisah Alumni Beranda
+const alumniSectionActive = settingMap["alumni_section_active"] !== "false";
+const alumniSectionTitle =
+  settingMap["alumni_section_title"] ||
+  "Kisah Inspiratif & Jejak Langkah Alumni";
+const alumniSectionDesc =
+  settingMap["alumni_section_desc"] ||
+  "Mendengar pengalaman dan cerita sukses para lulusan yang kini berkiprah di perguruan tinggi ternama serta dunia profesional global.";
+
+// Definisi Navigasi Tabs (Zero-Load Pattern)
+const rawTab = Astro.url.searchParams.get("tab") || "identitas";
+const activeTabId = rawTab.startsWith("tab-") ? rawTab : `tab-${rawTab}`;
+
+const profileTabs = [
+  { id: "tab-identitas", label: "1. Identitas & Legalitas" },
+  { id: "tab-sambutan", label: "2. Sambutan Kepala Sekolah" },
+  { id: "tab-sejarah", label: "3. Sejarah Sekolah" },
+  { id: "tab-video", label: "4. Profil & Video Beranda" },
+  { id: "tab-lokasi", label: "5. Lokasi & Operasional" },
+  { id: "tab-alumni", label: "6. Testimoni Alumni" },
+];
+---
+
+<AdminLayout title="Profil Sekolah" activeNav="profil" settingsMap={settingMap}>
+  <div class="max-w-4xl mx-auto space-y-8 pb-20">
+    <!-- Header Halaman -->
+    <div
+      class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-6"
+    >
+      <div>
+        <h1 class="font-display text-2xl font-bold tracking-tight text-heading">
+          Profil Sekolah
+        </h1>
+      </div>
+
+      <div class="flex items-center gap-2 shrink-0">
+        <button
+          type="button"
+          id="btn-header-save"
+          class="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-4 text-xs font-semibold text-white transition-all hover:bg-primary-hover shadow-xs cursor-pointer disabled:opacity-50"
+        >
+          <Icon id="btn-header-icon-save" name="save" class="h-3.5 w-3.5 text-white" />
+          <svg
+            id="btn-header-spinner"
+            class="hidden h-3.5 w-3.5 animate-spin text-white"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+          >
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          <Icon id="btn-header-check" name="check" class="hidden h-3.5 w-3.5 text-white" />
+          <span id="btn-header-label">Simpan Perubahan</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Segmented Control Tabs (Zero-Load Pattern) -->
+    <div class="overflow-x-auto no-scrollbar">
+      <div
+        class="inline-flex bg-surface-subtle *:px-2.5 *:py-2.5 *:text-[11px] *:whitespace-nowrap *:cursor-pointer *:transition-colors *:first:rounded-l-[4px] *:last:rounded-r-[4px]"
+        role="tablist"
+        aria-label="Tab Pengaturan Profil Sekolah"
+      >
+        {
+          profileTabs.map((tab) => (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTabId === tab.id ? "true" : "false"}
+              class:list={[
+                "profile-tab-btn",
+                activeTabId === tab.id
+                  ? "bg-primary font-semibold text-white"
+                  : "font-medium text-muted hover:text-heading",
+              ]}
+              data-tab={tab.id}
+            >
+              {tab.label}
+            </button>
+          ))
+        }
+      </div>
+    </div>
+
+    <form id="profile-form">
+      <!-- TAB 1: INFORMASI RESMI & LEGALITAS -->
+      <section
+        id="tab-identitas"
+        role="tabpanel"
+        class:list={[
+          "profile-tab-pane space-y-5",
+          activeTabId !== "tab-identitas" && "hidden",
+        ]}
+      >
+        <div class="pb-3">
+          <div class="flex items-center gap-2">
+            <span
+              class="flex h-6 w-6 items-center justify-center rounded-md bg-primary-light font-display text-xs font-bold text-primary"
+            >
+              1
+            </span>
+            <h2 class="font-display text-base font-bold text-heading">
+              Informasi Resmi Sekolah
+            </h2>
+          </div>
+        </div>
+
+        <div class="rounded-lg border border-border bg-surface p-5 space-y-4">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label
+                for="school_name"
+                class="block text-xs font-semibold text-heading"
+              >
+                Nama Resmi Lembaga <span class="text-error">*</span>
+              </label>
+              <input
+                type="text"
+                id="school_name"
+                name="school_name"
+                value={schoolName}
+                required
+                class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading transition-colors"
+              />
+            </div>
+
+            <div>
+              <label
+                for="city"
+                class="block text-xs font-semibold text-heading"
+              >
+                Kota / Kabupaten <span class="text-error">*</span>
+              </label>
+              <input
+                type="text"
+                id="city"
+                name="city"
+                value={city}
+                placeholder="Misal: Jakarta, Surabaya, Kab. Bogor"
+                required
+                class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading transition-colors"
+              />
+            </div>
+
+            <div>
+              <label
+                for="npsn"
+                class="block text-xs font-semibold text-heading"
+              >
+                NPSN <span class="text-error">*</span>
+              </label>
+              <input
+                type="text"
+                id="npsn"
+                name="npsn"
+                value={npsn}
+                required
+                class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading font-mono transition-colors"
+              />
+            </div>
+          </div>
+
+          <!-- Karakteristik Identitas Lembaga Pendidikan -->
+          <div class="pt-3 space-y-3">
+            <span class="block text-xs font-bold text-heading">Karakteristik & Jenis Lembaga Pendidikan:</span>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <!-- 1. Jenjang Pendidikan -->
+              <div>
+                <label for="education_level" class="block text-xs font-semibold text-heading">
+                  Jenjang Pendidikan
+                </label>
+                <select
+                  id="education_level"
+                  name="education_level"
+                  class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading transition-colors"
+                >
+                  <option value="dasar" selected={educationLevel === "dasar"}>
+                    Pendidikan Dasar (SD/MI)
+                  </option>
+                  <option value="menengah_pertama" selected={educationLevel === "menengah_pertama"}>
+                    Menengah Pertama (SMP/MTs)
+                  </option>
+                  <option value="menengah_atas" selected={educationLevel === "menengah_atas"}>
+                    Menengah Atas (SMA/MA/SMK)
+                  </option>
+                </select>
+              </div>
+
+              <!-- 2. Jenis Satuan Pendidikan (Kunci Penentu Formulir) — Difilter otomatis oleh Jenjang -->
+              <div>
+                <label for="school_type" class="block text-xs font-semibold text-heading">
+                  Jenis Satuan Pendidikan
+                </label>
+                <select
+                  id="school_type"
+                  name="school_type"
+                  data-saved-value={schoolType}
+                  class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading transition-colors"
+                >
+                  {
+                    validSchoolTypeOptions.map((opt) => (
+                      <option value={opt.value} selected={schoolType === opt.value}>
+                        {opt.label}
+                      </option>
+                    ))
+                  }
+                </select>
+                <!-- Sinkronisasi kompatibilitas school_level -->
+                <input type="hidden" id="school_level" name="school_level" value={schoolType} />
+              </div>
+
+              <!-- 3. Status Sekolah -->
+              <div>
+                <label for="school_status" class="block text-xs font-semibold text-heading">
+                  Status Sekolah
+                </label>
+                <select
+                  id="school_status"
+                  name="school_status"
+                  class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading transition-colors"
+                >
+                  <option value="Negeri" selected={schoolStatus === "Negeri"}>Negeri</option>
+                  <option value="Swasta" selected={schoolStatus === "Swasta"}>Swasta</option>
+                </select>
+              </div>
+
+              <!-- 4. Layanan Asrama -->
+              <div>
+                <label for="boarding_available" class="block text-xs font-semibold text-heading">
+                  Layanan Asrama
+                </label>
+                <select
+                  id="boarding_available"
+                  name="boarding_available"
+                  class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading transition-colors"
+                >
+                  <option value="false" selected={!boardingAvailable}>Tidak tersedia</option>
+                  <option value="true" selected={boardingAvailable}>Tersedia (Pesantren/Boarding)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Widget Interaktif: Simulasi Hasil Konfigurasi -->
+            <div class="rounded-md border border-primary/20 bg-primary-light p-4 space-y-2 mt-3">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-mono font-bold uppercase tracking-wider text-primary">
+                  SIMULASI HASIL KONFIGURASI
+                </span>
+                <span class="text-[11px] text-muted">Contoh interaktif (belum disimpan)</span>
+              </div>
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
+                <div class="space-y-0.5">
+                  <h3 id="sim-form-title" class="font-display text-sm font-bold text-heading">
+                    Formulir Pendaftaran {schoolType}
+                  </h3>
+                  <div class="flex flex-wrap items-center gap-3 text-xs text-muted">
+                    <span>Status lembaga: <strong id="sim-status-label" class="text-heading font-medium">{schoolStatus}</strong></span>
+                    <span>&bull;</span>
+                    <span id="sim-boarding-label">
+                      {boardingAvailable ? "Layanan asrama: Tersedia, dapat diaktifkan pada pengaturan pendaftaran" : "Layanan asrama: Tidak tersedia"}
+                    </span>
+                  </div>
+                </div>
+                <div class="text-[11px] font-mono font-medium text-primary bg-surface px-2.5 py-1 rounded-[4px] border border-primary/20 shrink-0">
+                  Template Otomatis: <span id="sim-template-tag">{schoolType}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+            <div>
+              <label
+                for="accreditation"
+                class="block text-xs font-semibold text-heading"
+              >
+                Akreditasi
+              </label>
+              <input
+                type="text"
+                id="accreditation"
+                name="accreditation"
+                value={accreditation}
+                class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading transition-colors"
+              />
+            </div>
+
+            <div>
+              <label
+                for="establishment_decree"
+                class="block text-xs font-semibold text-heading"
+              >
+                SK Pendirian / Izin Operasional
+              </label>
+              <input
+                type="text"
+                id="establishment_decree"
+                name="establishment_decree"
+                value={establishmentDecree}
+                class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading font-mono transition-colors"
+              />
+            </div>
+
+            <div>
+              <label
+                for="curriculum"
+                class="block text-xs font-semibold text-heading"
+              >
+                Kurikulum
+              </label>
+              <input
+                type="text"
+                id="curriculum"
+                name="curriculum"
+                value={curriculum}
+                class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading transition-colors"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label
+              for="tagline"
+              class="block text-xs font-semibold text-heading"
+            >
+              Tagline / Motto Sekolah
+            </label>
+            <input
+              type="text"
+              id="tagline"
+              name="tagline"
+              value={tagline}
+              class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading transition-colors"
+            />
+          </div>
+
+          <div
+            class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2"
+          >
+            <div>
+              <label
+                for="admissions_label"
+                class="block text-xs font-semibold text-heading"
+              >
+                Istilah / Singkatan Pendaftaran
+              </label>
+              <input
+                type="text"
+                id="admissions_label"
+                name="admissions_label"
+                value={admissionsLabel}
+                placeholder="Contoh: PSB, SPMB, PPDB"
+                class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading transition-colors"
+              />
+            </div>
+
+            <div>
+              <label
+                for="admissions_title"
+                class="block text-xs font-semibold text-heading"
+              >
+                Nama Resmi / Judul Lengkap Pendaftaran
+              </label>
+              <input
+                type="text"
+                id="admissions_title"
+                name="admissions_title"
+                value={admissionsTitle}
+                placeholder="Contoh: SISTEM PENERIMAAN SISWA BARU / PENERIMAAN SISWA BARU"
+                class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading transition-colors"
+              />
+            </div>
+
+            <div class="sm:col-span-2">
+              <label
+                for="admissions_subtitle"
+                class="block text-xs font-semibold text-heading"
+              >
+                Sub-judul / Deskripsi Ajakan Halaman Pendaftaran
+              </label>
+              <input
+                type="text"
+                id="admissions_subtitle"
+                name="admissions_subtitle"
+                value={admissionsSubtitle}
+                placeholder="Contoh: Wujudkan masa depanmu bersama kami. Daftarkan dirimu secara online untuk tahun ajaran baru."
+                class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading transition-colors"
+              />
+            </div>
+
+            <div class="sm:col-span-2">
+              <label
+                for="ppdb_url"
+                class="block text-xs font-semibold text-heading"
+              >
+                Tautan Pendaftaran Eksternal (Opsional)
+              </label>
+              <input
+                type="url"
+                id="ppdb_url"
+                name="ppdb_url"
+                value={ppdbUrl}
+                placeholder="https://..."
+                class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading font-mono transition-colors"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      
+      <!-- TAB 2: SAMBUTAN KEPALA SEKOLAH -->
+      <section
+        id="tab-sambutan"
+        role="tabpanel"
+        class:list={[
+          "profile-tab-pane space-y-5",
+          activeTabId !== "tab-sambutan" && "hidden",
+        ]}
+      >
+        <div class="pb-3">
+          <div class="flex items-center gap-2">
+            <span
+              class="flex h-6 w-6 items-center justify-center rounded-md bg-primary-light font-display text-xs font-bold text-primary"
+            >
+              2
+            </span>
+            <h2 class="font-display text-base font-bold text-heading">
+              Sambutan Kepala Sekolah
+            </h2>
+          </div>
+        </div>
+
+        <div class="rounded-lg border border-border bg-surface p-5 space-y-5">
+          <div class="flex items-center justify-between p-2.5 rounded-[6px] border border-border bg-surface-subtle">
+            <div>
+              <span class="block text-xs font-medium text-heading">Status Tampilan di Beranda</span>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                id="principal_welcome_active"
+                name="principal_welcome_active"
+                value="true"
+                checked={principalWelcomeActive}
+                class="sr-only peer"
+              />
+              <div class="w-9 h-5 bg-border rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+            </label>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label
+                for="principal_name"
+                class="block text-xs font-semibold text-heading"
+              >
+                Nama Lengkap Kepala Sekolah <span class="text-error">*</span>
+              </label>
+              <input
+                type="text"
+                id="principal_name"
+                name="principal_name"
+                value={principalName}
+                required
+                class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading transition-colors"
+              />
+            </div>
+
+            <div>
+              <label
+                for="principal_title"
+                class="block text-xs font-semibold text-heading"
+              >
+                Gelar / NIP / Jabatan
+              </label>
+              <input
+                type="text"
+                id="principal_title"
+                name="principal_title"
+                value={principalTitle}
+                class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading transition-colors"
+              />
+            </div>
+          </div>
+
+          <!-- Foto Kepala Sekolah -->
+          <div class="space-y-3">
+            <label class="block text-xs font-semibold text-heading"
+              >Foto Resmi Kepala Sekolah</label
+            >
+            <div class="flex flex-col sm:flex-row items-start gap-4">
+              <div
+                class="h-24 w-20 rounded-md border border-border bg-surface-subtle overflow-hidden shrink-0 flex items-center justify-center"
+              >
+                <img
+                  id="preview-principal-photo"
+                  src={principalPhoto || "/placeholder-avatar.png"}
+                  alt="Foto Kepala Sekolah"
+                  class="h-full w-full object-cover"
+                  onerror="this.src='/placeholder-avatar.png'"
+                />
+              </div>
+              <div class="flex-1 w-full space-y-2">
+                <input
+                  type="text"
+                  id="principal_photo"
+                  name="principal_photo"
+                  value={principalPhoto}
+                  placeholder="https://..."
+                  class="h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading font-mono transition-colors"
+                />
+                <div class="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    id="btn-pick-principal-photo"
+                    class="h-8 rounded-md border border-border bg-surface px-3 text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+                  >
+                    Pilih dari Pustaka Media
+                  </button>
+                  <label
+                    class="h-8 inline-flex items-center rounded-md border border-border bg-surface px-3 text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+                  >
+                    <span>Unggah Foto Baru</span>
+                    <input
+                      type="file"
+                      id="upload-principal-photo"
+                      class="hidden"
+                      accept="image/*"
+                    />
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="flex items-center justify-between">
+              <label
+                for="principal_welcome_quote"
+                class="block text-xs font-semibold text-heading"
+              >
+                Isi Sambutan Kepala Sekolah
+              </label>
+              <button
+                type="button"
+                id="btn-default-quote-template"
+                class="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline cursor-pointer"
+              >
+                <Icon name="edit" class="h-3 w-3" />
+                <span>Gunakan Template Default</span>
+              </button>
+            </div>
+            <p class="text-[11px] text-muted mt-0.5 mb-1.5">
+              Naskah resmi sambutan kepala sekolah. Teks ini akan diexcerpt secara otomatis di halaman Beranda dan ditampilkan lengkap di halaman Profil (#sambutan).
+            </p>
+            <textarea
+              id="principal_welcome_quote"
+              name="principal_welcome_quote"
+              rows="6"
+              placeholder="Tuliskan naskah sambutan resmi kepala sekolah di sini..."
+              class="mt-1 w-full rounded-md border border-border bg-surface p-3 text-xs text-heading leading-relaxed transition-colors font-body"
+              >{principalWelcomeQuote}</textarea
+            >
+          </div>
+        </div>
+      </section>
+
+      
+      <!-- TAB 3: SEJARAH SEKOLAH -->
+      <section
+        id="tab-sejarah"
+        role="tabpanel"
+        class:list={[
+          "profile-tab-pane space-y-5",
+          activeTabId !== "tab-sejarah" && "hidden",
+        ]}
+      >
+        <div class="pb-3">
+          <div class="flex items-center gap-2">
+            <span
+              class="flex h-6 w-6 items-center justify-center rounded-md bg-primary-light font-display text-xs font-bold text-primary"
+            >
+              3
+            </span>
+            <h2 class="font-display text-base font-bold text-heading">
+              Sejarah Sekolah & Tonggak Perkembangan
+            </h2>
+          </div>
+        </div>
+
+        <div class="rounded-lg border border-border bg-surface p-5 space-y-5">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label
+                for="founded_year"
+                class="block text-xs font-semibold text-heading"
+              >
+                Tahun Berdiri Sekolah <span class="text-error">*</span>
+              </label>
+              <input
+                type="number"
+                id="founded_year"
+                name="founded_year"
+                value={foundedYear}
+                placeholder="1995"
+                class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading transition-colors"
+              />
+            </div>
+          </div>
+
+          <!-- Foto Dokumentasi Arsip Sejarah -->
+          <div class="space-y-3">
+            <label class="block text-xs font-semibold text-heading"
+              >Foto Dokumentasi Arsip Perjalanan Sekolah</label
+            >
+            <div class="flex flex-col sm:flex-row items-start gap-4">
+              <div
+                class="h-24 w-36 rounded-md border border-border bg-surface-subtle overflow-hidden shrink-0 flex items-center justify-center"
+              >
+                <img
+                  id="preview-history-photo"
+                  src={schoolHistoryImage || "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80"}
+                  alt="Arsip Perjalanan Sekolah"
+                  class="h-full w-full object-cover"
+                  onerror="this.src='https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80'"
+                />
+              </div>
+              <div class="flex-1 w-full space-y-2">
+                <input
+                  type="text"
+                  id="school_history_image"
+                  name="school_history_image"
+                  value={schoolHistoryImage}
+                  placeholder="https://..."
+                  class="h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading font-mono transition-colors"
+                />
+                <div class="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    id="btn-pick-history-photo"
+                    class="h-8 rounded-md border border-border bg-surface px-3 text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+                  >
+                    Pilih dari Pustaka Media
+                  </button>
+                  <label
+                    class="h-8 inline-flex items-center rounded-md border border-border bg-surface px-3 text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+                  >
+                    <span>Unggah Foto Baru</span>
+                    <input
+                      type="file"
+                      id="upload-history-photo"
+                      class="hidden"
+                      accept="image/*"
+                    />
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Narasi Sejarah (Paragraf 1, 2, 3) -->
+          <div class="space-y-4">
+            <div>
+              <label
+                for="school_history_p1"
+                class="block text-xs font-semibold text-heading"
+              >
+                Paragraf 1: Pendirian Awal & Prakarsa Tokoh Perintis
+              </label>
+              <textarea
+                id="school_history_p1"
+                name="school_history_p1"
+                rows="3"
+                placeholder="Tuliskan kisah pendirian awal sekolah..."
+                class="mt-1 w-full rounded-md border border-border bg-surface p-3 text-xs text-heading leading-relaxed transition-colors font-body"
+              >{schoolHistoryP1}</textarea>
+            </div>
+
+            <div>
+              <label
+                for="school_history_p2"
+                class="block text-xs font-semibold text-heading"
+              >
+                Paragraf 2: Perluasan Kampus, Fasilitas & Rombongan Belajar
+              </label>
+              <textarea
+                id="school_history_p2"
+                name="school_history_p2"
+                rows="3"
+                placeholder="Tuliskan fase perluasan kampus dan sarana..."
+                class="mt-1 w-full rounded-md border border-border bg-surface p-3 text-xs text-heading leading-relaxed transition-colors font-body"
+              >{schoolHistoryP2}</textarea>
+            </div>
+
+            <div>
+              <label
+                for="school_history_p3"
+                class="block text-xs font-semibold text-heading"
+              >
+                Paragraf 3: Transformasi Mutu, Akreditasi & Era Modern
+              </label>
+              <textarea
+                id="school_history_p3"
+                name="school_history_p3"
+                rows="3"
+                placeholder="Tuliskan capaian akreditasi dan era modern..."
+                class="mt-1 w-full rounded-md border border-border bg-surface p-3 text-xs text-heading leading-relaxed transition-colors font-body"
+              >{schoolHistoryP3}</textarea>
+            </div>
+          </div>
+
+          <!-- Tonggak Perkembangan (Milestones) -->
+          <div>
+            <div class="flex items-center justify-between">
+              <label
+                for="school_history_milestones"
+                class="block text-xs font-semibold text-heading"
+              >
+                Tonggak Perkembangan Kelembagaan (Milestones)
+              </label>
+              <button
+                type="button"
+                id="btn-default-history-template"
+                class="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline cursor-pointer"
+              >
+                <Icon name="edit" class="h-3 w-3" />
+                <span>Gunakan Template Default</span>
+              </button>
+            </div>
+            <p class="text-[11px] text-muted mt-0.5 mb-1.5">
+              Gunakan format satu baris per tahun dengan pemisah garis tegak: <code>Tahun | Keterangan peristiwa</code>. Contoh: <code>1995 | Peresmian pendirian sekolah.</code>
+            </p>
+            <textarea
+              id="school_history_milestones"
+              name="school_history_milestones"
+              rows="4"
+              placeholder="1995 | Peresmian pendirian dan operasional perdana satuan pendidikan.&#10;2012 | Perintisan kelas riset olimpiade sains dan laboratorium komputer terpadu.&#10;2025 | Re-akreditasi predikat A (Unggul) dengan nilai ketercapaian SPM mutu prima."
+              class="mt-1 w-full rounded-md border border-border bg-surface p-3 text-xs text-heading font-mono leading-relaxed transition-colors"
+            >{schoolHistoryMilestones}</textarea>
+          </div>
+        </div>
+      </section>
+
+      
+      <!-- TAB 4: SEKILAS PROFIL & VIDEO PROFIL BERANDA -->
+      <section
+        id="tab-video"
+        role="tabpanel"
+        class:list={[
+          "profile-tab-pane space-y-5",
+          activeTabId !== "tab-video" && "hidden",
+        ]}
+      >
+        <div class="pb-3">
+          <div class="flex items-center gap-2">
+            <span
+              class="flex h-6 w-6 items-center justify-center rounded-md bg-primary-light font-display text-xs font-bold text-primary"
+            >
+              4
+            </span>
+            <h2 class="font-display text-base font-bold text-heading">
+              Sekilas Profil & Video Profil Beranda
+            </h2>
+          </div>
+        </div>
+
+        <div class="rounded-lg border border-border bg-surface p-5 space-y-5">
+          <div class="flex items-center justify-between p-2.5 rounded-[6px] border border-border bg-surface-subtle">
+            <div>
+              <span class="block text-xs font-medium text-heading">Status Tampilan di Beranda</span>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                id="school_profile_active"
+                name="school_profile_active"
+                value="true"
+                checked={schoolProfileActive}
+                class="sr-only peer"
+              />
+              <div class="w-9 h-5 bg-border rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+            </label>
+          </div>
+
+          <div>
+            <label
+              for="school_profile_title"
+              class="block text-xs font-semibold text-heading"
+            >
+              Judul Seksi Profil Beranda
+            </label>
+            <input
+              type="text"
+              id="school_profile_title"
+              name="school_profile_title"
+              value={schoolProfileTitle}
+              class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading transition-colors"
+            />
+          </div>
+
+          <div>
+            <label
+              for="school_profile_desc"
+              class="block text-xs font-semibold text-heading"
+            >
+              Ringkasan Narasi Profil
+            </label>
+            <textarea
+              id="school_profile_desc"
+              name="school_profile_desc"
+              rows="3"
+              class="mt-1 w-full rounded-md border border-border bg-surface p-3 text-xs text-heading leading-relaxed transition-colors"
+              >{schoolProfileDesc}</textarea
+            >
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label
+                for="school_vision"
+                class="block text-xs font-semibold text-heading"
+              >
+                Visi Sekolah
+              </label>
+              <textarea
+                id="school_vision"
+                name="school_vision"
+                rows="4"
+                class="mt-1 w-full rounded-md border border-border bg-surface p-3 text-xs text-heading leading-relaxed transition-colors"
+                >{schoolVision}</textarea
+              >
+            </div>
+
+            <div>
+              <label
+                for="school_mission"
+                class="block text-xs font-semibold text-heading"
+              >
+                Misi Sekolah (Poin-poin)
+              </label>
+              <textarea
+                id="school_mission"
+                name="school_mission"
+                rows="4"
+                class="mt-1 w-full rounded-md border border-border bg-surface p-3 text-xs text-heading leading-relaxed transition-colors"
+                >{schoolMission}</textarea
+              >
+            </div>
+          </div>
+
+          <div class="space-y-4 pt-4">
+            <div>
+              <label
+                for="school_video_url"
+                class="block text-xs font-semibold text-heading"
+              >
+                Tautan Video Profil YouTube
+              </label>
+              <input
+                type="url"
+                id="school_video_url"
+                name="school_video_url"
+                value={schoolVideoUrl}
+                placeholder="https://www.youtube.com/watch?v=..."
+                class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading font-mono transition-colors"
+              />
+            </div>
+
+            <!-- Cover Video Thumbnail -->
+            <div class="space-y-2">
+              <label class="block text-xs font-semibold text-heading"
+                >Foto Sampul / Poster Video Profil</label
+              >
+              <div class="flex flex-col sm:flex-row items-start gap-4">
+                <div
+                  class="h-24 w-40 rounded-md border border-border bg-surface-subtle overflow-hidden shrink-0 flex items-center justify-center"
+                >
+                  <img
+                    id="preview-video-cover"
+                    src={schoolVideoThumbnail || "/placeholder-cover.jpg"}
+                    alt="Cover Video"
+                    class="h-full w-full object-cover"
+                    onerror="this.src='/placeholder-cover.jpg'"
+                  />
+                </div>
+                <div class="flex-1 w-full space-y-2">
+                  <input
+                    type="text"
+                    id="school_video_thumbnail"
+                    name="school_video_thumbnail"
+                    value={schoolVideoThumbnail}
+                    placeholder="https://..."
+                    class="h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading font-mono transition-colors"
+                  />
+                  <div class="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      id="btn-pick-video-cover"
+                      class="h-8 rounded-md border border-border bg-surface px-3 text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+                    >
+                      Pilih dari Pustaka Media
+                    </button>
+                    <label
+                      class="h-8 inline-flex items-center rounded-md border border-border bg-surface px-3 text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+                    >
+                      <span>Unggah Cover Baru</span>
+                      <input
+                        type="file"
+                        id="upload-video-cover"
+                        class="hidden"
+                        accept="image/*"
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label
+                  for="school_profile_cta_text"
+                  class="block text-xs font-semibold text-heading"
+                >
+                  Teks Tombol Profil Selengkapnya
+                </label>
+                <input
+                  type="text"
+                  id="school_profile_cta_text"
+                  name="school_profile_cta_text"
+                  value={schoolProfileCtaText}
+                  class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading transition-colors"
+                />
+              </div>
+
+              <div>
+                <label
+                  for="school_profile_cta_url"
+                  class="block text-xs font-semibold text-heading"
+                >
+                  Tautan Tombol Profil
+                </label>
+                <input
+                  type="text"
+                  id="school_profile_cta_url"
+                  name="school_profile_cta_url"
+                  value={schoolProfileCtaUrl}
+                  class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading font-mono transition-colors"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      
+      <!-- TAB 5: LOKASI DAN JAM OPERASIONAL -->
+      <section
+        id="tab-lokasi"
+        role="tabpanel"
+        class:list={[
+          "profile-tab-pane space-y-5",
+          activeTabId !== "tab-lokasi" && "hidden",
+        ]}
+      >
+        <div class="pb-3">
+          <div class="flex items-center gap-2">
+            <span
+              class="flex h-6 w-6 items-center justify-center rounded-md bg-primary-light font-display text-xs font-bold text-primary"
+            >
+              5
+            </span>
+            <h2 class="font-display text-base font-bold text-heading">
+              Lokasi dan Jam Operasional
+            </h2>
+          </div>
+        </div>
+
+        <div class="rounded-lg border border-border bg-surface p-5 space-y-4">
+          <div>
+            <label
+              for="address"
+              class="block text-xs font-semibold text-heading"
+            >
+              Alamat Lengkap Kampus <span class="text-error">*</span>
+            </label>
+            <textarea
+              id="address"
+              name="address"
+              rows="2"
+              required
+              class="mt-1 w-full rounded-md border border-border bg-surface p-3 text-xs text-heading transition-colors"
+              >{address}</textarea
+            >
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label
+                for="province"
+                class="block text-xs font-semibold text-heading"
+              >
+                Provinsi
+              </label>
+              <input
+                type="text"
+                id="province"
+                name="province"
+                value={province}
+                placeholder="Misal: DKI Jakarta, Jawa Barat"
+                class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading transition-colors"
+              />
+            </div>
+
+            <div>
+              <label
+                for="postal_code"
+                class="block text-xs font-semibold text-heading"
+              >
+                Kode Pos
+              </label>
+              <input
+                type="text"
+                id="postal_code"
+                name="postal_code"
+                value={postalCode}
+                class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading font-mono transition-colors"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label
+              for="maps_embed"
+              class="block text-xs font-semibold text-heading"
+            >
+              Tautan Sematan Google Maps (Embed URL)
+            </label>
+            <p class="mt-0.5 text-xs text-muted">
+              Salin tautan dari fitur Bagikan &gt; Sematkan Peta di Google Maps
+              (URL di dalam src="...").
+            </p>
+            <input
+              type="text"
+              id="maps_embed"
+              name="maps_embed"
+              value={mapsEmbed}
+              placeholder="https://www.google.com/maps/embed?pb=..."
+              class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading font-mono transition-colors"
+            />
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label
+                for="operational_hours"
+                class="block text-xs font-semibold text-heading"
+              >
+                Jam Operasional Layanan
+              </label>
+              <input
+                type="text"
+                id="operational_hours"
+                name="operational_hours"
+                value={operationalHours}
+                placeholder="Senin – Jumat: 07.00 – 16.00 WIB"
+                class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading transition-colors"
+              />
+            </div>
+
+            <div>
+              <label
+                for="operational_notes"
+                class="block text-xs font-semibold text-heading"
+              >
+                Catatan Hari Libur
+              </label>
+              <input
+                type="text"
+                id="operational_notes"
+                name="operational_notes"
+                value={operationalNotes}
+                placeholder="Sabtu, Minggu & Hari Libur Nasional: Tutup"
+                class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading transition-colors"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      
+      <!-- TAB 6: TESTIMONI & KISAH ALUMNI BERANDA -->
+      <section
+        id="tab-alumni"
+        role="tabpanel"
+        class:list={[
+          "profile-tab-pane space-y-5",
+          activeTabId !== "tab-alumni" && "hidden",
+        ]}
+      >
+        <div class="pb-3">
+          <div class="flex items-center gap-2">
+            <span
+              class="flex h-6 w-6 items-center justify-center rounded-md bg-primary-light font-display text-xs font-bold text-primary"
+            >
+              6
+            </span>
+            <h2 class="font-display text-base font-bold text-heading">
+              Testimoni & Kisah Alumni Beranda
+            </h2>
+          </div>
+        </div>
+
+        <div class="rounded-lg border border-border bg-surface p-5 space-y-4">
+          <div class="flex items-center justify-between p-2.5 rounded-[6px] border border-border bg-surface-subtle">
+            <div>
+              <span class="block text-xs font-medium text-heading">Status Tampilan di Beranda</span>
+            </div>
+            <label class="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                id="alumni_section_active"
+                name="alumni_section_active"
+                value="true"
+                checked={alumniSectionActive}
+                class="sr-only peer"
+              />
+              <div class="w-9 h-5 bg-border rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+            </label>
+          </div>
+
+          <div>
+            <label
+              for="alumni_section_title"
+              class="block text-xs font-semibold text-heading"
+            >
+              Judul Seksi Testimoni
+            </label>
+            <input
+              type="text"
+              id="alumni_section_title"
+              name="alumni_section_title"
+              value={alumniSectionTitle}
+              class="mt-1 h-9 w-full rounded-md border border-border bg-surface px-3 text-xs text-heading transition-colors"
+            />
+          </div>
+
+          <div>
+            <label
+              for="alumni_section_desc"
+              class="block text-xs font-semibold text-heading"
+            >
+              Deskripsi / Subjudul Testimoni
+            </label>
+            <textarea
+              id="alumni_section_desc"
+              name="alumni_section_desc"
+              rows="2"
+              class="mt-1 w-full rounded-md border border-border bg-surface p-3 text-xs text-heading leading-relaxed transition-colors"
+              >{alumniSectionDesc}</textarea
+            >
+          </div>
+
+          <!-- Shortcut ke CMS Data Tracer Alumni -->
+          <div class="rounded-lg border border-border bg-surface-subtle p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div class="space-y-0.5">
+              <span class="block text-xs font-semibold text-heading">Kelola Isi & Daftar Testimoni Alumni</span>
+              <p class="text-[11px] text-muted">
+                Untuk menambah atau mengedit kutipan, foto, profesi, dan kampus masing-masing alumni, gunakan menu <strong>Tracer Alumni</strong>.
+              </p>
+            </div>
+            <a
+              href="/admin/alumni"
+              class="inline-flex h-8 items-center justify-center gap-1.5 rounded-md border border-border bg-surface px-3 text-xs font-medium text-heading transition-colors hover:bg-surface-subtle hover:text-primary shrink-0"
+            >
+              <span>Buka Menu Alumni</span>
+              <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                <polyline points="15 3 21 3 21 9"></polyline>
+                <line x1="10" y1="14" x2="21" y2="3"></line>
+              </svg>
+            </a>
+          </div>
+
+        </div>
+      </section>
+    </form>
+  </div>
+
+  <MediaPickerModal id="profile-media-picker" />
+
+<script is:inline>
+  function initAdminProfile() {
+    const form = document.getElementById("profile-form");
+    if (!form) return;
+    const btnHeaderSave = document.getElementById("btn-header-save");
+    const headerLabel = document.getElementById("btn-header-label");
+    const iconSave = document.getElementById("btn-header-icon-save");
+    const iconSpinner = document.getElementById("btn-header-spinner");
+    const iconCheck = document.getElementById("btn-header-check");
+
+    // Inputs & Previews
+    const inputPrincipalPhoto = document.getElementById("principal_photo");
+    const previewPrincipalPhoto = document.getElementById(
+      "preview-principal-photo",
+    );
+    const btnPickPrincipalPhoto = document.getElementById(
+      "btn-pick-principal-photo",
+    );
+    const uploadPrincipalPhoto = document.getElementById(
+      "upload-principal-photo",
+    );
+
+    const inputVideoCover = document.getElementById("school_video_thumbnail");
+    const previewVideoCover = document.getElementById("preview-video-cover");
+    const btnPickVideoCover = document.getElementById("btn-pick-video-cover");
+    const uploadVideoCover = document.getElementById("upload-video-cover");
+
+    const inputHistoryPhoto = document.getElementById("school_history_image");
+    const previewHistoryPhoto = document.getElementById("preview-history-photo");
+    const btnPickHistoryPhoto = document.getElementById("btn-pick-history-photo");
+    const uploadHistoryPhoto = document.getElementById("upload-history-photo");
+    const btnDefaultHistoryTemplate = document.getElementById("btn-default-history-template");
+    const inputFoundedYear = document.getElementById("founded_year");
+    const txtHistoryP1 = document.getElementById("school_history_p1");
+    const txtHistoryP2 = document.getElementById("school_history_p2");
+    const txtHistoryP3 = document.getElementById("school_history_p3");
+    const txtHistoryMilestones = document.getElementById("school_history_milestones");
+
+    // Sync Photo Previews
+    inputPrincipalPhoto?.addEventListener("input", () => {
+      previewPrincipalPhoto.src =
+        inputPrincipalPhoto.value.trim() || "/placeholder-avatar.png";
+    });
+    inputVideoCover?.addEventListener("input", () => {
+      previewVideoCover.src =
+        inputVideoCover.value.trim() || "/placeholder-cover.jpg";
+    });
+    inputHistoryPhoto?.addEventListener("input", () => {
+      previewHistoryPhoto.src =
+        inputHistoryPhoto.value.trim() || "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80";
+    });
+
+    // === Sinkronisasi Jenjang → Jenis Satuan Pendidikan ===
+    const SCHOOL_TYPE_MAP = {
+      dasar: [
+        { value: "SD", label: "SD (Kemendikbud)" },
+        { value: "MI", label: "MI (Kemenag)" },
+      ],
+      menengah_pertama: [
+        { value: "SMP", label: "SMP (Kemendikbud)" },
+        { value: "MTs", label: "MTs (Kemenag)" },
+      ],
+      menengah_atas: [
+        { value: "SMA", label: "SMA (Kemendikbud)" },
+        { value: "MA", label: "MA (Kemenag)" },
+        { value: "SMK", label: "SMK (Vokasi)" },
+      ],
+    };
+
+    const selectEducationLevel = document.getElementById("education_level");
+    const selectSchoolType = document.getElementById("school_type");
+    const selectSchoolStatus = document.getElementById("school_status");
+    const selectBoarding = document.getElementById("boarding_available");
+    const hiddenSchoolLevel = document.getElementById("school_level");
+    const simFormTitle = document.getElementById("sim-form-title");
+    const simStatusLabel = document.getElementById("sim-status-label");
+    const simBoardingLabel = document.getElementById("sim-boarding-label");
+    const simTemplateTag = document.getElementById("sim-template-tag");
+
+    // Populate school_type options filtered by education_level
+    function populateSchoolTypes(preserveValue) {
+      if (!selectSchoolType || !selectEducationLevel) return;
+      const level = selectEducationLevel.value;
+      const options = SCHOOL_TYPE_MAP[level] || SCHOOL_TYPE_MAP["menengah_atas"];
+      selectSchoolType.innerHTML = "";
+      let matched = false;
+      options.forEach((opt) => {
+        const el = document.createElement("option");
+        el.value = opt.value;
+        el.textContent = opt.label;
+        if (preserveValue && opt.value === preserveValue) {
+          el.selected = true;
+          matched = true;
+        }
+        selectSchoolType.appendChild(el);
+      });
+      if (!matched && options.length > 0) {
+        selectSchoolType.selectedIndex = 0;
+      }
+      updateSimulation();
+    }
+
+    // Initial populate: restore saved value from server
+    const savedSchoolType = selectSchoolType?.getAttribute("data-saved-value") || "SMA";
+    populateSchoolTypes(savedSchoolType);
+
+    // When jenjang changes: rebuild options, auto-select first
+    selectEducationLevel?.addEventListener("change", () => {
+      populateSchoolTypes(null);
+    });
+
+    // Live Simulation Sync
+    function updateSimulation() {
+      const type = selectSchoolType ? selectSchoolType.value : "SMA";
+      const status = selectSchoolStatus ? selectSchoolStatus.value : "Negeri";
+      const boarding = selectBoarding ? selectBoarding.value === "true" : false;
+
+      if (hiddenSchoolLevel) hiddenSchoolLevel.value = type;
+      if (simFormTitle) simFormTitle.innerText = `Formulir Pendaftaran ${type}`;
+      if (simStatusLabel) simStatusLabel.innerText = status;
+      if (simBoardingLabel) {
+        simBoardingLabel.innerText = boarding
+          ? "Layanan asrama: Tersedia, dapat diaktifkan pada pengaturan pendaftaran"
+          : "Layanan asrama: Tidak tersedia";
+      }
+      if (simTemplateTag) simTemplateTag.innerText = type;
+    }
+
+    selectSchoolType?.addEventListener("change", updateSimulation);
+    selectSchoolStatus?.addEventListener("change", updateSimulation);
+    selectBoarding?.addEventListener("change", updateSimulation);
+
+    // Media Picker Integration
+    btnPickPrincipalPhoto?.addEventListener("click", () => {
+      window.openMediaPicker?.((media) => {
+        if (media?.url) {
+          inputPrincipalPhoto.value = media.url;
+          previewPrincipalPhoto.src = media.url;
+        }
+      });
+    });
+
+    btnPickVideoCover?.addEventListener("click", () => {
+      window.openMediaPicker?.((media) => {
+        if (media?.url) {
+          inputVideoCover.value = media.url;
+          previewVideoCover.src = media.url;
+        }
+      });
+    });
+
+    btnPickHistoryPhoto?.addEventListener("click", () => {
+      window.openMediaPicker?.((media) => {
+        if (media?.url) {
+          inputHistoryPhoto.value = media.url;
+          previewHistoryPhoto.src = media.url;
+        }
+      });
+    });
+
+    // File Upload Handler
+    async function handleUpload(file, inputEl, previewEl) {
+      if (!file) return;
+      const fd = new FormData();
+      fd.append("file", file);
+      try {
+        const res = await fetch("/api/admin/media/upload", {
+          method: "POST",
+          body: fd,
+        });
+        const data = await res.json();
+        if (data.success && data.media?.url) {
+          inputEl.value = data.media.url;
+          previewEl.src = data.media.url;
+        } else {
+          alert(data.error || "Gagal mengunggah berkas.");
+        }
+      } catch {
+        alert("Terjadi kesalahan jaringan saat mengunggah gambar.");
+      }
+    }
+
+    uploadPrincipalPhoto?.addEventListener("change", (e) => {
+      handleUpload(
+        e.target.files?.[0],
+        inputPrincipalPhoto,
+        previewPrincipalPhoto,
+      );
+    });
+
+    uploadVideoCover?.addEventListener("change", (e) => {
+      handleUpload(e.target.files?.[0], inputVideoCover, previewVideoCover);
+    });
+
+    uploadHistoryPhoto?.addEventListener("change", (e) => {
+      handleUpload(e.target.files?.[0], inputHistoryPhoto, previewHistoryPhoto);
+    });
+
+    // Helper Template Sambutan Default
+    const btnDefaultQuoteTemplate = document.getElementById("btn-default-quote-template");
+    const txtQuote = document.getElementById("principal_welcome_quote");
+    const inputSchoolName = document.getElementById("school_name");
+
+    btnDefaultQuoteTemplate?.addEventListener("click", () => {
+      const currentSchool = inputSchoolName && inputSchoolName.value ? inputSchoolName.value.trim() : "SMAN 1 Unggulan";
+      const defaultText = "Assalamu’alaikum Warahmatullahi Wabarakatuh, Salam Sejahtera bagi kita semua.\n\nPuji syukur kita panjatkan ke hadirat Tuhan Yang Maha Esa atas limpahan rahmat dan karunia-Nya. Selamat datang di portal resmi " + currentSchool + ". Kami berkomitmen menyelenggarakan ekosistem pendidikan berstandar tinggi yang memadukan keunggulan akademik, riset sains, dan pembinaan budi pekerti luhur.\n\nMelalui bimbingan para pendidik yang berdedikasi serta fasilitas pembelajaran modern, kami mendampingi setiap peserta didik untuk menumbuhkan nalar kritis, integritas karakter, dan kesiapan menyongsong masa depan di era global.\n\nTerima kasih atas kepercayaan dan kemitraan harmonis yang senantiasa terjalin bersama seluruh orang tua, alumni, dan masyarakat luas. Pintu kami senantiasa terbuka untuk melangkah bersama demi kemajuan anak-anak kita.\n\nWassalamu’alaikum Warahmatullahi Wabarakatuh.";
+
+      if (txtQuote) {
+        txtQuote.value = defaultText;
+        txtQuote.focus();
+      }
+    });
+
+    // Helper Template Sejarah Default
+    btnDefaultHistoryTemplate?.addEventListener("click", () => {
+      const currentSchool = inputSchoolName && inputSchoolName.value ? inputSchoolName.value.trim() : "SMAN 1 Unggulan";
+      const year = inputFoundedYear && inputFoundedYear.value ? inputFoundedYear.value.trim() : "1995";
+
+      if (txtHistoryP1) {
+        txtHistoryP1.value = "Perjalanan " + currentSchool + " bermula pada tahun " + year + " atas prakarsa para tokoh pendidikan dan dewan guru perintis untuk menghadirkan pusat pembelajaran unggulan berstandar nasional. Mengawali kiprah dengan rombongan belajar perdana, sekolah memfokuskan pembinaan pada penguasaan dasar ilmu sains dan budi pekerti disiplin.";
+      }
+      if (txtHistoryP2) {
+        txtHistoryP2.value = "Dengan dukungan masyarakat dan komitmen berkelanjutan pemerintah daerah, sarana pembelajaran terus diperluas — mulai dari pembangunan ruang laboratorium terpadu, perpustakaan digital, hingga sarana olahraga representatif.";
+      }
+      if (txtHistoryP3) {
+        txtHistoryP3.value = "Memasuki dekade modern, " + currentSchool + " meraih Akreditasi A (Unggul) secara beruntun dari Badan Akreditasi Nasional. Sekolah mempelopori integrasi kurikulum riset aplikatif, pemanfaatan kecerdasan buatan dalam pembelajaran, serta program pertukaran budaya. Kini, ribuan alumni almamater telah berkiprah di perguruan tinggi kedinasan, PTN terkemuka, maupun kampus bergengsi mancanegara.";
+      }
+      if (txtHistoryMilestones) {
+        txtHistoryMilestones.value = year + " | Peresmian pendirian dan operasional perdana satuan pendidikan.\n2012 | Perintisan kelas riset olimpiade sains dan laboratorium komputer terpadu.\n2025 | Re-akreditasi predikat A (Unggul) dengan nilai ketercapaian SPM mutu prima.";
+      }
+    });
+
+    // Save Form Handler
+    async function saveProfile() {
+      setLoading(true);
+
+      const fd = new FormData(form);
+      const payload = {};
+      fd.forEach((val, key) => {
+        payload[key] = String(val).trim();
+      });
+
+      // Explicitly serialize switch toggles
+      ["principal_welcome_active", "school_profile_active", "alumni_section_active"].forEach((key) => {
+        const el = form.elements[key];
+        if (el && el.type === "checkbox") {
+          payload[key] = el.checked ? "true" : "false";
+        }
+      });
+
+      try {
+        const res = await fetch("/api/admin/settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await res.json();
+        setLoading(false);
+
+        if (data.success) {
+          iconSave?.classList.add("hidden");
+          iconSpinner?.classList.add("hidden");
+          iconCheck?.classList.remove("hidden");
+          if (headerLabel) headerLabel.innerText = "Tersimpan";
+          setTimeout(() => {
+            iconCheck?.classList.add("hidden");
+            iconSave?.classList.remove("hidden");
+            if (headerLabel) headerLabel.innerText = "Simpan Perubahan";
+          }, 2500);
+        } else {
+          iconSave?.classList.remove("hidden");
+          iconSpinner?.classList.add("hidden");
+          iconCheck?.classList.add("hidden");
+          alert(data.error || "Gagal menyimpan data profil.");
+        }
+      } catch {
+        setLoading(false);
+        iconSave?.classList.remove("hidden");
+        iconSpinner?.classList.add("hidden");
+        iconCheck?.classList.add("hidden");
+        alert("Terjadi kesalahan jaringan.");
+      }
+    }
+
+    function setLoading(isLoading) {
+      if (btnHeaderSave) btnHeaderSave.disabled = isLoading;
+      const text = isLoading ? "Menyimpan..." : "Simpan Perubahan";
+      if (headerLabel) headerLabel.innerText = text;
+      if (isLoading) {
+        iconSave?.classList.add("hidden");
+        iconSpinner?.classList.remove("hidden");
+        iconCheck?.classList.add("hidden");
+      } else {
+        iconSpinner?.classList.add("hidden");
+      }
+    }
+
+    // Tabs Navigation (Zero-Load Pattern)
+    const tabButtons = document.querySelectorAll(".profile-tab-btn");
+    const tabPanes = document.querySelectorAll(".profile-tab-pane");
+
+    function switchTab(targetId, updateHistory = true) {
+      tabButtons.forEach((btn) => {
+        const isActive = btn.getAttribute("data-tab") === targetId;
+        btn.setAttribute("aria-selected", isActive ? "true" : "false");
+        btn.className = isActive
+          ? "profile-tab-btn bg-primary font-semibold text-white"
+          : "profile-tab-btn font-medium text-muted hover:text-heading";
+      });
+
+      tabPanes.forEach((pane) => {
+        if (pane.id === targetId) {
+          pane.classList.remove("hidden");
+        } else {
+          pane.classList.add("hidden");
+        }
+      });
+
+      if (updateHistory) {
+        const cleanName = targetId.replace("tab-", "");
+        const url = new URL(window.location.href);
+        url.searchParams.set("tab", cleanName);
+        window.history.replaceState(null, "", url.toString());
+      }
+    }
+
+    tabButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const targetId = btn.getAttribute("data-tab");
+        if (targetId) switchTab(targetId);
+      });
+    });
+
+    window.addEventListener("popstate", () => {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get("tab");
+      if (tab) {
+        const id = tab.startsWith("tab-") ? tab : `tab-${tab}`;
+        if (document.getElementById(id)) switchTab(id, false);
+      } else {
+        switchTab("tab-identitas", false);
+      }
+    });
+
+    form?.addEventListener("submit", (e) => {
+      e.preventDefault();
+      saveProfile();
+    });
+
+    btnHeaderSave?.addEventListener("click", () => {
+      const invalidEl = form?.querySelector(":invalid");
+      if (invalidEl) {
+        const pane = invalidEl.closest(".profile-tab-pane");
+        if (pane && pane.classList.contains("hidden")) {
+          switchTab(pane.id);
+        }
+        form?.reportValidity();
+        return;
+      }
+      saveProfile();
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initAdminProfile);
+  } else {
+    initAdminProfile();
+  }
+</script>
+</AdminLayout>

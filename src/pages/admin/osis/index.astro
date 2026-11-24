@@ -1,0 +1,2123 @@
+---
+import AdminLayout from "../../../layouts/AdminLayout.astro";
+import MediaPickerModal from "../../../components/MediaPickerModal.astro";
+import Icon from "../../../components/Icon.astro";
+import { db, settings } from "../../../db";
+
+export const prerender = false;
+
+// 1. Ambil seluruh konfigurasi dari tabel settings
+const allSettings = await db.select().from(settings);
+const settingMap = allSettings.reduce(
+  (acc, curr) => {
+    acc[curr.key] = curr.value;
+    return acc;
+  },
+  {} as Record<string, string>,
+);
+
+// 2. Identifikasi Lembaga & Karakteristik Organisasi
+const schoolName = settingMap["school_name"] || "SMAN 1 Unggulan";
+const schoolType = (
+  settingMap["school_type"] ||
+  settingMap["school_level"] ||
+  "SMA"
+).toUpperCase();
+const isMadrasah = ["MA", "MTS", "MI"].includes(schoolType);
+
+// Tipe organisasi default: OSIM untuk madrasah, OSIS untuk sekolah negeri/umum
+const defaultOrgType = isMadrasah ? "OSIM" : "OSIS";
+const orgTypeSetting = settingMap["student_org_type"] || "auto";
+const resolvedOrgType =
+  orgTypeSetting === "auto" ? defaultOrgType : orgTypeSetting;
+
+const orgFullName =
+  resolvedOrgType === "OSIM"
+    ? "Organisasi Santri / Siswa Intra Madrasah (OSIM)"
+    : "Organisasi Siswa Intra Sekolah (OSIS)";
+
+// Konfigurasi Field Organisasi
+const rawOrgName =
+  settingMap["student_org_name"] || `${resolvedOrgType} ${schoolName}`;
+const orgName =
+  resolvedOrgType === "OSIM"
+    ? rawOrgName.replace(/^OSIS\b/i, "OSIM")
+    : resolvedOrgType === "OSIS"
+      ? rawOrgName.replace(/^OSIM\b/i, "OSIS")
+      : rawOrgName;
+
+const orgPeriod = settingMap["student_org_period"] || "2025/2026";
+const orgTagline =
+  settingMap["student_org_tagline"] ||
+  "Bersinergi, Berkarakter, dan Berintegritas Memimpin Perubahan";
+const orgLogo = settingMap["student_org_logo"] || "";
+const orgBanner = settingMap["student_org_banner"] || "";
+const orgIsActive = settingMap["student_org_active"] !== "false";
+
+// Struktur Pengurus Inti (BPH) & Pembina dengan Foto
+const advisorName =
+  settingMap["student_org_advisor"] || "Drs. H. Mulyadi, M.Pd.";
+const rawAdvisorTitle =
+  settingMap["student_org_advisor_title"] ||
+  `Pembina ${resolvedOrgType} & Waka Kesiswaan`;
+const advisorTitle =
+  resolvedOrgType === "OSIM"
+    ? rawAdvisorTitle.replace(/\bOSIS\b/g, "OSIM")
+    : resolvedOrgType === "OSIS"
+      ? rawAdvisorTitle.replace(/\bOSIM\b/g, "OSIS")
+      : rawAdvisorTitle;
+const advisorPhoto = settingMap["student_org_advisor_photo"] || "";
+
+const leaderName = settingMap["student_org_leader"] || "Muhammad Zaki Pratama";
+const leaderPhoto = settingMap["student_org_leader_photo"] || "";
+
+const deputyLeaderName = settingMap["student_org_deputy"] || "Alya Khairunnisa";
+const deputyLeaderPhoto = settingMap["student_org_deputy_photo"] || "";
+
+const secretaryName = settingMap["student_org_secretary"] || "Nadia Rahmawati";
+const secretaryPhoto = settingMap["student_org_secretary_photo"] || "";
+
+const treasurerName = settingMap["student_org_treasurer"] || "Rizky Ramadhan";
+const treasurerPhoto = settingMap["student_org_treasurer_photo"] || "";
+
+// Visi & Misi
+const orgVision =
+  settingMap["student_org_vision"] ||
+  "Mewujudkan wadah kesiswaan yang aspiratif, berakhlak mulia, berprestasi dalam sains dan teknologi, serta berjiwa kepemimpinan responsif di era global.";
+const orgMission =
+  settingMap["student_org_mission"] ||
+  "1. Menumbuhkan ketakwaan dan keteladanan akhlak dalam setiap kegiatan kesiswaan.\n2. Mengakomodasi dan memperjuangkan aspirasi siswa secara demokratis dan transparan.\n3. Mengembangkan kreativitas, literasi riset digital, dan minat bakat keolahragaan maupun seni.\n4. Menjalin kemitraan positif antarsekolah dan organisasi kepemudaan daerah.";
+
+// Seksi Bidang (Sekbid) / Departemen dengan Anggota & Proker per Sekbid
+const defaultDepartments = [
+  {
+    name: "Keagamaan dan Budi Pekerti",
+    lead: "Fathur Rahman",
+    members: [
+      "Ahmad Fauzi (XI-1)",
+      "Siti Aisyah (X-3)",
+      "Bilal Ramadhan (XI-4)",
+      "Nurul Hidayah (X-2)",
+    ],
+    proker:
+      "Peringatan Hari Besar Keagamaan, Gerakan Infak Jum'at, Pembiasaan Doa & Kajian Harian",
+  },
+  {
+    name: "Kepemimpinan, Kedisiplinan & Bela Negara",
+    lead: "Dimas Anggara",
+    members: [
+      "Rizky Pratama (XI-2)",
+      "Nadia Safitri (X-1)",
+      "Danu Wijaya (XI-5)",
+    ],
+    proker:
+      "Latihan Dasar Kepemimpinan Siswa (LDKS), Pasukan Pengibar Bendera, Apel Disiplin Kampus",
+  },
+  {
+    name: "Akademik, Riset Ilmiah & Teknologi",
+    lead: "Zahra Salsabila",
+    members: [
+      "Alif Hidayatullah (XI-3)",
+      "Kayla Putri (X-5)",
+      "Farhan Maulana (XI-1)",
+    ],
+    proker:
+      "Klinik Olimpiade Sains & KIR, Pelatihan Literasi Media & Koding, Science Fair Tahunan",
+  },
+  {
+    name: "Apresiasi Seni Budaya & Olahraga",
+    lead: "Bagus Setiawan",
+    members: [
+      "Dina Mariana (XI-4)",
+      "Gilang Ramadhan (X-2)",
+      "Rendi Saputra (XI-3)",
+    ],
+    proker:
+      "Pekan Olahraga Antar Kelas (Classmeeting), Pensi Pentas Kreativitas Siswa, Liga Futsal & Basket",
+  },
+  {
+    name: "Hubungan Masyarakat & Publikasi Digital",
+    lead: "Tiara Anindya",
+    members: [
+      "Salma Nabila (XI-2)",
+      "Hendra Kusuma (X-4)",
+      "Naufal Zaki (X-1)",
+    ],
+    proker:
+      "Pengelolaan Media Sosial Resmi, Buletin Cetak/Digital Warta Siswa, Dokumentasi Multimedia Kegiatan",
+  },
+];
+
+let departmentsList: any[] = defaultDepartments;
+try {
+  if (settingMap["student_org_departments"]) {
+    const parsed = JSON.parse(settingMap["student_org_departments"]);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      departmentsList = parsed.map((dept: any) => {
+        let members = dept.members;
+        if (typeof members === "string") {
+          members = members
+            .split(",")
+            .map((s: string) => s.trim())
+            .filter(Boolean);
+        } else if (!Array.isArray(members)) {
+          members = [];
+        }
+        return {
+          name: dept.name || "",
+          lead: dept.lead || "",
+          members,
+          proker: dept.proker || "",
+        };
+      });
+    }
+  }
+} catch {
+  departmentsList = defaultDepartments;
+}
+
+// Media Sosial & Kontak
+const orgInstagram = settingMap["student_org_instagram"] || "";
+const orgTiktok = settingMap["student_org_tiktok"] || "";
+const orgYoutube = settingMap["student_org_youtube"] || "";
+const orgEmail = settingMap["student_org_email"] || "";
+
+// Daftar Pengurus Harian & Pembina Terpadu
+const staffOfficials = [
+  {
+    id: "advisor",
+    roleKey: "advisor",
+    roleName: "Guru Pembina Kesiswaan",
+    name: advisorName,
+    title: advisorTitle,
+    photo: advisorPhoto,
+    nameInputId: "student_org_advisor",
+    titleInputId: "student_org_advisor_title",
+    photoInputId: "student_org_advisor_photo",
+  },
+  {
+    id: "leader",
+    roleKey: "leader",
+    roleName: "Ketua Umum",
+    name: leaderName,
+    title: `Ketua Umum ${resolvedOrgType}`,
+    photo: leaderPhoto,
+    nameInputId: "student_org_leader",
+    titleInputId: "",
+    photoInputId: "student_org_leader_photo",
+  },
+  {
+    id: "deputy",
+    roleKey: "deputy",
+    roleName: "Wakil Ketua Umum",
+    name: deputyLeaderName,
+    title: "Koordinator Program & Lapangan",
+    photo: deputyLeaderPhoto,
+    nameInputId: "student_org_deputy",
+    titleInputId: "",
+    photoInputId: "student_org_deputy_photo",
+  },
+  {
+    id: "secretary",
+    roleKey: "secretary",
+    roleName: "Sekretaris Umum",
+    name: secretaryName,
+    title: "Administrasi & Persuratan",
+    photo: secretaryPhoto,
+    nameInputId: "student_org_secretary",
+    titleInputId: "",
+    photoInputId: "student_org_secretary_photo",
+  },
+  {
+    id: "treasurer",
+    roleKey: "treasurer",
+    roleName: "Bendahara Umum",
+    name: treasurerName,
+    title: "Pengelolaan Anggaran & Keuangan",
+    photo: treasurerPhoto,
+    nameInputId: "student_org_treasurer",
+    titleInputId: "",
+    photoInputId: "student_org_treasurer_photo",
+  },
+];
+---
+
+<AdminLayout
+  title={`Manajemen ${resolvedOrgType}`}
+  activeNav="osis"
+  settingsMap={settingMap}
+>
+  <div class="space-y-6 max-w-5xl">
+    <!-- Header Halaman & Action Bar Kontekstual -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5">
+      <div>
+        <div class="flex items-center gap-2.5">
+          <h1 class="font-display text-xl font-bold tracking-tight text-heading">
+            Manajemen {resolvedOrgType}
+          </h1>
+          <!-- Indikator Perubahan Belum Disimpan -->
+          <span
+            id="unsaved-badge"
+            class="hidden rounded-[4px] bg-warning-light px-2 py-0.5 font-body text-[11px] font-semibold text-warning-text border border-warning animate-pulse"
+          >
+            Perubahan belum disimpan
+          </span>
+        </div>
+        <p class="font-body text-xs text-muted mt-1 leading-relaxed">
+          Kelola profil, pengurus, bidang, dan program kerja {orgFullName}.
+        </p>
+      </div>
+
+      <div class="flex items-center gap-2.5 shrink-0">
+        <a
+          href="/osis"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex h-[38px] items-center justify-center gap-1.5 rounded-[6px] border border-border bg-surface px-3.5 font-body text-xs font-semibold text-heading transition-colors hover:bg-surface-subtle shadow-xs"
+        >
+          <svg
+            class="h-3.5 w-3.5 text-primary"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+            />
+          </svg>
+          <span>Halaman Publik</span>
+        </a>
+        <button
+          type="button"
+          id="btn-header-save"
+          class="inline-flex h-[38px] items-center justify-center gap-2 rounded-[6px] bg-primary px-4 font-body text-sm font-medium text-white transition-all duration-200 hover:-translate-y-[1px] hover:bg-primary-hover hover:shadow-(--shadow-button-glow) cursor-pointer"
+        >
+          <Icon name="save" class="h-3.5 w-3.5" />
+          <span id="header-save-text">Simpan Perubahan</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Alert / Banner Feedback -->
+    <div
+      id="status-banner"
+      class="hidden rounded-[8px] p-3.5 text-xs font-medium"
+    ></div>
+
+    <!-- File Input Tersembunyi untuk Direct Upload -->
+    <input type="file" id="direct-file-input" accept="image/*" class="hidden" />
+
+    <!-- Form Utama Konfigurasi -->
+    <form id="form-osis" class="space-y-6">
+      <!-- Navigasi Section Interaktif (01 s/d 06) Sesuai Rekomendasi Struktur -->
+      <nav
+        class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5"
+        aria-label="Navigasi Bagian Manajemen"
+      >
+        <button
+          type="button"
+          data-tab-target="section-identity"
+          class="tab-nav-card active text-left p-3 rounded-[8px] border transition-all cursor-pointer bg-primary border-primary text-white shadow-xs"
+        >
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="tab-card-badge font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-[4px] bg-surface text-heading">
+              01
+            </span>
+          </div>
+          <div class="tab-card-title font-display text-xs font-bold leading-snug">
+            Identitas organisasi
+          </div>
+          <div class="tab-card-desc font-body text-[11px] leading-tight mt-1 text-white/80 line-clamp-1">
+            Nama, slogan, periode
+          </div>
+        </button>
+
+        <button
+          type="button"
+          data-tab-target="section-media"
+          class="tab-nav-card text-left p-3 rounded-[8px] border transition-all cursor-pointer bg-surface border-border text-heading hover:bg-surface-subtle"
+        >
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="tab-card-badge font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-[4px] bg-surface-subtle border border-border text-muted">
+              02
+            </span>
+          </div>
+          <div class="tab-card-title font-display text-xs font-bold leading-snug">
+            Logo & dokumentasi
+          </div>
+          <div class="tab-card-desc font-body text-[11px] leading-tight mt-1 text-muted line-clamp-1">
+            Logo dan foto bersama
+          </div>
+        </button>
+
+        <button
+          type="button"
+          data-tab-target="section-officials"
+          class="tab-nav-card text-left p-3 rounded-[8px] border transition-all cursor-pointer bg-surface border-border text-heading hover:bg-surface-subtle"
+        >
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="tab-card-badge font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-[4px] bg-surface-subtle border border-border text-muted">
+              03
+            </span>
+          </div>
+          <div class="tab-card-title font-display text-xs font-bold leading-snug">
+            Pengurus & pembina
+          </div>
+          <div class="tab-card-desc font-body text-[11px] leading-tight mt-1 text-muted line-clamp-1">
+            Guru pembina & pengurus
+          </div>
+        </button>
+
+        <button
+          type="button"
+          data-tab-target="section-vision"
+          class="tab-nav-card text-left p-3 rounded-[8px] border transition-all cursor-pointer bg-surface border-border text-heading hover:bg-surface-subtle"
+        >
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="tab-card-badge font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-[4px] bg-surface-subtle border border-border text-muted">
+              04
+            </span>
+          </div>
+          <div class="tab-card-title font-display text-xs font-bold leading-snug">
+            Visi dan misi
+          </div>
+          <div class="tab-card-desc font-body text-[11px] leading-tight mt-1 text-muted line-clamp-1">
+            Arah & tujuan organisasi
+          </div>
+        </button>
+
+        <button
+          type="button"
+          data-tab-target="section-departments"
+          class="tab-nav-card text-left p-3 rounded-[8px] border transition-all cursor-pointer bg-surface border-border text-heading hover:bg-surface-subtle"
+        >
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="tab-card-badge font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-[4px] bg-surface-subtle border border-border text-muted">
+              05
+            </span>
+          </div>
+          <div class="tab-card-title font-display text-xs font-bold leading-snug">
+            Bidang & proker
+          </div>
+          <div class="tab-card-desc font-body text-[11px] leading-tight mt-1 text-muted line-clamp-1">
+            Koordinator, anggota, proker
+          </div>
+        </button>
+
+        <button
+          type="button"
+          data-tab-target="section-social"
+          class="tab-nav-card text-left p-3 rounded-[8px] border transition-all cursor-pointer bg-surface border-border text-heading hover:bg-surface-subtle"
+        >
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="tab-card-badge font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-[4px] bg-surface-subtle border border-border text-muted">
+              06
+            </span>
+          </div>
+          <div class="tab-card-title font-display text-xs font-bold leading-snug">
+            Media sosial & kontak
+          </div>
+          <div class="tab-card-desc font-body text-[11px] leading-tight mt-1 text-muted line-clamp-1">
+            Kanal komunikasi resmi
+          </div>
+        </button>
+      </nav>
+
+      <!-- SECTION 01: IDENTITAS ORGANISASI -->
+      <section
+        id="section-identity"
+        class="tab-pane rounded-[12px] border border-border bg-surface p-6 space-y-5 shadow-hairline"
+      >
+        <div class="pb-3 flex items-center justify-between">
+          <div>
+            <h2 class="font-display text-sm font-bold text-heading">
+              01. Identitas & Nomenklatur Lembaga
+            </h2>
+          </div>
+          <span class="font-mono text-[11px] text-muted">ID: student_org</span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label
+              for="student_org_type"
+              class="block font-body text-xs font-semibold text-heading mb-1.5"
+            >
+              Nomenklatur Organisasi
+            </label>
+            <select
+              id="student_org_type"
+              name="student_org_type"
+              class="h-[40px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading transition-colors"
+            >
+              <option value="auto" selected={orgTypeSetting === "auto"}>
+                Otomatis ({defaultOrgType} -{" "}
+                {isMadrasah ? "Madrasah" : "Sekolah Umum"})
+              </option>
+              <option value="OSIS" selected={orgTypeSetting === "OSIS"}>
+                OSIS (Sekolah Umum / Negeri)
+              </option>
+              <option value="OSIM" selected={orgTypeSetting === "OSIM"}>
+                OSIM (Madrasah Kemenag)
+              </option>
+            </select>
+            <p class="font-body text-[11px] text-muted mt-1">
+              Mengatur label di sidebar dan portal publik.
+            </p>
+          </div>
+
+          <div>
+            <label
+              for="student_org_name"
+              class="block font-body text-xs font-semibold text-heading mb-1.5"
+            >
+              Nama Lengkap Organisasi <span class="text-error">*</span>
+            </label>
+            <input
+              id="student_org_name"
+              name="student_org_name"
+              type="text"
+              required
+              value={orgName}
+              placeholder="Contoh: OSIM SMAN 1 Unggulan"
+              class="h-[40px] w-full rounded-[6px] border border-border bg-surface px-3.5 font-body text-xs text-heading placeholder:text-muted/60 transition-colors"
+            />
+          </div>
+
+          <div>
+            <label
+              for="student_org_period"
+              class="block font-body text-xs font-semibold text-heading mb-1.5"
+            >
+              Periode / Masa Bakti <span class="text-error">*</span>
+            </label>
+            <input
+              id="student_org_period"
+              name="student_org_period"
+              type="text"
+              required
+              value={orgPeriod}
+              placeholder="Contoh: 2025/2026"
+              class="h-[40px] w-full rounded-[6px] border border-border bg-surface px-3.5 font-body text-xs text-heading placeholder:text-muted/60 transition-colors"
+            />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div class="md:col-span-3">
+            <label
+              for="student_org_tagline"
+              class="block font-body text-xs font-semibold text-heading mb-1.5"
+            >
+              Slogan / Tagline
+            </label>
+            <input
+              id="student_org_tagline"
+              name="student_org_tagline"
+              type="text"
+              value={orgTagline}
+              placeholder="Contoh: Bersinergi, Berkarakter, dan Berintegritas Memimpin Perubahan"
+              class="h-[40px] w-full rounded-[6px] border border-border bg-surface px-3.5 font-body text-xs text-heading placeholder:text-muted/60 transition-colors"
+            />
+          </div>
+
+          <div>
+            <label class="block font-body text-xs font-semibold text-heading mb-1.5">
+              Status Halaman Publik
+            </label>
+            <div class="flex items-center gap-3 h-[40px]">
+              <input
+                type="hidden"
+                id="student_org_active"
+                name="student_org_active"
+                value={orgIsActive ? "true" : "false"}
+              />
+              <button
+                type="button"
+                id="btn-toggle-org-active"
+                role="switch"
+                aria-checked={orgIsActive ? "true" : "false"}
+                class:list={[
+                  "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden",
+                  orgIsActive ? "bg-primary" : "bg-border",
+                ]}
+                aria-label="Status visibilitas halaman publik OSIS"
+              >
+                <span class="sr-only">Status Halaman Publik OSIS</span>
+                <span
+                  aria-hidden="true"
+                  id="thumb-org-active"
+                  class:list={[
+                    "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out",
+                    orgIsActive ? "translate-x-4" : "translate-x-0",
+                  ]}
+                />
+              </button>
+              <span
+                id="label-org-active"
+                class="font-body text-xs font-medium text-body"
+              >
+                {orgIsActive
+                  ? "Aktif (Dapat Diakses Publik)"
+                  : "Nonaktif (Disembunyikan)"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div
+          id="notice-org-inactive"
+          class={`rounded-[8px] border border-border bg-surface-subtle p-3 text-xs text-muted flex items-center gap-2 ${orgIsActive ? "hidden" : ""}`}
+        >
+          <span>ℹ️</span>
+          <span>
+            Data tetap tersimpan aman di CMS, namun halaman website publik
+            disembunyikan untuk sementara.
+          </span>
+        </div>
+      </section>
+
+      <!-- SECTION 02: LOGO & DOKUMENTASI BANNER -->
+      <section
+        id="section-media"
+        class="tab-pane hidden rounded-[12px] border border-border bg-surface p-6 space-y-5 shadow-hairline"
+      >
+        <div class="pb-3">
+          <h2 class="font-display text-sm font-bold text-heading">
+            02. Lambang & Dokumentasi Utama
+          </h2>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <!-- Card Logo -->
+          <div class="rounded-[8px] border border-border p-5 bg-surface-subtle space-y-4">
+            <span class="block font-body text-xs font-bold text-heading">
+              Logo Resmi {resolvedOrgType}
+            </span>
+            <div class="flex items-center gap-4">
+              <div class="h-20 w-20 rounded-[8px] border border-border bg-surface flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
+                <img
+                  id="preview-org-logo"
+                  src={orgLogo || "/favicon.svg"}
+                  alt="Logo"
+                  class="h-full w-full object-contain p-2"
+                  onerror="this.src='/favicon.svg'"
+                />
+              </div>
+              <input
+                type="hidden"
+                id="student_org_logo"
+                name="student_org_logo"
+                value={orgLogo}
+              />
+
+              <div class="space-y-2 flex-1">
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    class="btn-pick-image inline-flex h-8 items-center justify-center rounded-[6px] bg-primary text-white px-3 text-xs font-medium hover:bg-primary-hover transition-colors cursor-pointer shadow-xs"
+                    data-target-input="student_org_logo"
+                    data-preview-img="preview-org-logo"
+                    data-default-img="/favicon.svg"
+                  >
+                    Ganti Logo
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-clear-image text-xs text-error hover:underline cursor-pointer"
+                    data-target-input="student_org_logo"
+                    data-preview-img="preview-org-logo"
+                    data-default-img="/favicon.svg"
+                  >
+                    Hapus
+                  </button>
+                </div>
+                <p class="font-body text-[11px] text-muted">
+                  Format PNG transparan atau SVG dianjurkan.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card Banner -->
+          <div class="rounded-[8px] border border-border p-5 bg-surface-subtle space-y-4">
+            <span class="block font-body text-xs font-bold text-heading">
+              Foto Bersama / Banner Pengurus
+            </span>
+            <div class="flex items-center gap-4">
+              <div class="h-20 w-32 rounded-[8px] border border-border bg-surface flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
+                <img
+                  id="preview-org-banner"
+                  src={
+                    orgBanner ||
+                    "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=600&q=80"
+                  }
+                  alt="Banner"
+                  class="h-full w-full object-cover"
+                  onerror="this.src='https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=600&q=80'"
+                />
+              </div>
+              <input
+                type="hidden"
+                id="student_org_banner"
+                name="student_org_banner"
+                value={orgBanner}
+              />
+
+              <div class="space-y-2 flex-1">
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    class="btn-pick-image inline-flex h-8 items-center justify-center rounded-[6px] bg-primary text-white px-3 text-xs font-medium hover:bg-primary-hover transition-colors cursor-pointer shadow-xs"
+                    data-target-input="student_org_banner"
+                    data-preview-img="preview-org-banner"
+                    data-default-img="https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=600&q=80"
+                  >
+                    Ganti Banner
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-clear-image text-xs text-error hover:underline cursor-pointer"
+                    data-target-input="student_org_banner"
+                    data-preview-img="preview-org-banner"
+                    data-default-img=""
+                  >
+                    Hapus
+                  </button>
+                </div>
+                <p class="font-body text-[11px] text-muted">
+                  Rasio 16:9 atau landscape kegiatan.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 03: PENGURUS & PEMBINA (POLA KONSISTEN) -->
+      <section
+        id="section-officials"
+        class="tab-pane hidden rounded-[12px] border border-border bg-surface p-6 space-y-5 shadow-hairline"
+      >
+        <div class="pb-3 flex items-center justify-between">
+          <div>
+            <h2 class="font-display text-sm font-bold text-heading">
+              03. Pengurus Harian & Pembina
+            </h2>
+          </div>
+        </div>
+
+        <!-- Hidden input fields untuk 5 pengurus & pembina -->
+        <input
+          type="hidden"
+          id="student_org_advisor"
+          name="student_org_advisor"
+          value={advisorName}
+        />
+        <input
+          type="hidden"
+          id="student_org_advisor_title"
+          name="student_org_advisor_title"
+          value={advisorTitle}
+        />
+        <input
+          type="hidden"
+          id="student_org_advisor_photo"
+          name="student_org_advisor_photo"
+          value={advisorPhoto}
+        />
+
+        <input
+          type="hidden"
+          id="student_org_leader"
+          name="student_org_leader"
+          value={leaderName}
+        />
+        <input
+          type="hidden"
+          id="student_org_leader_photo"
+          name="student_org_leader_photo"
+          value={leaderPhoto}
+        />
+
+        <input
+          type="hidden"
+          id="student_org_deputy"
+          name="student_org_deputy"
+          value={deputyLeaderName}
+        />
+        <input
+          type="hidden"
+          id="student_org_deputy_photo"
+          name="student_org_deputy_photo"
+          value={deputyLeaderPhoto}
+        />
+
+        <input
+          type="hidden"
+          id="student_org_secretary"
+          name="student_org_secretary"
+          value={secretaryName}
+        />
+        <input
+          type="hidden"
+          id="student_org_secretary_photo"
+          name="student_org_secretary_photo"
+          value={secretaryPhoto}
+        />
+
+        <input
+          type="hidden"
+          id="student_org_treasurer"
+          name="student_org_treasurer"
+          value={treasurerName}
+        />
+        <input
+          type="hidden"
+          id="student_org_treasurer_photo"
+          name="student_org_treasurer_photo"
+          value={treasurerPhoto}
+        />
+
+        <!-- Daftar Pengurus Ringkas & Terpadu -->
+        <div class="overflow-x-auto rounded-[8px] border border-border bg-surface">
+          <table class="w-full text-left font-body text-xs">
+            <thead class="bg-surface-subtle text-[11px] font-semibold uppercase tracking-wider text-muted">
+              <tr>
+                <th class="px-4 py-3 w-14">Foto</th>
+                <th class="px-4 py-3">Jabatan / Peran</th>
+                <th class="px-4 py-3">Nama Pejabat</th>
+                <th class="px-4 py-3 text-right w-24">Aksi</th>
+              </tr>
+            </thead>
+            <tbody
+              class="divide-y divide-border text-body"
+              id="officials-table-body"
+            >
+              {staffOfficials.map((off, idx) => (
+                <tr
+                  class="official-table-row transition-colors hover:bg-surface-subtle cursor-pointer group"
+                  data-official-key={off.roleKey}
+                >
+                  <td class="px-4 py-3">
+                    <div class="h-10 w-10 rounded-full border border-border bg-surface-subtle flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
+                      {off.photo ? (
+                        <img
+                          src={off.photo}
+                          alt={off.name}
+                          class="official-row-img h-full w-full object-cover"
+                        />
+                      ) : (
+                        <span class="official-row-initial font-display font-bold text-xs text-primary">
+                          {(off.name || "P").trim().charAt(0).toUpperCase()}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td class="px-4 py-3 font-semibold text-heading">
+                    <span class="official-row-role">{off.roleName}</span>
+                    <span class="official-row-title block font-body font-normal text-[11px] text-muted mt-0.5">
+                      {off.title}
+                    </span>
+                  </td>
+                  <td class="px-4 py-3 text-body font-medium">
+                    <span class="official-row-name text-sm">{off.name}</span>
+                  </td>
+                  <td class="px-4 py-3 text-right">
+                    <div class="inline-flex items-center gap-1.5 justify-end">
+                      <!-- Tombol Edit Data Berwarna Mencolok -->
+                      <button
+                        type="button"
+                        class="btn-edit-official inline-flex h-7 w-7 items-center justify-center rounded-[6px] bg-primary text-white hover:bg-primary-hover transition-colors shadow-xs cursor-pointer"
+                        data-key={off.roleKey}
+                        data-idx={idx}
+                        title={`Edit Data ${off.roleName}`}
+                        aria-label={`Edit Data ${off.roleName}`}
+                      >
+                        <svg
+                          class="h-3.5 w-3.5"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                          />
+                        </svg>
+                      </button>
+
+                      <!-- Tombol Hapus Data Berwarna Mencolok -->
+                      <button
+                        type="button"
+                        class="btn-delete-official inline-flex h-7 w-7 items-center justify-center rounded-[6px] bg-error text-white hover:bg-error-hover transition-colors shadow-xs cursor-pointer"
+                        data-key={off.roleKey}
+                        data-role-name={off.roleName}
+                        title={`Hapus / Kosongkan Data ${off.roleName}`}
+                        aria-label={`Hapus / Kosongkan Data ${off.roleName}`}
+                      >
+                        <svg
+                          class="h-3.5 w-3.5"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- SECTION 04: VISI & MISI -->
+      <section
+        id="section-vision"
+        class="tab-pane hidden rounded-[12px] border border-border bg-surface p-6 space-y-5 shadow-hairline"
+      >
+        <div class="pb-3">
+          <h2 class="font-display text-sm font-bold text-heading">
+            04. Visi & Misi Kepengurusan
+          </h2>
+        </div>
+
+        <div class="space-y-4">
+          <div>
+            <label
+              for="student_org_vision"
+              class="block font-body text-xs font-semibold text-heading mb-1.5"
+            >
+              Visi Organisasi <span class="text-error">*</span>
+            </label>
+            <textarea
+              id="student_org_vision"
+              name="student_org_vision"
+              rows="3"
+              required
+              placeholder="Rumusan visi organisasi..."
+              class="w-full rounded-[6px] border border-border bg-surface p-3 font-body text-xs text-heading leading-relaxed transition-colors"
+            >{orgVision}</textarea>
+          </div>
+
+          <div>
+            <label
+              for="student_org_mission"
+              class="block font-body text-xs font-semibold text-heading mb-1.5"
+            >
+              Misi Organisasi (Tiap butir dipisahkan baris baru){" "}
+              <span class="text-error">*</span>
+            </label>
+            <textarea
+              id="student_org_mission"
+              name="student_org_mission"
+              rows="5"
+              required
+              placeholder="1. Misi kesatu...&#10;2. Misi kedua...&#10;3. Misi ketiga..."
+              class="w-full rounded-[6px] border border-border bg-surface p-3 font-body text-xs text-heading leading-relaxed transition-colors"
+            >{orgMission}</textarea>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 05: BIDANG & PROGRAM KERJA (ACCORDION & ANGGOTA DINAMIS) -->
+      <section
+        id="section-departments"
+        class="tab-pane hidden rounded-[12px] border border-border bg-surface p-6 space-y-5 shadow-hairline"
+      >
+        <div class="pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 class="font-display text-sm font-bold text-heading">
+              05. Seksi Bidang (Sekbid) & Program Kerja
+            </h2>
+          </div>
+          <button
+            type="button"
+            id="btn-add-dept"
+            class="inline-flex h-8 items-center justify-center gap-1.5 rounded-[6px] bg-primary text-white px-3 text-xs font-medium hover:bg-primary-hover transition-colors cursor-pointer shadow-xs shrink-0"
+          >
+            <Icon name="plus" class="h-3.5 w-3.5" />
+            <span>Tambah Bidang</span>
+          </button>
+        </div>
+
+        <!-- Hidden input serialization untuk departments -->
+        <input
+          type="hidden"
+          id="student_org_departments"
+          name="student_org_departments"
+          value={JSON.stringify(departmentsList)}
+        />
+
+        <!-- Accordion Container -->
+        <div id="departments-accordion" class="space-y-3">
+          {departmentsList.map((dept, index) => {
+            const memberCount = Array.isArray(dept.members)
+              ? dept.members.length
+              : 0;
+            return (
+              <div
+                class="dept-accordion-item rounded-[8px] border border-border bg-surface overflow-hidden shadow-xs transition-all"
+                data-dept-idx={index}
+              >
+                <!-- Accordion Header Ringkas -->
+                <button
+                  type="button"
+                  class="dept-accordion-header w-full flex items-center justify-between p-4 text-left hover:bg-surface-subtle transition-colors cursor-pointer"
+                >
+                  <div class="flex items-center gap-3 min-w-0">
+                    <span class="dept-badge-index font-mono text-xs font-bold text-primary shrink-0">
+                      Bidang {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <div class="min-w-0">
+                      <h3 class="dept-summary-title font-display text-sm font-bold text-heading truncate">
+                        {dept.name || `Bidang Baru #${index + 1}`}
+                      </h3>
+                      <p class="dept-summary-meta font-body text-xs text-muted truncate mt-0.5">
+                        Koordinator:{" "}
+                        <span class="dept-meta-lead font-medium text-heading">
+                          {dept.lead || "Belum ditentukan"}
+                        </span>{" "}
+                        &bull;{" "}
+                        <span class="dept-meta-count">
+                          {memberCount} Anggota
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div class="flex items-center gap-2 shrink-0">
+                    <span
+                      class="btn-delete-dept-row text-xs text-error hover:underline p-1 cursor-pointer"
+                      title="Hapus Bidang Ini"
+                    >
+                      Hapus
+                    </span>
+                    <Icon
+                      name="chevron-down"
+                      class="dept-chevron h-4 w-4 text-muted transition-transform duration-200"
+                    />
+                  </div>
+                </button>
+
+                <!-- Accordion Body Detail (Bisa dibuka/tutup) -->
+                <div class="dept-accordion-body hidden border-t border-border p-4 bg-surface-subtle space-y-4">
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <label class="block font-body text-xs font-semibold text-heading mb-1">
+                        Nama Seksi Bidang
+                      </label>
+                      <input
+                        type="text"
+                        value={dept.name || ""}
+                        placeholder="Contoh: Keagamaan dan Budi Pekerti"
+                        class="dept-input-name h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading"
+                      />
+                    </div>
+                    <div>
+                      <label class="block font-body text-xs font-semibold text-heading mb-1">
+                        Koordinator / Ketua Bidang
+                      </label>
+                      <input
+                        type="text"
+                        value={dept.lead || ""}
+                        placeholder="Contoh: Fathur Rahman"
+                        class="dept-input-lead h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading"
+                      />
+                    </div>
+                  </div>
+
+                  <!-- Anggota Sebagai Daftar Dinamis (Bukan Textarea Manual) -->
+                  <div>
+                    <label class="block font-body text-xs font-semibold text-heading mb-1.5">
+                      Anggota Bidang (Daftar Dinamis)
+                    </label>
+                    <div class="rounded-[6px] border border-border bg-surface p-3 space-y-2.5">
+                      <!-- Chip Tags List -->
+                      <div class="dept-chips-container flex flex-wrap items-center gap-1.5">
+                        {(Array.isArray(dept.members) ? dept.members : []).map(
+                          (m: string) => (
+                            <span class="dept-member-chip inline-flex items-center gap-1.5 rounded-[4px] bg-surface-subtle border border-border px-2.5 py-1 text-xs text-heading font-medium">
+                              <span class="chip-text">{m}</span>
+                              <button
+                                type="button"
+                                class="btn-remove-chip text-muted hover:text-error text-xs cursor-pointer font-bold leading-none"
+                              >
+                                &times;
+                              </button>
+                            </span>
+                          ),
+                        )}
+                      </div>
+
+                      <!-- Input Tambah Anggota Baru -->
+                      <div class="flex items-center gap-2 pt-1">
+                        <input
+                          type="text"
+                          placeholder="Ketik nama anggota & kelas (e.g. Ahmad Fauzi XI-1) lalu tekan Enter..."
+                          class="dept-input-new-member h-[34px] flex-1 rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading"
+                        />
+                        <button
+                          type="button"
+                          class="btn-add-chip-manual inline-flex h-[34px] items-center justify-center rounded-[6px] border border-border bg-surface px-3 text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer shrink-0"
+                        >
+                          + Tambah
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Program Kerja -->
+                  <div>
+                    <label class="block font-body text-xs font-semibold text-heading mb-1">
+                      Program Kerja Unggulan
+                    </label>
+                    <textarea
+                      rows="2"
+                      placeholder="Daftar kegiatan atau program kerja unggulan bidang ini..."
+                      class="dept-input-proker w-full rounded-[6px] border border-border bg-surface p-2.5 font-body text-xs text-heading leading-relaxed"
+                    >{dept.proker || ""}</textarea>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <!-- SECTION 06: MEDIA SOSIAL & KONTAK RESMI -->
+      <section
+        id="section-social"
+        class="tab-pane hidden rounded-[12px] border border-border bg-surface p-6 space-y-5 shadow-hairline"
+      >
+        <div class="pb-3">
+          <h2 class="font-display text-sm font-bold text-heading">
+            06. Media Sosial & Kanal Resmi
+          </h2>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label
+              for="student_org_instagram"
+              class="block font-body text-xs font-semibold text-heading mb-1.5"
+            >
+              Instagram Resmi
+            </label>
+            <input
+              id="student_org_instagram"
+              name="student_org_instagram"
+              type="text"
+              value={orgInstagram}
+              placeholder="Contoh: @osis_sman1 atau https://instagram.com/osis..."
+              class="h-[40px] w-full rounded-[6px] border border-border bg-surface px-3.5 font-body text-xs text-heading transition-colors"
+            />
+          </div>
+
+          <div>
+            <label
+              for="student_org_tiktok"
+              class="block font-body text-xs font-semibold text-heading mb-1.5"
+            >
+              Akun TikTok
+            </label>
+            <input
+              id="student_org_tiktok"
+              name="student_org_tiktok"
+              type="text"
+              value={orgTiktok}
+              placeholder="Contoh: @osis_sman1"
+              class="h-[40px] w-full rounded-[6px] border border-border bg-surface px-3.5 font-body text-xs text-heading transition-colors"
+            />
+          </div>
+
+          <div>
+            <label
+              for="student_org_youtube"
+              class="block font-body text-xs font-semibold text-heading mb-1.5"
+            >
+              Kanal YouTube
+            </label>
+            <input
+              id="student_org_youtube"
+              name="student_org_youtube"
+              type="text"
+              value={orgYoutube}
+              placeholder="Contoh: https://youtube.com/@OSIS_SMAN1"
+              class="h-[40px] w-full rounded-[6px] border border-border bg-surface px-3.5 font-body text-xs text-heading transition-colors"
+            />
+          </div>
+
+          <div>
+            <label
+              for="student_org_email"
+              class="block font-body text-xs font-semibold text-heading mb-1.5"
+            >
+              Email Resmi Organisasi
+            </label>
+            <input
+              id="student_org_email"
+              name="student_org_email"
+              type="email"
+              value={orgEmail}
+              placeholder="Contoh: osis@sman1unggulan.sch.id"
+              class="h-[40px] w-full rounded-[6px] border border-border bg-surface px-3.5 font-body text-xs text-heading transition-colors"
+            />
+          </div>
+        </div>
+      </section>
+    </form>
+  </div>
+
+  <!-- Modal Editor Data Pengurus / Pembina Terpadu -->
+  <div
+    id="official-edit-modal"
+    slot="modals"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="modal-official-role-title"
+    class="fixed inset-0 z-50 hidden overflow-y-auto bg-heading/60 backdrop-blur-xs p-4 sm:p-6"
+  >
+    <div class="flex min-h-full items-center justify-center">
+      <div class="w-full max-w-md rounded-[12px] border border-border bg-surface p-6 shadow-dropdown space-y-4">
+        <div class="flex items-center justify-between pb-3">
+          <h3
+            id="modal-official-role-title"
+            class="font-display text-base font-bold text-heading"
+          >
+            Edit Data Pengurus
+          </h3>
+          <button
+            type="button"
+            id="btn-close-official-modal"
+            class="text-muted hover:text-heading cursor-pointer text-lg leading-none"
+          >
+            &times;
+          </button>
+        </div>
+
+        <input type="hidden" id="modal-official-key" value="" />
+
+        <!-- Foto Avatar & Tindakan Tunggal "Ganti Foto" -->
+        <div class="flex items-center gap-4 p-3 rounded-[8px] bg-surface-subtle border border-border">
+          <div class="h-16 w-16 rounded-full border border-border bg-surface flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
+            <img
+              id="modal-official-preview-img"
+              src="/favicon.svg"
+              alt="Preview"
+              class="h-full w-full object-cover"
+              onerror="this.src='/favicon.svg'"
+            />
+          </div>
+          <input type="hidden" id="modal-official-photo-url" value="" />
+
+          <div class="space-y-1.5 flex-1">
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                id="btn-modal-pick-photo"
+                class="inline-flex h-8 items-center justify-center rounded-[6px] bg-primary text-white px-3 text-xs font-medium hover:bg-primary-hover transition-colors cursor-pointer shadow-xs"
+              >
+                Ganti Foto
+              </button>
+              <button
+                type="button"
+                id="btn-modal-clear-photo"
+                class="text-xs text-error hover:underline cursor-pointer"
+              >
+                Hapus Foto
+              </button>
+            </div>
+            <p class="font-body text-[11px] text-muted">
+              Format JPG/PNG persegi dianjurkan.
+            </p>
+          </div>
+        </div>
+
+        <!-- Field Nama Lengkap -->
+        <div>
+          <label
+            for="modal-official-name-input"
+            class="block font-body text-xs font-semibold text-heading mb-1"
+          >
+            Nama Lengkap & Gelar <span class="text-error">*</span>
+          </label>
+          <input
+            id="modal-official-name-input"
+            type="text"
+            required
+            placeholder="Masukkan nama lengkap..."
+            class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading placeholder:text-muted/60"
+          />
+        </div>
+
+        <!-- Field Khusus Jabatan Pembina (Hanya untuk Advisor) -->
+        <div id="modal-advisor-title-container" class="hidden">
+          <label
+            for="modal-official-title-input"
+            class="block font-body text-xs font-semibold text-heading mb-1"
+          >
+            Gelar / Jabatan Resmi Pembina
+          </label>
+          <input
+            id="modal-official-title-input"
+            type="text"
+            placeholder="Contoh: Pembina OSIM & Waka Kesiswaan"
+            class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading placeholder:text-muted/60"
+          />
+        </div>
+
+        <div class="flex items-center justify-end gap-2.5 pt-3 border-t border-border">
+          <button
+            type="button"
+            id="btn-cancel-official-modal"
+            class="inline-flex h-8 items-center justify-center rounded-[6px] border border-border bg-surface px-3.5 text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+          >
+            Batal
+          </button>
+          <button
+            type="button"
+            id="btn-save-official-modal"
+            class="inline-flex h-8 items-center justify-center rounded-[6px] bg-primary px-4 text-xs font-medium text-white hover:bg-primary-hover transition-colors cursor-pointer shadow-xs"
+          >
+            Terapkan
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <MediaPickerModal slot="modals" />
+
+  <script is:inline>
+    function initOsis() {
+      const form = document.getElementById("form-osis");
+      const banner = document.getElementById("status-banner");
+      const unsavedBadge = document.getElementById("unsaved-badge");
+      const btnHeaderSave = document.getElementById("btn-header-save");
+      const headerSaveText = document.getElementById("header-save-text");
+      const directFileInput = document.getElementById("direct-file-input");
+
+      let isDirty = false;
+      function markDirty() {
+        if (!isDirty) {
+          isDirty = true;
+          unsavedBadge?.classList.remove("hidden");
+        }
+      }
+
+      // Peringatan saat meninggalkan halaman dengan perubahan belum tersimpan
+      window.addEventListener("beforeunload", (e) => {
+        if (isDirty) {
+          e.preventDefault();
+          e.returnValue = "Ada perubahan data yang belum disimpan.";
+        }
+      });
+
+      form?.querySelectorAll("input, select, textarea").forEach((el) => {
+        el.addEventListener("input", markDirty);
+        el.addEventListener("change", markDirty);
+      });
+
+      // ==========================================
+      // 1. NAVIGASI SECTIONS INTERAKTIF (01 - 06)
+      // ==========================================
+      const tabNavCards = document.querySelectorAll(".tab-nav-card");
+      const tabPanes = document.querySelectorAll(".tab-pane");
+
+      tabNavCards.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const targetId = btn.getAttribute("data-tab-target");
+          if (!targetId) return;
+
+          tabNavCards.forEach((b) => {
+            b.className =
+              "tab-nav-card text-left p-3 rounded-[8px] border transition-all cursor-pointer bg-surface border-border text-heading hover:bg-surface-subtle";
+            const badge = b.querySelector(".tab-card-badge");
+            if (badge)
+              badge.className =
+                "tab-card-badge font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-[4px] bg-surface-subtle border border-border text-muted";
+            const desc = b.querySelector(".tab-card-desc");
+            if (desc)
+              desc.className =
+                "tab-card-desc font-body text-[11px] leading-tight mt-1 text-muted line-clamp-1";
+          });
+
+          btn.className =
+            "tab-nav-card active text-left p-3 rounded-[8px] border transition-all cursor-pointer bg-primary border-primary text-white shadow-xs";
+          const activeBadge = btn.querySelector(".tab-card-badge");
+          if (activeBadge)
+            activeBadge.className =
+              "tab-card-badge font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-[4px] bg-surface text-heading";
+          const activeDesc = btn.querySelector(".tab-card-desc");
+          if (activeDesc)
+            activeDesc.className =
+              "tab-card-desc font-body text-[11px] leading-tight mt-1 text-white/80 line-clamp-1";
+
+          tabPanes.forEach((pane) => {
+            if (pane.id === targetId) {
+              pane.classList.remove("hidden");
+            } else {
+              pane.classList.add("hidden");
+            }
+          });
+        });
+      });
+
+      // Toggle otomatis pesan peringatan status nonaktif via switch toggle
+      const inputOrgActive = document.getElementById("student_org_active");
+      const btnToggleOrgActive = document.getElementById(
+        "btn-toggle-org-active",
+      );
+      const thumbOrgActive = document.getElementById("thumb-org-active");
+      const labelOrgActive = document.getElementById("label-org-active");
+      const noticeOrgInactive = document.getElementById("notice-org-inactive");
+
+      btnToggleOrgActive?.addEventListener("click", () => {
+        const isCurrentlyActive = inputOrgActive?.value !== "false";
+        const nextActive = !isCurrentlyActive;
+        if (inputOrgActive)
+          inputOrgActive.value = nextActive ? "true" : "false";
+
+        btnToggleOrgActive.setAttribute("aria-checked", String(nextActive));
+        btnToggleOrgActive.className = `relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${nextActive ? "bg-primary" : "bg-border"}`;
+
+        if (thumbOrgActive) {
+          thumbOrgActive.className = `pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${nextActive ? "translate-x-4" : "translate-x-0"}`;
+        }
+
+        if (labelOrgActive) {
+          labelOrgActive.textContent = nextActive
+            ? "Aktif (Dapat Diakses Publik)"
+            : "Nonaktif (Disembunyikan)";
+        }
+
+        if (nextActive) {
+          noticeOrgInactive?.classList.add("hidden");
+        } else {
+          noticeOrgInactive?.classList.remove("hidden");
+        }
+
+        markDirty();
+      });
+
+      // ==========================================
+      // 2. HELPER STATUS BANNER
+      // ==========================================
+      function showBanner(message, type) {
+        if (!banner) return;
+        banner.classList.remove("hidden");
+        banner.innerText = message;
+        if (type === "success") {
+          banner.className =
+            "rounded-[8px] border border-primary/20 bg-primary-light p-3.5 text-xs text-primary font-medium block";
+        } else if (type === "error") {
+          banner.className =
+            "rounded-[8px] border border-error/20 bg-error-light p-3.5 text-xs text-error-text font-medium block";
+        } else {
+          banner.className =
+            "rounded-[8px] border border-border bg-surface-subtle p-3.5 text-xs text-muted font-medium block";
+        }
+        banner.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+
+      function setLoading(isLoading) {
+        if (btnHeaderSave) btnHeaderSave.disabled = isLoading;
+        const text = isLoading ? "Menyimpan..." : "Simpan Perubahan";
+        if (headerSaveText) headerSaveText.innerText = text;
+      }
+
+      // ==========================================
+      // 3. FOTO & LOGO DENGAN MEDIA PICKER
+      // ==========================================
+      document.querySelectorAll(".btn-pick-image").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const targetInputId = btn.getAttribute("data-target-input");
+          const previewImgId = btn.getAttribute("data-preview-img");
+          if (typeof window.openMediaPicker === "function") {
+            window.openMediaPicker(
+              (item) => {
+                const url =
+                  item.fileUrl ||
+                  item.mediumUrl ||
+                  item.thumbnailUrl ||
+                  item.url;
+                if (url && targetInputId) {
+                  const input = document.getElementById(targetInputId);
+                  if (input) input.value = url;
+                  if (previewImgId) {
+                    const preview = document.getElementById(previewImgId);
+                    if (preview) preview.src = url;
+                  }
+                  markDirty();
+                }
+              },
+              { type: "image" },
+            );
+          }
+        });
+      });
+
+      document.querySelectorAll(".btn-clear-image").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const targetInputId = btn.getAttribute("data-target-input");
+          const previewImgId = btn.getAttribute("data-preview-img");
+          const defaultImg =
+            btn.getAttribute("data-default-img") || "/favicon.svg";
+
+          if (targetInputId) {
+            const input = document.getElementById(targetInputId);
+            if (input) input.value = "";
+          }
+          if (previewImgId) {
+            const preview = document.getElementById(previewImgId);
+            if (preview) preview.src = defaultImg;
+          }
+          markDirty();
+        });
+      });
+
+      // ==========================================
+      // 4. MODAL EDITOR PENGURUS & PEMBINA (POLA KONSISTEN)
+      // ==========================================
+      const officialModal = document.getElementById("official-edit-modal");
+      const modalRoleTitle = document.getElementById(
+        "modal-official-role-title",
+      );
+      const modalOfficialKey = document.getElementById("modal-official-key");
+      const modalNameInput = document.getElementById(
+        "modal-official-name-input",
+      );
+      const modalTitleInput = document.getElementById(
+        "modal-official-title-input",
+      );
+      const modalAdvisorTitleContainer = document.getElementById(
+        "modal-advisor-title-container",
+      );
+      const modalPreviewImg = document.getElementById(
+        "modal-official-preview-img",
+      );
+      const modalPhotoUrlInput = document.getElementById(
+        "modal-official-photo-url",
+      );
+      const btnModalPickPhoto = document.getElementById("btn-modal-pick-photo");
+      const btnModalClearPhoto = document.getElementById(
+        "btn-modal-clear-photo",
+      );
+      const btnCloseOfficialModal = document.getElementById(
+        "btn-close-official-modal",
+      );
+      const btnCancelOfficialModal = document.getElementById(
+        "btn-cancel-official-modal",
+      );
+      const btnSaveOfficialModal = document.getElementById(
+        "btn-save-official-modal",
+      );
+
+      function openOfficialEditor(key) {
+        if (!key) return;
+        modalOfficialKey.value = key;
+        const row = document.querySelector(`tr[data-official-key="${key}"]`);
+        const roleLabel =
+          row?.querySelector(".official-row-role")?.innerText || "Pengurus";
+        modalRoleTitle.innerText = `Edit Data ${roleLabel}`;
+
+        let nameVal = "";
+        let titleVal = "";
+        let photoVal = "";
+
+        if (key === "advisor") {
+          nameVal = document.getElementById("student_org_advisor")?.value || "";
+          titleVal =
+            document.getElementById("student_org_advisor_title")?.value || "";
+          photoVal =
+            document.getElementById("student_org_advisor_photo")?.value || "";
+          modalAdvisorTitleContainer?.classList.remove("hidden");
+        } else if (key === "leader") {
+          nameVal = document.getElementById("student_org_leader")?.value || "";
+          photoVal =
+            document.getElementById("student_org_leader_photo")?.value || "";
+          modalAdvisorTitleContainer?.classList.add("hidden");
+        } else if (key === "deputy") {
+          nameVal = document.getElementById("student_org_deputy")?.value || "";
+          photoVal =
+            document.getElementById("student_org_deputy_photo")?.value || "";
+          modalAdvisorTitleContainer?.classList.add("hidden");
+        } else if (key === "secretary") {
+          nameVal =
+            document.getElementById("student_org_secretary")?.value || "";
+          photoVal =
+            document.getElementById("student_org_secretary_photo")?.value || "";
+          modalAdvisorTitleContainer?.classList.add("hidden");
+        } else if (key === "treasurer") {
+          nameVal =
+            document.getElementById("student_org_treasurer")?.value || "";
+          photoVal =
+            document.getElementById("student_org_treasurer_photo")?.value || "";
+          modalAdvisorTitleContainer?.classList.add("hidden");
+        }
+
+        modalNameInput.value = nameVal;
+        if (modalTitleInput) modalTitleInput.value = titleVal;
+        modalPhotoUrlInput.value = photoVal;
+        modalPreviewImg.src = photoVal || "/favicon.svg";
+
+        officialModal?.classList.remove("hidden");
+        modalNameInput?.focus();
+      }
+
+      document.querySelectorAll(".official-table-row").forEach((row) => {
+        row.addEventListener("click", (e) => {
+          if (
+            e.target.closest(".btn-delete-official") ||
+            e.target.closest(".btn-edit-official")
+          )
+            return;
+          const key = row.getAttribute("data-official-key");
+          if (key) openOfficialEditor(key);
+        });
+      });
+
+      document.querySelectorAll(".btn-edit-official").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const key = btn.getAttribute("data-key");
+          if (key) openOfficialEditor(key);
+        });
+      });
+
+      document.querySelectorAll(".btn-delete-official").forEach((btn) => {
+        btn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          const key = btn.getAttribute("data-key");
+          const roleLabel = btn.getAttribute("data-role-name") || "Pengurus";
+          if (!key) return;
+
+          const confirmed = await window.confirmDialog({
+            title: "Kosongkan Pengurus",
+            message: `Hapus dan kosongkan data untuk ${roleLabel}?`,
+            confirmText: "Hapus",
+            cancelText: "Batal",
+            type: "danger",
+          });
+          if (!confirmed) return;
+
+          if (key === "advisor") {
+            const inName = document.getElementById("student_org_advisor");
+            const inPhoto = document.getElementById(
+              "student_org_advisor_photo",
+            );
+            if (inName) inName.value = "";
+            if (inPhoto) inPhoto.value = "";
+          } else if (key === "leader") {
+            const inName = document.getElementById("student_org_leader");
+            const inPhoto = document.getElementById("student_org_leader_photo");
+            if (inName) inName.value = "";
+            if (inPhoto) inPhoto.value = "";
+          } else if (key === "deputy") {
+            const inName = document.getElementById("student_org_deputy");
+            const inPhoto = document.getElementById("student_org_deputy_photo");
+            if (inName) inName.value = "";
+            if (inPhoto) inPhoto.value = "";
+          } else if (key === "secretary") {
+            const inName = document.getElementById("student_org_secretary");
+            const inPhoto = document.getElementById(
+              "student_org_secretary_photo",
+            );
+            if (inName) inName.value = "";
+            if (inPhoto) inPhoto.value = "";
+          } else if (key === "treasurer") {
+            const inName = document.getElementById("student_org_treasurer");
+            const inPhoto = document.getElementById(
+              "student_org_treasurer_photo",
+            );
+            if (inName) inName.value = "";
+            if (inPhoto) inPhoto.value = "";
+          }
+
+          const row = document.querySelector(`tr[data-official-key="${key}"]`);
+          if (row) {
+            const nameEl = row.querySelector(".official-row-name");
+            if (nameEl) nameEl.innerText = "Belum ditentukan";
+
+            const imgContainer = row.querySelector("td div");
+            if (imgContainer) {
+              imgContainer.innerHTML = `<span class="official-row-initial font-display font-bold text-xs text-muted">-</span>`;
+            }
+          }
+
+          markDirty();
+        });
+      });
+
+      function closeOfficialModal() {
+        officialModal?.classList.add("hidden");
+      }
+
+      btnCloseOfficialModal?.addEventListener("click", closeOfficialModal);
+      btnCancelOfficialModal?.addEventListener("click", closeOfficialModal);
+
+      // Tutup modal jika klik di backdrop luar
+      officialModal?.addEventListener("click", (e) => {
+        if (e.target === officialModal || e.target?.classList?.contains("min-h-full")) {
+          closeOfficialModal();
+        }
+      });
+
+      // Tutup modal saat tombol Escape ditekan
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && !officialModal?.classList.contains("hidden")) {
+          closeOfficialModal();
+        }
+      });
+
+      btnModalPickPhoto?.addEventListener("click", () => {
+        if (typeof window.openMediaPicker === "function") {
+          window.openMediaPicker(
+            (item) => {
+              const url =
+                item.fileUrl || item.mediumUrl || item.thumbnailUrl || item.url;
+              if (url) {
+                modalPhotoUrlInput.value = url;
+                modalPreviewImg.src = url;
+              }
+            },
+            { type: "image" },
+          );
+        }
+      });
+
+      btnModalClearPhoto?.addEventListener("click", () => {
+        modalPhotoUrlInput.value = "";
+        modalPreviewImg.src = "/favicon.svg";
+      });
+
+      btnSaveOfficialModal?.addEventListener("click", () => {
+        const key = modalOfficialKey.value;
+        const newName = modalNameInput.value.trim();
+        const newTitle = modalTitleInput?.value.trim() || "";
+        const newPhoto = modalPhotoUrlInput.value.trim();
+
+        if (!newName) {
+          alert("Nama pejabat wajib diisi.");
+          modalNameInput.focus();
+          return;
+        }
+
+        const row = document.querySelector(`tr[data-official-key="${key}"]`);
+        if (row) {
+          const nameEl = row.querySelector(".official-row-name");
+          if (nameEl) nameEl.innerText = newName;
+
+          const imgContainer = row.querySelector("td div");
+          if (newPhoto) {
+            imgContainer.innerHTML = `<img src="${newPhoto}" alt="${newName}" class="official-row-img h-full w-full object-cover" />`;
+          } else {
+            imgContainer.innerHTML = `<span class="official-row-initial font-display font-bold text-xs text-primary">${newName.charAt(0).toUpperCase()}</span>`;
+          }
+
+          if (key === "advisor" && newTitle) {
+            const titleEl = row.querySelector(".official-row-title");
+            if (titleEl) titleEl.innerText = newTitle;
+          }
+        }
+
+        if (key === "advisor") {
+          const inName = document.getElementById("student_org_advisor");
+          const inTitle = document.getElementById("student_org_advisor_title");
+          const inPhoto = document.getElementById("student_org_advisor_photo");
+          if (inName) inName.value = newName;
+          if (inTitle) inTitle.value = newTitle;
+          if (inPhoto) inPhoto.value = newPhoto;
+        } else if (key === "leader") {
+          const inName = document.getElementById("student_org_leader");
+          const inPhoto = document.getElementById("student_org_leader_photo");
+          if (inName) inName.value = newName;
+          if (inPhoto) inPhoto.value = newPhoto;
+        } else if (key === "deputy") {
+          const inName = document.getElementById("student_org_deputy");
+          const inPhoto = document.getElementById("student_org_deputy_photo");
+          if (inName) inName.value = newName;
+          if (inPhoto) inPhoto.value = newPhoto;
+        } else if (key === "secretary") {
+          const inName = document.getElementById("student_org_secretary");
+          const inPhoto = document.getElementById(
+            "student_org_secretary_photo",
+          );
+          if (inName) inName.value = newName;
+          if (inPhoto) inPhoto.value = newPhoto;
+        } else if (key === "treasurer") {
+          const inName = document.getElementById("student_org_treasurer");
+          const inPhoto = document.getElementById(
+            "student_org_treasurer_photo",
+          );
+          if (inName) inName.value = newName;
+          if (inPhoto) inPhoto.value = newPhoto;
+        }
+
+        markDirty();
+        closeOfficialModal();
+      });
+
+      // ==========================================
+      // 5. ACCORDION SEKBID & ANGGOTA DINAMIS (CHIPS)
+      // ==========================================
+      const deptAccordion = document.getElementById("departments-accordion");
+      const btnAddDept = document.getElementById("btn-add-dept");
+      const hiddenDeptsInput = document.getElementById(
+        "student_org_departments",
+      );
+
+      function serializeDepartments() {
+        if (!deptAccordion || !hiddenDeptsInput) return;
+        const items = deptAccordion.querySelectorAll(".dept-accordion-item");
+        const list = [];
+        items.forEach((item) => {
+          const name =
+            item.querySelector(".dept-input-name")?.value.trim() || "";
+          const lead =
+            item.querySelector(".dept-input-lead")?.value.trim() || "";
+          const proker =
+            item.querySelector(".dept-input-proker")?.value.trim() || "";
+
+          const chips = item.querySelectorAll(".dept-member-chip .chip-text");
+          const members = Array.from(chips)
+            .map((c) => c.innerText.trim())
+            .filter(Boolean);
+
+          if (name || lead || members.length > 0 || proker) {
+            list.push({ name, lead, members, proker });
+          }
+        });
+        hiddenDeptsInput.value = JSON.stringify(list);
+      }
+
+      function initAccordionItem(item) {
+        const headerBtn = item.querySelector(".dept-accordion-header");
+        const body = item.querySelector(".dept-accordion-body");
+        const chevron = item.querySelector(".dept-chevron");
+        const btnDelete = item.querySelector(".btn-delete-dept-row");
+
+        const inputName = item.querySelector(".dept-input-name");
+        const inputLead = item.querySelector(".dept-input-lead");
+        const inputProker = item.querySelector(".dept-input-proker");
+        const summaryTitle = item.querySelector(".dept-summary-title");
+        const metaLead = item.querySelector(".dept-meta-lead");
+        const metaCount = item.querySelector(".dept-meta-count");
+
+        const chipsContainer = item.querySelector(".dept-chips-container");
+        const inputNewMember = item.querySelector(".dept-input-new-member");
+        const btnAddChip = item.querySelector(".btn-add-chip-manual");
+
+        // Toggle accordion (Single-open: otomatis tutup bidang lain yang terbuka)
+        headerBtn?.addEventListener("click", (e) => {
+          if (e.target.closest(".btn-delete-dept-row")) return;
+          const isClosed = body.classList.contains("hidden");
+          if (isClosed) {
+            // Tutup seluruh accordion lain terlebih dahulu
+            deptAccordion
+              ?.querySelectorAll(".dept-accordion-item")
+              .forEach((otherItem) => {
+                if (otherItem !== item) {
+                  otherItem
+                    .querySelector(".dept-accordion-body")
+                    ?.classList.add("hidden");
+                  otherItem
+                    .querySelector(".dept-chevron")
+                    ?.classList.remove("rotate-180");
+                }
+              });
+            body.classList.remove("hidden");
+            chevron?.classList.add("rotate-180");
+          } else {
+            body.classList.add("hidden");
+            chevron?.classList.remove("rotate-180");
+          }
+        });
+
+        // Update header summary saat input berubah
+        inputName?.addEventListener("input", () => {
+          if (summaryTitle)
+            summaryTitle.innerText = inputName.value.trim() || "Nama Bidang";
+          markDirty();
+        });
+        inputLead?.addEventListener("input", () => {
+          if (metaLead)
+            metaLead.innerText = inputLead.value.trim() || "Belum ditentukan";
+          markDirty();
+        });
+        inputProker?.addEventListener("input", markDirty);
+
+        // Tambah anggota chip
+        function addMemberChip() {
+          const val = inputNewMember.value.trim();
+          if (!val) return;
+          const chip = document.createElement("span");
+          chip.className =
+            "dept-member-chip inline-flex items-center gap-1.5 rounded-[4px] bg-surface-subtle border border-border px-2.5 py-1 text-xs text-heading font-medium";
+          chip.innerHTML = `<span class="chip-text">${val}</span><button type="button" class="btn-remove-chip text-muted hover:text-error text-xs cursor-pointer font-bold leading-none">&times;</button>`;
+          chipsContainer.appendChild(chip);
+          inputNewMember.value = "";
+          updateMemberCount();
+          markDirty();
+        }
+
+        btnAddChip?.addEventListener("click", addMemberChip);
+        inputNewMember?.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            addMemberChip();
+          }
+        });
+
+        // Hapus chip
+        chipsContainer?.addEventListener("click", (e) => {
+          if (e.target.closest(".btn-remove-chip")) {
+            e.target.closest(".dept-member-chip")?.remove();
+            updateMemberCount();
+            markDirty();
+          }
+        });
+
+        function updateMemberCount() {
+          const count =
+            chipsContainer.querySelectorAll(".dept-member-chip").length;
+          if (metaCount) metaCount.innerText = `${count} Anggota`;
+        }
+
+        // Hapus bidang
+        btnDelete?.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          if (deptAccordion.children.length > 1) {
+            const confirmed = await window.confirmDialog({
+              title: "Hapus Bidang Organisasi",
+              message: "Hapus bidang ini beserta seluruh datanya?",
+              confirmText: "Hapus Bidang",
+              cancelText: "Batal",
+              type: "danger",
+            });
+            if (!confirmed) return;
+
+            item.remove();
+            reindexAccordion();
+            markDirty();
+          } else {
+            alert("Minimal sediakan 1 bidang organisasi.");
+          }
+        });
+      }
+
+      function reindexAccordion() {
+        deptAccordion
+          ?.querySelectorAll(".dept-accordion-item")
+          .forEach((item, idx) => {
+            const badge = item.querySelector(".dept-badge-index");
+            if (badge)
+              badge.innerText = `Bidang ${String(idx + 1).padStart(2, "0")}`;
+          });
+      }
+
+      deptAccordion
+        ?.querySelectorAll(".dept-accordion-item")
+        .forEach((item) => initAccordionItem(item));
+
+      btnAddDept?.addEventListener("click", () => {
+        const idx = deptAccordion.children.length;
+        const item = document.createElement("div");
+        item.className =
+          "dept-accordion-item rounded-[8px] border border-border bg-surface overflow-hidden shadow-xs transition-all";
+        item.innerHTML = `
+        <button type="button" class="dept-accordion-header w-full flex items-center justify-between p-4 text-left hover:bg-surface-subtle transition-colors cursor-pointer">
+          <div class="flex items-center gap-3 min-w-0">
+            <span class="dept-badge-index font-mono text-xs font-bold text-primary shrink-0">
+              Bidang ${String(idx + 1).padStart(2, "0")}
+            </span>
+            <div class="min-w-0">
+              <h3 class="dept-summary-title font-display text-sm font-bold text-heading truncate">
+                Bidang Baru #${idx + 1}
+              </h3>
+              <p class="dept-summary-meta font-body text-xs text-muted truncate mt-0.5">
+                Koordinator: <span class="dept-meta-lead font-medium text-heading">Belum ditentukan</span> &bull; <span class="dept-meta-count">0 Anggota</span>
+              </p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <span class="btn-delete-dept-row text-xs text-error hover:underline p-1 cursor-pointer" title="Hapus Bidang Ini">Hapus</span>
+            <svg class="dept-chevron h-4 w-4 text-muted transition-transform duration-200 rotate-180"><use href="#icon-chevron-down"></use></svg>
+          </div>
+        </button>
+        <div class="dept-accordion-body border-t border-border p-4 bg-surface-subtle space-y-4">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label class="block font-body text-xs font-semibold text-heading mb-1">Nama Seksi Bidang</label>
+              <input type="text"placeholder="Nama Bidang Baru"class="dept-input-name h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading"/>
+            </div>
+            <div>
+              <label class="block font-body text-xs font-semibold text-heading mb-1">Koordinator / Ketua Bidang</label>
+              <input type="text"placeholder="Nama Koordinator"class="dept-input-lead h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading"/>
+            </div>
+          </div>
+          <div>
+            <label class="block font-body text-xs font-semibold text-heading mb-1.5">Anggota Bidang (Daftar Dinamis)</label>
+            <div class="rounded-[6px] border border-border bg-surface p-3 space-y-2.5">
+              <div class="dept-chips-container flex flex-wrap items-center gap-1.5"></div>
+              <div class="flex items-center gap-2 pt-1">
+                <input type="text"placeholder="Ketik nama anggota & kelas lalu tekan Enter..."class="dept-input-new-member h-[34px] flex-1 rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading"/>
+                <button type="button" class="btn-add-chip-manual inline-flex h-[34px] items-center justify-center rounded-[6px] border border-border bg-surface px-3 text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer shrink-0">+ Tambah</button>
+              </div>
+            </div>
+          </div>
+          <div>
+            <label class="block font-body text-xs font-semibold text-heading mb-1">Program Kerja Unggulan</label>
+            <textarea rows="2"placeholder="Daftar kegiatan unggulan bidang ini..."class="dept-input-proker w-full rounded-[6px] border border-border bg-surface p-2.5 font-body text-xs text-heading leading-relaxed"></textarea>
+          </div>
+        </div>
+      `;
+        // Tutup accordion lain saat menambahkan bidang baru
+        deptAccordion
+          ?.querySelectorAll(".dept-accordion-item")
+          .forEach((otherItem) => {
+            otherItem
+              .querySelector(".dept-accordion-body")
+              ?.classList.add("hidden");
+            otherItem
+              .querySelector(".dept-chevron")
+              ?.classList.remove("rotate-180");
+          });
+        deptAccordion.appendChild(item);
+        initAccordionItem(item);
+        markDirty();
+        item.querySelector(".dept-input-name")?.focus();
+      });
+
+      // ==========================================
+      // 6. SINKRONISASI TIPE ORGANISASI (OSIS vs OSIM)
+      // ==========================================
+      const selectOrgType = document.getElementById("student_org_type");
+      const inputOrgName = document.getElementById("student_org_name");
+      const defaultOrgTypeVal = "{defaultOrgType}";
+
+      selectOrgType?.addEventListener("change", () => {
+        const typeVal = selectOrgType.value;
+        const targetType = typeVal === "auto" ? defaultOrgTypeVal : typeVal;
+        if (inputOrgName) {
+          if (targetType === "OSIM") {
+            inputOrgName.value = inputOrgName.value.replace(
+              /\bOSIS\b/gi,
+              "OSIM",
+            );
+          } else if (targetType === "OSIS") {
+            inputOrgName.value = inputOrgName.value.replace(
+              /\bOSIM\b/gi,
+              "OSIS",
+            );
+          }
+        }
+        markDirty();
+      });
+
+      // ==========================================
+      // 7. SIMPAN FORM SECARA TERPADU
+      // ==========================================
+      async function saveOsis() {
+        serializeDepartments();
+        setLoading(true);
+
+        const fd = new FormData(form);
+        const payload = {};
+        fd.forEach((val, key) => {
+          payload[key] = String(val).trim();
+        });
+
+        const selectedType = payload["student_org_type"] || "auto";
+        const resolvedTarget =
+          selectedType === "auto" ? defaultOrgTypeVal : selectedType;
+        if (selectedType !== "auto") {
+          payload["student_org_label"] = selectedType;
+        }
+        if (resolvedTarget === "OSIM" && payload["student_org_name"]) {
+          payload["student_org_name"] = payload["student_org_name"].replace(
+            /\bOSIS\b/gi,
+            "OSIM",
+          );
+        } else if (resolvedTarget === "OSIS" && payload["student_org_name"]) {
+          payload["student_org_name"] = payload["student_org_name"].replace(
+            /\bOSIM\b/gi,
+            "OSIS",
+          );
+        }
+
+        // Validasi format email jika diisi
+        const email = payload["student_org_email"];
+        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          showBanner(
+            "Format email resmi organisasi tidak valid (contoh: osis@sekolah.sch.id).",
+            "error",
+          );
+          setLoading(false);
+          return;
+        }
+
+        try {
+          const res = await fetch("/api/admin/settings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          const data = await res.json();
+          setLoading(false);
+
+          if (data.success) {
+            isDirty = false;
+            unsavedBadge?.classList.add("hidden");
+            showBanner(
+              "Semua perubahan konfigurasi organisasi berhasil disimpan.",
+              "success",
+            );
+            if (headerSaveText) headerSaveText.innerText = "Tersimpan";
+            setTimeout(() => {
+              if (headerSaveText) headerSaveText.innerText = "Simpan Perubahan";
+            }, 2500);
+          } else {
+            showBanner(
+              data.error || "Gagal menyimpan konfigurasi organisasi.",
+              "error",
+            );
+          }
+        } catch (err) {
+          setLoading(false);
+          showBanner("Terjadi gangguan jaringan saat menyimpan data.", "error");
+        }
+      }
+
+      form?.addEventListener("submit", (e) => {
+        e.preventDefault();
+        saveOsis();
+      });
+
+      btnHeaderSave?.addEventListener("click", () => {
+        if (form?.reportValidity()) saveOsis();
+      });
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", initOsis);
+    } else {
+      initOsis();
+    }
+  </script>
+</AdminLayout>

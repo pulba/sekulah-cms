@@ -1,0 +1,24 @@
+---
+/**
+ * Lightweight Icon Component using SVG Sprite Symbol
+ * Zero JavaScript, fully accessible, zero redundant path rendering in HTML.
+ * Usage: <Icon name="whatsapp" class="h-5 w-5 text-[#25D366]" />
+ */
+interface Props {
+  name: string;
+  class?: string;
+  size?: number | string;
+  id?: string;
+  [key: string]: any;
+}
+
+const { name, class: className = "h-4 w-4", size, id, ...rest } = Astro.props;
+
+const style = size
+  ? `width: ${typeof size === "number" ? `${size}px` : size}; height: ${typeof size === "number" ? `${size}px` : size};`
+  : undefined;
+---
+
+<svg id={id} class={className} style={style} aria-hidden="true" {...rest}>
+  <use href={`#icon-${name}`}></use>
+</svg>

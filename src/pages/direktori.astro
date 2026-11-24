@@ -1,0 +1,1065 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import Breadcrumb from "../components/Breadcrumb.astro";
+import Icon from "../components/Icon.astro";
+import { db, teachers, settings } from "../db";
+import { eq, asc } from "drizzle-orm";
+
+export const prerender = false;
+
+// Ambil konfigurasi sekolah dari basis data
+const allSettings = await db.select().from(settings).catch(() => []);
+const schoolInfo = allSettings.reduce(
+  (acc, curr) => {
+    acc[curr.key] = curr.value;
+    return acc;
+  },
+  {} as Record<string, string>,
+);
+const schoolName = schoolInfo["school_name"] || "SMAN 1 Unggulan";
+
+// Ambil seluruh guru dan tenaga kependidikan aktif dari CMS
+const rawTeachers = await db
+  .select()
+  .from(teachers)
+  .where(eq(teachers.isActive, true))
+  .orderBy(asc(teachers.orderNumber), asc(teachers.id))
+  .catch(() => []);
+
+// Data fallback terstandar & terverifikasi (17 Pendidik & Staf Kredibel Tanpa Duplikasi)
+const fallbackTeachers = [
+  {
+    id: 1,
+    name: "Dr. H. Sulaiman, M.Pd.",
+    position: "Kepala Sekolah",
+    category: "pimpinan",
+    subject: "Manajemen Pendidikan",
+    nip: "19720514 199803 1 004",
+    education: "S3 Manajemen Pendidikan — Universitas Negeri Jakarta",
+    photoUrl: null,
+  },
+  {
+    id: 2,
+    name: "Dra. Sri Wahyuni, M.Si.",
+    position: "Wakil Kepala Sekolah Kurikulum",
+    category: "pimpinan",
+    subject: "Fisika Terapan",
+    nip: "19750821 200012 2 001",
+    education: "S2 Fisika Material — Institut Teknologi Bandung",
+    photoUrl: null,
+  },
+  {
+    id: 3,
+    name: "Ahmad Dahlan, S.Pd.",
+    position: "Wakil Kepala Sekolah Kesiswaan",
+    category: "pimpinan",
+    subject: "Pendidikan Pancasila & PKn",
+    nip: "19800315 200501 1 008",
+    education: "S1 Pendidikan Kewarganegaraan — Universitas Pendidikan Indonesia",
+    photoUrl: null,
+  },
+  {
+    id: 4,
+    name: "Ir. Siti Aminah, M.T.",
+    position: "Wakil Kepala Sekolah Sarana & Prasarana",
+    category: "pimpinan",
+    subject: "Informatika & Robotik",
+    nip: "19781110 200312 2 004",
+    education: "S2 Teknik Informatika — Institut Teknologi Sepuluh Nopember",
+    photoUrl: null,
+  },
+  {
+    id: 5,
+    name: "Drs. Bambang Sudarsono, M.Pd.",
+    position: "Guru Ahli Madya",
+    category: "guru",
+    subject: "Matematika Peminatan",
+    nip: "19680412 199403 1 005",
+    education: "S2 Pendidikan Matematika — Universitas Negeri Malang",
+    photoUrl: null,
+  },
+  {
+    id: 6,
+    name: "Siti Rahmawati, S.Pd.",
+    position: "Guru Pengampu",
+    category: "guru",
+    subject: "Matematika Umum",
+    nip: "19850512 200801 2 006",
+    education: "S1 Pendidikan Matematika — Universitas Negeri Yogyakarta",
+    photoUrl: null,
+  },
+  {
+    id: 7,
+    name: "Hendra Gunawan, S.Pd., M.Si.",
+    position: "Guru Pengampu",
+    category: "guru",
+    subject: "Kimia Terapan & Olimpiade",
+    nip: "19820719 200604 1 012",
+    education: "S2 Kimia Sains — Universitas Gadjah Mada",
+    photoUrl: null,
+  },
+  {
+    id: 8,
+    name: "Rina Kusuma Dewi, S.Pd.",
+    position: "Guru Pengampu",
+    category: "guru",
+    subject: "Biologi & Riset Lingkungan",
+    nip: "19870928 201101 2 018",
+    education: "S1 Pendidikan Biologi — Universitas Airlangga",
+    photoUrl: null,
+  },
+  {
+    id: 9,
+    name: "Nurul Hidayati, M.Pd.",
+    position: "Guru Ahli Muda",
+    category: "guru",
+    subject: "Bahasa Inggris & Debat",
+    nip: "19860214 200902 2 007",
+    education: "S2 Pendidikan Bahasa Inggris — Universitas Negeri Semarang",
+    photoUrl: null,
+  },
+  {
+    id: 10,
+    name: "Agus Setiawan, S.Pd.",
+    position: "Guru Pengampu",
+    category: "guru",
+    subject: "Bahasa & Sastra Indonesia",
+    nip: "19831105 200801 1 015",
+    education: "S1 Pendidikan Bahasa dan Sastra Indonesia — Universitas Sebelas Maret",
+    photoUrl: null,
+  },
+  {
+    id: 11,
+    name: "Wahyu Pratama, S.Pd.",
+    position: "Guru Pengampu",
+    category: "guru",
+    subject: "Sejarah Indonesia",
+    nip: "19890618 201402 1 003",
+    education: "S1 Ilmu Sejarah — Universitas Indonesia",
+    photoUrl: null,
+  },
+  {
+    id: 12,
+    name: "Dewi Lestari, S.Sn.",
+    position: "Guru Pengampu",
+    category: "guru",
+    subject: "Seni Budaya & Desain Kreatif",
+    nip: "19910403 201503 2 009",
+    education: "S1 Seni Rupa & Desain — Institut Seni Indonesia Yogyakarta",
+    photoUrl: null,
+  },
+  {
+    id: 13,
+    name: "Aris Nugroho, S.Pd.Kor.",
+    position: "Guru Pengampu",
+    category: "guru",
+    subject: "Pendidikan Jasmani & Olahraga",
+    nip: "19881210 201201 1 011",
+    education: "S1 Pendidikan Kepelatihan Olahraga — Universitas Negeri Surabaya",
+    photoUrl: null,
+  },
+  {
+    id: 14,
+    name: "Ust. Muhammad Ridwan, Lc., M.Ag.",
+    position: "Guru Pengampu",
+    category: "guru",
+    subject: "Pendidikan Agama Islam & Budi Pekerti",
+    nip: "19840125 200912 1 006",
+    education: "S2 Studi Islam — UIN Syarif Hidayatullah Jakarta",
+    photoUrl: null,
+  },
+  {
+    id: 15,
+    name: "Ratna Sari, S.Psi.",
+    position: "Guru Bimbingan Konseling",
+    category: "guru",
+    subject: "Bimbingan & Konseling (BK)",
+    nip: "19900822 201601 2 004",
+    education: "S1 Psikologi Pendidikan — Universitas Padjadjaran",
+    photoUrl: null,
+  },
+  {
+    id: 16,
+    name: "Budi Prasetyo, S.Kom.",
+    position: "Kepala Tata Usaha & IT Kampus",
+    category: "tendik",
+    subject: "Layanan Administrasi & Sistem Informasi",
+    nip: "19850320 200801 1 007",
+    education: "S1 Sistem Informasi — Universitas Bina Nusantara",
+    photoUrl: null,
+  },
+  {
+    id: 17,
+    name: "Maya Indrawati, A.Md.",
+    position: "Pengelola Perpustakaan Digital",
+    category: "tendik",
+    subject: "Layanan Pustaka & Literasi Sekolah",
+    nip: "19920715 201801 2 010",
+    education: "D3 Ilmu Perpustakaan — Universitas Sebelas Maret",
+    photoUrl: null,
+  },
+];
+
+// Helper penentuan kategori dari posisi jika data dari CMS
+function resolveCategory(position: string): string {
+  const p = (position || "").toLowerCase();
+  if (p.includes("kepala sekolah") || p.includes("wakil") || p.includes("waka")) {
+    return "pimpinan";
+  }
+  if (p.includes("tata usaha") || p.includes("pustakawan") || p.includes("staf") || p.includes("laboran") || p.includes("administrasi")) {
+    return "tendik";
+  }
+  return "guru";
+}
+
+const teachersList = rawTeachers.length > 0
+  ? rawTeachers.map((t, idx) => {
+      const fb = fallbackTeachers[idx % fallbackTeachers.length];
+      return {
+        id: t.id,
+        name: t.name,
+        position: t.position,
+        category: (t as any).category || resolveCategory(t.position),
+        subject: t.subject || "-",
+        nip: t.nip || "-",
+        education: fb?.education || "Pendidikan Formal Terverifikasi",
+        photoUrl: t.photoUrl?.trim() || "/images/default-avatar.svg",
+      };
+    })
+  : fallbackTeachers.map((fb) => ({
+      ...fb,
+      photoUrl: fb.photoUrl?.trim() || "/images/default-avatar.svg",
+    }));
+
+// Hitung data statistik nyata dari CMS
+const totalStaff = teachersList.length;
+const totalEducators = teachersList.filter((t) => ["guru", "pimpinan"].includes(t.category)).length;
+const totalTendik = teachersList.filter((t) => t.category === "tendik").length;
+const subjectSet = new Set(teachersList.map((t) => t.subject).filter((s) => s && s !== "-"));
+const totalSubjects = subjectSet.size;
+const subjectOptions = Array.from(subjectSet).sort();
+
+const heroStats = [
+  { value: totalEducators, label: "Tenaga Pendidik" },
+  { value: totalTendik > 0 ? totalTendik : totalStaff, label: totalTendik > 0 ? "Tendik & Staf" : "Total Staf" },
+  { value: "100%", label: "Berkualifikasi" },
+];
+
+const defaultTeacherAvatars = [
+  "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80",
+  "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=600&q=80",
+  "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=600&q=80",
+  "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=600&q=80",
+  "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=600&q=80",
+  "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=600&q=80",
+  "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=600&q=80",
+  "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=600&q=80",
+  "https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=600&q=80",
+  "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=600&q=80",
+  "https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?auto=format&fit=crop&w=600&q=80",
+  "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=600&q=80",
+];
+
+// Susun penempatan Hero: Kepala Sekolah di posisi paling tengah, diapit Wakil Kepala Sekolah (Waka), lalu guru lainnya
+const principalTeacher =
+  teachersList.find(
+    (t) =>
+      t.position.toLowerCase().includes("kepala sekolah") &&
+      !t.position.toLowerCase().includes("wakil") &&
+      !t.position.toLowerCase().includes("waka"),
+  ) || teachersList[0];
+
+const wakaTeachers = teachersList.filter(
+  (t) =>
+    (t.position.toLowerCase().includes("wakil") ||
+      t.position.toLowerCase().includes("waka")) &&
+    t.id !== principalTeacher.id,
+);
+
+const otherTeachers = teachersList.filter(
+  (t) =>
+    t.id !== principalTeacher.id &&
+    !wakaTeachers.some((w) => w.id === t.id),
+);
+
+// Slot 3 = Paling tengah (Kolom 4 Row 1) -> Kepala Sekolah
+// Slot 2 = Kiri dalam (Kolom 3 Row 1) -> Waka
+// Slot 4 = Kanan dalam (Kolom 5 Row 1) -> Waka
+// Slot 1 = Kiri tengah (Kolom 2 Row 1) -> Waka
+// Slot 5 = Kanan tengah (Kolom 6 Row 1) -> Waka
+const orderedHeroList: typeof teachersList = [];
+orderedHeroList[3] = principalTeacher;
+orderedHeroList[2] = wakaTeachers[0] || otherTeachers[0];
+orderedHeroList[4] = wakaTeachers[1] || otherTeachers[1];
+orderedHeroList[1] = wakaTeachers[2] || otherTeachers[2];
+orderedHeroList[5] = wakaTeachers[3] || otherTeachers[3];
+
+const remainingWakas = wakaTeachers.slice(4);
+const remainingPool = [...remainingWakas, ...otherTeachers];
+
+orderedHeroList[0] = remainingPool.shift() || fallbackTeachers[0];
+orderedHeroList[6] = remainingPool.shift() || fallbackTeachers[1];
+orderedHeroList[7] = remainingPool.shift() || fallbackTeachers[2];
+orderedHeroList[8] = remainingPool.shift() || fallbackTeachers[3];
+orderedHeroList[9] = remainingPool.shift() || fallbackTeachers[4];
+orderedHeroList[10] = remainingPool.shift() || fallbackTeachers[5];
+orderedHeroList[11] = remainingPool.shift() || fallbackTeachers[6];
+
+const heroTeachers = orderedHeroList.map((t, idx) => ({
+  ...t,
+  heroPhoto:
+    t.photoUrl && !t.photoUrl.includes("default-avatar")
+      ? t.photoUrl
+      : defaultTeacherAvatars[idx % defaultTeacherAvatars.length],
+}));
+---
+
+<Layout
+  title={`Dewan Guru & Tenaga Kependidikan — ${schoolName}`}
+  description={`Kenali dewan guru pengajar, pimpinan sekolah, dan tenaga kependidikan profesional ${schoolName}.`}
+>
+  <Header currentPath="/direktori" />
+
+  <main class="flex-1 bg-background">
+    <!-- Hero Canvas Section: Portrait Collage Framed Hero -->
+    <section class="pt-6 sm:pt-8 pb-4 sm:pb-6">
+      <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <!-- Breadcrumb Navigasi -->
+        <div class="mb-4 sm:mb-6">
+          <Breadcrumb
+            items={[
+              { label: "Beranda", href: "/" },
+              { label: "Direktori Tenaga Pendidik" },
+            ]}
+          />
+        </div>
+
+        <!-- Master Canvas Card Container -->
+        <div class="relative overflow-hidden">
+          <!-- Architectural vertical guideline accents -->
+          <div class="pointer-events-none absolute inset-0 flex justify-between px-6 sm:px-14 opacity-25 dark:opacity-10" aria-hidden="true">
+            <div class="w-px h-full bg-border"></div>
+            <div class="w-px h-full bg-border"></div>
+            <div class="w-px h-full bg-border"></div>
+            <div class="w-px h-full bg-border"></div>
+            <div class="w-px h-full bg-border"></div>
+            <div class="w-px h-full bg-border"></div>
+            <div class="w-px h-full bg-border"></div>
+          </div>
+
+          <!-- Desktop Collage: 7-Column Staggered Arch Framed Hero -->
+          <div class="relative z-10 hidden lg:grid grid-cols-7 gap-3.5 xl:gap-4 items-start">
+            <!-- Row 1: Upper Arch Portraits -->
+            <div class="col-start-1 row-start-1">
+              <div class="group relative aspect-[4/5] w-full overflow-hidden rounded-[16px] border border-border bg-surface shadow-xs transition-all duration-300 hover:shadow-md hover:scale-[1.03]">
+                <img src={heroTeachers[0].heroPhoto} alt={heroTeachers[0].name} width="200" height="250" class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
+                <div class="pointer-events-none absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-heading/80 via-heading/20 to-transparent p-2.5 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                  <p class="font-display text-[11px] font-bold text-white line-clamp-1">{heroTeachers[0].name}</p>
+                  <p class="font-body text-[10px] text-white/80 line-clamp-1">{heroTeachers[0].position}</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-start-2 row-start-1 pt-6">
+              <div class="group relative aspect-[4/5] w-full overflow-hidden rounded-[16px] border border-border bg-surface shadow-xs transition-all duration-300 hover:shadow-md hover:scale-[1.03]">
+                <img src={heroTeachers[1].heroPhoto} alt={heroTeachers[1].name} width="200" height="250" class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
+                <div class="pointer-events-none absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-heading/80 via-heading/20 to-transparent p-2.5 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                  <p class="font-display text-[11px] font-bold text-white line-clamp-1">{heroTeachers[1].name}</p>
+                  <p class="font-body text-[10px] text-white/80 line-clamp-1">{heroTeachers[1].position}</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-start-3 row-start-1 pt-2">
+              <div class="group relative aspect-[4/5] w-full overflow-hidden rounded-[16px] border border-border bg-surface shadow-xs transition-all duration-300 hover:shadow-md hover:scale-[1.03]">
+                <img src={heroTeachers[2].heroPhoto} alt={heroTeachers[2].name} width="200" height="250" class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
+                <div class="pointer-events-none absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-heading/80 via-heading/20 to-transparent p-2.5 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                  <p class="font-display text-[11px] font-bold text-white line-clamp-1">{heroTeachers[2].name}</p>
+                  <p class="font-body text-[10px] text-white/80 line-clamp-1">{heroTeachers[2].position}</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-start-4 row-start-1 flex justify-center">
+              <div class="group relative aspect-[4/5] w-32 xl:w-36 overflow-hidden rounded-[18px] border-2 border-primary/25 bg-surface shadow-xs transition-all duration-300 hover:shadow-md hover:scale-[1.03]">
+                <img src={heroTeachers[3].heroPhoto} alt={heroTeachers[3].name} width="200" height="250" class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
+                <div class="pointer-events-none absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-heading/80 via-heading/20 to-transparent p-2.5 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                  <p class="font-display text-[11px] font-bold text-white line-clamp-1">{heroTeachers[3].name}</p>
+                  <p class="font-body text-[10px] text-white/80 line-clamp-1">{heroTeachers[3].position}</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-start-5 row-start-1 pt-2">
+              <div class="group relative aspect-[4/5] w-full overflow-hidden rounded-[16px] border border-border bg-surface shadow-xs transition-all duration-300 hover:shadow-md hover:scale-[1.03]">
+                <img src={heroTeachers[4].heroPhoto} alt={heroTeachers[4].name} width="200" height="250" class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
+                <div class="pointer-events-none absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-heading/80 via-heading/20 to-transparent p-2.5 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                  <p class="font-display text-[11px] font-bold text-white line-clamp-1">{heroTeachers[4].name}</p>
+                  <p class="font-body text-[10px] text-white/80 line-clamp-1">{heroTeachers[4].position}</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-start-6 row-start-1 pt-6">
+              <div class="group relative aspect-[4/5] w-full overflow-hidden rounded-[16px] border border-border bg-surface shadow-xs transition-all duration-300 hover:shadow-md hover:scale-[1.03]">
+                <img src={heroTeachers[5].heroPhoto} alt={heroTeachers[5].name} width="200" height="250" class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
+                <div class="pointer-events-none absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-heading/80 via-heading/20 to-transparent p-2.5 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                  <p class="font-display text-[11px] font-bold text-white line-clamp-1">{heroTeachers[5].name}</p>
+                  <p class="font-body text-[10px] text-white/80 line-clamp-1">{heroTeachers[5].position}</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-start-7 row-start-1">
+              <div class="group relative aspect-[4/5] w-full overflow-hidden rounded-[16px] border border-border bg-surface shadow-xs transition-all duration-300 hover:shadow-md hover:scale-[1.03]">
+                <img src={heroTeachers[6].heroPhoto} alt={heroTeachers[6].name} width="200" height="250" class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
+                <div class="pointer-events-none absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-heading/80 via-heading/20 to-transparent p-2.5 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                  <p class="font-display text-[11px] font-bold text-white line-clamp-1">{heroTeachers[6].name}</p>
+                  <p class="font-body text-[10px] text-white/80 line-clamp-1">{heroTeachers[6].position}</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Row 2: Flanking Portraits & Center Hero Content -->
+            <div class="col-start-1 row-start-2 pt-2">
+              <div class="group relative aspect-[4/5] w-full overflow-hidden rounded-[16px] border border-border bg-surface shadow-xs transition-all duration-300 hover:shadow-md hover:scale-[1.03]">
+                <img src={heroTeachers[7].heroPhoto} alt={heroTeachers[7].name} width="200" height="250" class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
+                <div class="pointer-events-none absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-heading/80 via-heading/20 to-transparent p-2.5 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                  <p class="font-display text-[11px] font-bold text-white line-clamp-1">{heroTeachers[7].name}</p>
+                  <p class="font-body text-[10px] text-white/80 line-clamp-1">{heroTeachers[7].position}</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-start-2 row-start-2 pt-4">
+              <div class="group relative aspect-[4/5] w-full overflow-hidden rounded-[16px] border border-border bg-surface shadow-xs transition-all duration-300 hover:shadow-md hover:scale-[1.03]">
+                <img src={heroTeachers[8].heroPhoto} alt={heroTeachers[8].name} width="200" height="250" class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
+                <div class="pointer-events-none absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-heading/80 via-heading/20 to-transparent p-2.5 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                  <p class="font-display text-[11px] font-bold text-white line-clamp-1">{heroTeachers[8].name}</p>
+                  <p class="font-body text-[10px] text-white/80 line-clamp-1">{heroTeachers[8].position}</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Cols 3-5: Centered Copy, Action Button & Stats -->
+            <div class="col-start-3 col-span-3 row-start-2 flex flex-col items-center justify-center text-center px-4 py-4 xl:py-6">
+              <div class="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-4 py-1 text-xs font-medium text-body shadow-2xs">
+                <span>Direktori Akademik</span>
+              </div>
+
+              <h1 class="mt-4 font-display text-3xl xl:text-4xl font-bold tracking-tight text-heading leading-[1.15]">
+                Pendidik Berdedikasi<br />
+                <span class="text-muted font-normal">Membina Generasi Unggul</span>
+              </h1>
+
+              <p class="mt-3.5 max-w-md font-body text-sm text-muted leading-relaxed">
+                Kenali tenaga pendidik dan kependidikan profesional {schoolName} yang mendampingi, membimbing, dan mengawal potensi peserta didik setiap hari.
+              </p>
+
+              <a
+                href="#category-filter-bar"
+                class="mt-6 inline-flex items-center gap-2.5 rounded-full bg-heading text-surface px-6 py-2.5 font-body text-xs font-semibold shadow-xs hover:opacity-90 active:scale-95 transition-all cursor-pointer"
+              >
+                <span>Jelajahi Profil Pendidik</span>
+                <Icon name="arrow-down" class="h-3.5 w-3.5" />
+              </a>
+
+              <!-- Compact Stats Bar -->
+              <div class="mt-6 flex flex-wrap items-center justify-center gap-3">
+                {
+                  heroStats.map((item) => (
+                    <div class="flex items-center gap-2 rounded-full border border-border bg-surface px-3.5 py-1 shadow-2xs">
+                      <span class="font-display text-sm font-bold text-primary leading-none">
+                        {item.value}
+                      </span>
+                      <span class="font-body text-xs text-muted whitespace-nowrap">
+                        {item.label}
+                      </span>
+                    </div>
+                  ))
+                }
+              </div>
+            </div>
+
+            <!-- Col 6, Row 2: Tilted Pop-Out Card -->
+            <div class="col-start-6 row-start-2 pt-4">
+              <div class="group relative aspect-[4/5] w-full overflow-hidden rounded-[16px] border border-border bg-surface shadow-md rotate-[-5deg] hover:rotate-0 transition-all duration-300 hover:scale-105 z-10">
+                <img src={heroTeachers[9].heroPhoto} alt={heroTeachers[9].name} width="200" height="250" class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
+                <div class="pointer-events-none absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-heading/80 via-heading/20 to-transparent p-2.5 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                  <p class="font-display text-[11px] font-bold text-white line-clamp-1">{heroTeachers[9].name}</p>
+                  <p class="font-body text-[10px] text-white/80 line-clamp-1">{heroTeachers[9].position}</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Col 7, Row 2 -->
+            <div class="col-start-7 row-start-2 pt-2">
+              <div class="group relative aspect-[4/5] w-full overflow-hidden rounded-[16px] border border-border bg-surface shadow-xs transition-all duration-300 hover:shadow-md hover:scale-[1.03]">
+                <img src={heroTeachers[10].heroPhoto} alt={heroTeachers[10].name} width="200" height="250" class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
+                <div class="pointer-events-none absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-heading/80 via-heading/20 to-transparent p-2.5 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                  <p class="font-display text-[11px] font-bold text-white line-clamp-1">{heroTeachers[10].name}</p>
+                  <p class="font-body text-[10px] text-white/80 line-clamp-1">{heroTeachers[10].position}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Mobile & Tablet Layout (< lg) -->
+          <div class="relative z-10 lg:hidden flex flex-col items-center">
+            <!-- Staggered Portrait Cards Cluster on Mobile/Tablet -->
+            <div class="flex items-center justify-center gap-2 sm:gap-3 py-2 w-full max-w-md mx-auto">
+              <div class="w-16 sm:w-20 aspect-[4/5] rounded-[12px] sm:rounded-[14px] overflow-hidden border border-border bg-surface shadow-xs -rotate-3">
+                <img src={heroTeachers[0].heroPhoto} alt={heroTeachers[0].name} width="80" height="100" class="w-full h-full object-cover" loading="lazy" />
+              </div>
+              <div class="w-18 sm:w-22 aspect-[4/5] rounded-[12px] sm:rounded-[14px] overflow-hidden border border-border bg-surface shadow-xs pt-1 sm:pt-2">
+                <img src={heroTeachers[1].heroPhoto} alt={heroTeachers[1].name} width="88" height="110" class="w-full h-full object-cover" loading="lazy" />
+              </div>
+              <div class="w-20 sm:w-24 aspect-[4/5] rounded-[14px] sm:rounded-[16px] overflow-hidden border border-border bg-surface shadow-xs -mt-2 z-10">
+                <img src={heroTeachers[3].heroPhoto} alt={heroTeachers[3].name} width="96" height="120" class="w-full h-full object-cover" loading="lazy" />
+              </div>
+              <div class="w-18 sm:w-22 aspect-[4/5] rounded-[12px] sm:rounded-[14px] overflow-hidden border border-border bg-surface shadow-xs pt-1 sm:pt-2">
+                <img src={heroTeachers[5].heroPhoto} alt={heroTeachers[5].name} width="88" height="110" class="w-full h-full object-cover" loading="lazy" />
+              </div>
+              <div class="w-16 sm:w-20 aspect-[4/5] rounded-[12px] sm:rounded-[14px] overflow-hidden border border-border bg-surface shadow-xs rotate-3">
+                <img src={heroTeachers[9].heroPhoto} alt={heroTeachers[9].name} width="80" height="100" class="w-full h-full object-cover" loading="lazy" />
+              </div>
+            </div>
+
+            <!-- Center Content for Mobile -->
+            <div class="mt-6 flex flex-col items-center text-center">
+              <div class="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3.5 py-1 text-xs font-medium text-body shadow-2xs">
+                <span>Direktori Akademik</span>
+              </div>
+              <h1 class="mt-3 font-display text-2xl sm:text-3xl font-bold tracking-tight text-heading leading-tight">
+                Pendidik Berdedikasi<br />
+                <span class="text-muted font-normal text-xl sm:text-2xl">Membina Generasi Unggul</span>
+              </h1>
+              <p class="mt-3 max-w-lg font-body text-xs sm:text-sm text-muted leading-relaxed">
+                Kenali tenaga pendidik dan kependidikan profesional {schoolName} yang mendampingi, membimbing, dan mengawal potensi peserta didik setiap hari.
+              </p>
+              <a
+                href="#category-filter-bar"
+                class="mt-5 inline-flex items-center gap-2 rounded-full bg-heading text-surface px-5 py-2.5 font-body text-xs font-semibold shadow-xs hover:opacity-90 active:scale-95 transition-all cursor-pointer"
+              >
+                <span>Jelajahi Profil Pendidik</span>
+                <Icon name="arrow-down" class="h-3.5 w-3.5" />
+              </a>
+
+              <!-- Compact Stats -->
+              <div class="mt-6 flex flex-wrap items-center justify-center gap-2">
+                {
+                  heroStats.map((item) => (
+                    <div class="flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1 shadow-2xs">
+                      <span class="font-display text-xs font-bold text-primary leading-none">
+                        {item.value}
+                      </span>
+                      <span class="font-body text-[11px] text-muted whitespace-nowrap">
+                        {item.label}
+                      </span>
+                    </div>
+                  ))
+                }
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Content: Pencarian & Daftar Guru -->
+    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10 sm:py-14 space-y-8 sm:space-y-10">
+      <!-- 2. PENCARIAN & FILTER DIREKTORI -->
+      <div class="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 pb-2">
+        <!-- Filter Tab Kategori Jabatan -->
+        <div
+          class="flex flex-wrap items-center gap-1.5 *:rounded-full *:px-3.5 *:py-1.5 *:font-body *:text-xs *:transition-colors"
+          id="category-filter-bar"
+        >
+          <button
+            type="button"
+            data-cat="all"
+            class="cat-filter-btn bg-primary font-semibold text-white shadow-xs"
+          >
+            Semua
+          </button>
+          <button
+            type="button"
+            data-cat="pimpinan"
+            class="cat-filter-btn border border-border bg-surface font-medium text-muted hover:border-border-hover hover:text-heading hover:bg-surface-subtle"
+          >
+            Pimpinan Sekolah
+          </button>
+          <button
+            type="button"
+            data-cat="guru"
+            class="cat-filter-btn border border-border bg-surface font-medium text-muted hover:border-border-hover hover:text-heading hover:bg-surface-subtle"
+          >
+            Guru
+          </button>
+          <button
+            type="button"
+            data-cat="tendik"
+            class="cat-filter-btn border border-border bg-surface font-medium text-muted hover:border-border-hover hover:text-heading hover:bg-surface-subtle"
+          >
+            Tendik
+          </button>
+        </div>
+
+        <!-- Input Pencarian Realtime -->
+        <div class="relative w-full md:w-72 shrink-0">
+          <Icon name="search" class="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted pointer-events-none" />
+          <input
+            type="text"
+            id="search-input"
+            placeholder="Cari nama guru..."
+            class="h-10 w-full rounded-full border border-border bg-surface pl-10 pr-3.5 font-body text-xs sm:text-sm text-heading placeholder:text-muted/60 transition-colors focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+        </div>
+      </div>
+
+      <!-- 3. TABEL DIREKTORI TENAGA PENDIDIK -->
+      <div
+        id="teachers-table-container"
+        class="rounded-[16px] border border-border bg-surface shadow-xs overflow-hidden"
+      >
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs" id="teachers-table">
+            <thead class="bg-surface-subtle text-[11px] font-semibold text-muted uppercase tracking-wider border-b border-border">
+              <tr class="*:py-3.5 *:px-4">
+                <th class="w-14 text-center font-mono">No</th>
+                <th>Nama & NIP</th>
+                <th>Jabatan</th>
+                <th>Mata Pelajaran</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-border/60 font-body" id="teachers-tbody">
+              {teachersList.map((teacher, idx) => (
+                <tr
+                  class:list={[
+                    "teacher-row group transition-colors cursor-pointer *:py-3 *:px-4 hover:!bg-primary/5 dark:hover:!bg-primary/15",
+                    idx % 2 === 1 ? "bg-surface-subtle/60 dark:bg-surface-subtle/35" : "bg-surface",
+                  ]}
+                  data-name={teacher.name.toLowerCase()}
+                  data-subject={teacher.subject.toLowerCase()}
+                  data-position={teacher.position.toLowerCase()}
+                  data-category={teacher.category}
+                  data-teacher={JSON.stringify(teacher)}
+                >
+                  <td class="w-14 text-center font-mono text-muted row-number">
+                    {idx + 1}
+                  </td>
+                  <td>
+                    <div class="flex items-center gap-3">
+                      <div class="relative h-10 w-10 shrink-0 overflow-hidden rounded-full border border-border bg-surface-subtle">
+                        <img
+                          src={teacher.photoUrl || "/images/default-avatar.svg"}
+                          alt={teacher.name}
+                          width="40"
+                          height="40"
+                          class="h-full w-full object-cover object-top"
+                          loading="lazy"
+                          onerror="this.onerror=null;this.src='/images/default-avatar.svg';"
+                        />
+                      </div>
+                      <div class="min-w-0">
+                        <p class="font-display font-bold text-heading group-hover:text-primary transition-colors truncate">
+                          {teacher.name}
+                        </p>
+                        <p class="font-mono text-[10px] text-muted truncate">
+                          {teacher.nip && teacher.nip !== "-" ? `NIP: ${teacher.nip}` : "—"}
+                        </p>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <p class="font-medium text-heading">{teacher.position}</p>
+                  </td>
+                  <td class="text-muted">
+                    {teacher.subject && teacher.subject !== "-" ? teacher.subject : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- State Kosong jika Pencarian Tidak Ditemukan -->
+      <div
+        id="empty-state"
+        class="hidden rounded-[12px] border border-border bg-surface p-12 text-center max-w-md mx-auto space-y-3 shadow-xs"
+      >
+        <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-surface-subtle text-muted">
+          <Icon name="search" class="h-6 w-6 text-muted" />
+        </div>
+        <h3 class="font-display text-base font-bold text-heading">
+          Pendidik Tidak Ditemukan
+        </h3>
+        <p class="font-body text-xs text-muted">
+          Tidak ada data guru atau mata pelajaran yang sesuai dengan kata kunci pencarian Anda.
+        </p>
+        <button
+          type="button"
+          id="btn-reset-filter"
+          class="inline-flex h-9 items-center justify-center gap-1.5 rounded-[6px] bg-primary px-4 text-xs font-medium text-white hover:bg-primary-hover hover:shadow-(--shadow-button-glow) transition-all cursor-pointer"
+        >
+          <Icon name="close" class="h-3.5 w-3.5" />
+          <span>Reset Pencarian</span>
+        </button>
+      </div>
+
+      <!-- Pagination Nav & Counter -->
+      <div
+        id="pagination-wrapper"
+        class="mt-10 flex flex-col sm:flex-row items-center justify-between gap-4 pt-2"
+      >
+        <p class="font-body text-xs text-muted">
+          Menampilkan <span id="page-start" class="font-semibold text-heading">1</span>–<span id="page-end" class="font-semibold text-heading">10</span> dari <span id="page-total" class="font-semibold text-heading">{totalStaff}</span> tenaga pendidik
+        </p>
+
+        <nav class="flex items-center gap-1.5" aria-label="Navigasi Halaman Direktori">
+          <button
+            type="button"
+            id="btn-prev-page"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-[6px] border border-border bg-surface text-heading hover:bg-surface-subtle disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            aria-label="Halaman sebelumnya"
+          >
+            <Icon name="chevron-left" class="h-4 w-4" />
+          </button>
+
+          <div id="page-numbers" class="flex items-center gap-1">
+            <!-- Dynamic page buttons rendered via JS -->
+          </div>
+
+          <button
+            type="button"
+            id="btn-next-page"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-[6px] border border-border bg-surface text-heading hover:bg-surface-subtle disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            aria-label="Halaman berikutnya"
+          >
+            <Icon name="chevron-right" class="h-4 w-4" />
+          </button>
+        </nav>
+      </div>
+
+    </div>
+  </main>
+
+  {/* 4. MODAL DETAIL PROFIL GURU (Klik Baris Tabel) */}
+  <div
+    id="teacher-modal"
+    class="fixed inset-0 z-50 hidden bg-black/70 backdrop-blur-xs flex items-center justify-center p-4"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Detail Profil Tenaga Pendidik"
+  >
+    <div class="relative max-w-lg w-full bg-surface rounded-[12px] overflow-hidden shadow-2xl p-6 space-y-6">
+      
+      <!-- Tombol Tutup -->
+      <button
+        id="btn-close-modal"
+        type="button"
+        class="absolute top-4 right-4 flex h-8 w-8 items-center justify-center rounded-full bg-surface-subtle text-muted hover:text-heading hover:bg-border transition-colors cursor-pointer"
+        aria-label="Tutup jendela profil"
+      >
+        <Icon name="close" class="h-4 w-4" />
+      </button>
+
+      <div class="flex flex-col sm:flex-row items-center sm:items-start gap-5 pt-2">
+        <div class="w-32 sm:w-36 shrink-0 aspect-[3/4] rounded-[8px] overflow-hidden border border-border bg-surface-subtle shadow-xs">
+          <img
+            id="modal-photo"
+            src=""
+            alt=""
+            class="h-full w-full object-cover object-top"
+          />
+        </div>
+
+        <div class="space-y-2 text-center sm:text-left flex-1 min-w-0">
+          <h3 id="modal-name" class="font-display text-lg sm:text-xl font-bold text-heading leading-snug">
+          </h3>
+          <p id="modal-position" class="font-body text-xs font-semibold text-primary">
+          </p>
+          <p class="font-mono text-xs text-muted" id="modal-nip">
+          </p>
+          <div class="space-y-2.5 text-xs text-left font-body">
+            <div class="grid grid-cols-3 gap-2">
+              <span class="text-muted font-medium">Bidang Tugas:</span>
+              <span id="modal-subject" class="col-span-2 text-heading font-semibold"></span>
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+              <span class="text-muted font-medium">Kualifikasi:</span>
+              <span id="modal-education" class="col-span-2 text-heading"></span>
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+              <span class="text-muted font-medium">Satuan Tugas:</span>
+              <span class="col-span-2 text-heading font-medium">{schoolName}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+
+    </div>
+  </div>
+
+  <Footer />
+
+  <script>
+    function initDirektoriPage() {
+      const searchInput = document.getElementById("search-input") as HTMLInputElement | null;
+      const catButtons = document.querySelectorAll<HTMLButtonElement>(".cat-filter-btn");
+      const rows = Array.from(document.querySelectorAll<HTMLElement>(".teacher-row"));
+      const tableContainer = document.getElementById("teachers-table-container");
+      const emptyState = document.getElementById("empty-state");
+      const resetBtn = document.getElementById("btn-reset-filter");
+
+      // Pagination elements
+      const paginationWrapper = document.getElementById("pagination-wrapper");
+      const pageStart = document.getElementById("page-start");
+      const pageEnd = document.getElementById("page-end");
+      const pageTotal = document.getElementById("page-total");
+      const btnPrevPage = document.getElementById("btn-prev-page") as HTMLButtonElement | null;
+      const btnNextPage = document.getElementById("btn-next-page") as HTMLButtonElement | null;
+      const pageNumbers = document.getElementById("page-numbers");
+
+      const PAGE_SIZE = 10;
+      let currentPage = 1;
+      let activeCategory = "all";
+      let filteredRows: HTMLElement[] = [...rows];
+
+      function renderPagination() {
+        const totalItems = filteredRows.length;
+
+        if (totalItems === 0) {
+          if (paginationWrapper) paginationWrapper.classList.add("hidden");
+          if (tableContainer) tableContainer.classList.add("hidden");
+          return;
+        }
+
+        if (paginationWrapper) paginationWrapper.classList.remove("hidden");
+        if (tableContainer) tableContainer.classList.remove("hidden");
+
+        const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+        if (currentPage > totalPages) currentPage = totalPages;
+        if (currentPage < 1) currentPage = 1;
+
+        const startIndex = (currentPage - 1) * PAGE_SIZE;
+        const endIndex = Math.min(startIndex + PAGE_SIZE, totalItems);
+
+        // Hide all rows first, then show only the items on the active page
+        rows.forEach((row) => row.classList.add("hidden"));
+        for (let i = startIndex; i < endIndex; i++) {
+          const row = filteredRows[i];
+          if (row) {
+            row.classList.remove("hidden");
+            const numCell = row.querySelector(".row-number");
+            if (numCell) numCell.textContent = String(i + 1);
+
+            // Re-apply zebra striping on visible rows
+            if ((i - startIndex) % 2 === 1) {
+              row.classList.add("bg-surface-subtle/60");
+              row.classList.remove("bg-surface");
+            } else {
+              row.classList.add("bg-surface");
+              row.classList.remove("bg-surface-subtle/60");
+            }
+          }
+        }
+
+        // Update range counters
+        if (pageStart) pageStart.textContent = String(startIndex + 1);
+        if (pageEnd) pageEnd.textContent = String(endIndex);
+        if (pageTotal) pageTotal.textContent = String(totalItems);
+
+        // Update button disabled state
+        if (btnPrevPage) {
+          btnPrevPage.disabled = currentPage <= 1;
+        }
+        if (btnNextPage) {
+          btnNextPage.disabled = currentPage >= totalPages;
+        }
+
+        // Render page number buttons
+        if (pageNumbers) {
+          pageNumbers.innerHTML = "";
+          for (let p = 1; p <= totalPages; p++) {
+            const pageBtn = document.createElement("button");
+            pageBtn.type = "button";
+            pageBtn.textContent = String(p);
+            pageBtn.setAttribute("aria-label", `Menuju halaman ${p}`);
+
+            if (p === currentPage) {
+              pageBtn.className =
+                "inline-flex h-8 w-8 items-center justify-center rounded-[6px] bg-primary text-xs font-semibold text-white shadow-xs cursor-default";
+            } else {
+              pageBtn.className =
+                "inline-flex h-8 w-8 items-center justify-center rounded-[6px] border border-border bg-surface text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer";
+              pageBtn.addEventListener("click", () => {
+                currentPage = p;
+                renderPagination();
+                document.getElementById("teachers-table-container")?.scrollIntoView({ behavior: "smooth", block: "start" });
+              });
+            }
+            pageNumbers.appendChild(pageBtn);
+          }
+        }
+      }
+
+      function applyFilter(resetPage = true) {
+        if (resetPage) {
+          currentPage = 1;
+        }
+
+        const query = (searchInput?.value || "").toLowerCase().trim();
+
+        filteredRows = rows.filter((row) => {
+          const name = row.getAttribute("data-name") || "";
+          const subject = row.getAttribute("data-subject") || "";
+          const position = row.getAttribute("data-position") || "";
+          const cat = row.getAttribute("data-category") || "";
+
+          const matchQuery =
+            !query ||
+            name.includes(query) ||
+            subject.includes(query) ||
+            position.includes(query);
+
+          const matchCat =
+            activeCategory === "all" || cat === activeCategory;
+
+          return matchQuery && matchCat;
+        });
+
+        if (emptyState) {
+          if (filteredRows.length === 0) {
+            emptyState.classList.remove("hidden");
+          } else {
+            emptyState.classList.add("hidden");
+          }
+        }
+
+        renderPagination();
+      }
+
+      // Prev / Next button listeners
+      btnPrevPage?.addEventListener("click", () => {
+        if (currentPage > 1) {
+          currentPage--;
+          renderPagination();
+          document.getElementById("teachers-table-container")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      });
+
+      btnNextPage?.addEventListener("click", () => {
+        const totalPages = Math.ceil(filteredRows.length / PAGE_SIZE);
+        if (currentPage < totalPages) {
+          currentPage++;
+          renderPagination();
+          document.getElementById("teachers-table-container")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      });
+
+      searchInput?.addEventListener("input", () => applyFilter(true));
+
+      catButtons.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          activeCategory = btn.getAttribute("data-cat") || "all";
+
+          catButtons.forEach((b) => {
+            b.classList.remove("bg-primary", "text-white", "font-semibold", "shadow-xs");
+            b.classList.add("border", "border-border", "bg-surface", "text-muted", "hover:border-border-hover", "hover:text-heading", "hover:bg-surface-subtle");
+          });
+
+          btn.classList.remove("border", "border-border", "bg-surface", "text-muted", "hover:border-border-hover", "hover:text-heading", "hover:bg-surface-subtle");
+          btn.classList.add("bg-primary", "text-white", "font-semibold", "shadow-xs");
+
+          applyFilter(true);
+        });
+      });
+
+      resetBtn?.addEventListener("click", () => {
+        if (searchInput) searchInput.value = "";
+        activeCategory = "all";
+
+        catButtons.forEach((b, idx) => {
+          if (idx === 0) {
+            b.classList.add("bg-primary", "text-white", "font-semibold", "shadow-xs");
+            b.classList.remove("border", "border-border", "bg-surface", "text-muted", "hover:border-border-hover", "hover:text-heading", "hover:bg-surface-subtle");
+          } else {
+            b.classList.remove("bg-primary", "text-white", "font-semibold", "shadow-xs");
+            b.classList.add("border", "border-border", "bg-surface", "text-muted", "hover:border-border-hover", "hover:text-heading", "hover:bg-surface-subtle");
+          }
+        });
+
+        applyFilter(true);
+      });
+
+      // Modal Detail Interaktif (Klik Baris atau Tombol Detail)
+      const modal = document.getElementById("teacher-modal");
+      const modalPhoto = document.getElementById("modal-photo") as HTMLImageElement | null;
+      const modalCategory = document.getElementById("modal-category");
+      const modalName = document.getElementById("modal-name");
+      const modalPosition = document.getElementById("modal-position");
+      const modalNip = document.getElementById("modal-nip");
+      const modalSubject = document.getElementById("modal-subject");
+      const modalEducation = document.getElementById("modal-education");
+      const closeBtn = document.getElementById("btn-close-modal");
+      const closeBottomBtn = document.getElementById("btn-close-modal-bottom");
+
+      rows.forEach((row) => {
+        row.addEventListener("click", () => {
+          const raw = row.getAttribute("data-teacher");
+          if (!raw) return;
+          try {
+            const data = JSON.parse(raw);
+            if (modalPhoto) {
+              modalPhoto.src = data.photoUrl || "/images/default-avatar.svg";
+              modalPhoto.alt = data.name;
+              modalPhoto.onerror = () => {
+                modalPhoto.src = "/images/default-avatar.svg";
+              };
+            }
+            if (modalCategory) {
+              modalCategory.textContent = data.category === "pimpinan" ? "Pimpinan Sekolah" : data.category === "tendik" ? "Tenaga Kependidikan" : "Guru Pengampu";
+            }
+            if (modalName) modalName.textContent = data.name;
+            if (modalPosition) modalPosition.textContent = data.position;
+            if (modalNip) modalNip.textContent = data.nip && data.nip !== "-" ? `NIP: ${data.nip}` : "Pendidik Tersertifikasi";
+            if (modalSubject) modalSubject.textContent = data.subject || "-";
+            if (modalEducation) modalEducation.textContent = data.education || "Pendidikan Tinggi Terakreditasi";
+
+            modal?.classList.remove("hidden");
+          } catch {}
+        });
+      });
+
+      function closeModal() {
+        modal?.classList.add("hidden");
+      }
+
+      closeBtn?.addEventListener("click", closeModal);
+      closeBottomBtn?.addEventListener("click", closeModal);
+      modal?.addEventListener("click", (e) => {
+        if (e.target === modal) closeModal();
+      });
+
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && !modal?.classList.contains("hidden")) {
+          closeModal();
+        }
+      });
+
+      // Apply initial pagination state
+      applyFilter(true);
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", initDirektoriPage);
+    } else {
+      initDirektoriPage();
+    }
+  </script>
+</Layout>

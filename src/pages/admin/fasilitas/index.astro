@@ -1,0 +1,974 @@
+---
+import AdminLayout from "../../../layouts/AdminLayout.astro";
+import MediaPickerModal from "../../../components/MediaPickerModal.astro";
+import Pagination from "../../../components/Pagination.astro";
+import Icon from "../../../components/Icon.astro";
+import { db, facilities } from "../../../db";
+import { asc, desc, eq, and, or, like, sql } from "drizzle-orm";
+
+export const prerender = false;
+
+// Query parameter filter & pagination
+const currentCategory = Astro.url.searchParams.get("kategori") || "all";
+const searchQuery = Astro.url.searchParams.get("q") || "";
+const currentPage = Math.max(
+  1,
+  parseInt(Astro.url.searchParams.get("page") || "1", 10) || 1,
+);
+const pageSize = 10;
+
+// Daftar kategori default fasilitas
+const defaultCategories = [
+  "Laboratorium",
+  "Ruang Belajar",
+  "Olahraga",
+  "Penunjang",
+  "Kesehatan & Ibadah",
+];
+
+// Hitung total keseluruhan
+const totalCount = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(facilities)
+  .then((r) => Number(r[0]?.count || 0));
+
+// Hitung jumlah per kategori aktual
+const categoryCountsRaw = await db
+  .select({
+    category: facilities.category,
+    count: sql<number>`count(*)`,
+  })
+  .from(facilities)
+  .groupBy(facilities.category)
+  .catch(() => []);
+
+const categoryCounts = (categoryCountsRaw || []).reduce(
+  (acc: Record<string, number>, row: any) => {
+    if (row.category) {
+      acc[row.category] = Number(row.count) || 0;
+    }
+    return acc;
+  },
+  {} as Record<string, number>,
+);
+
+// Kategori mengikuti data aktual digabung dengan default
+const usedCategories = Object.keys(categoryCounts).filter(Boolean);
+const categories =
+  usedCategories.length > 0
+    ? Array.from(new Set([...usedCategories, ...defaultCategories]))
+    : defaultCategories;
+
+// Build filter query
+const conditions: any[] = [];
+if (currentCategory && currentCategory !== "all") {
+  conditions.push(eq(facilities.category, currentCategory));
+}
+
+if (searchQuery) {
+  const queryPattern = `%${searchQuery.trim()}%`;
+  conditions.push(
+    or(
+      like(facilities.name, queryPattern),
+      like(facilities.category, queryPattern),
+      like(facilities.location, queryPattern),
+      like(facilities.capacity, queryPattern),
+      like(facilities.description, queryPattern),
+    ),
+  );
+}
+
+const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+const totalFiltered = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(facilities)
+  .where(whereClause)
+  .then((r) => Number(r[0]?.count || 0));
+
+const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
+const validPage = Math.min(currentPage, totalPages);
+const offset = (validPage - 1) * pageSize;
+
+const facilityList = await db
+  .select()
+  .from(facilities)
+  .where(whereClause)
+  .orderBy(asc(facilities.orderNumber), desc(facilities.id))
+  .limit(pageSize)
+  .offset(offset)
+  .catch(() => []);
+
+function getPageUrl(p: number) {
+  const params = new URLSearchParams();
+  if (currentCategory && currentCategory !== "all")
+    params.set("kategori", currentCategory);
+  if (searchQuery) params.set("q", searchQuery);
+  if (p > 1) params.set("page", String(p));
+  const qs = params.toString();
+  return `/admin/fasilitas${qs ? `?${qs}` : ""}`;
+}
+---
+
+<AdminLayout title="Manajemen Fasilitas Sekolah" activeNav="fasilitas">
+  <div class="space-y-6 max-w-6xl">
+    <!-- Header Page -->
+    <div class="pb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <h1 class="font-display text-2xl font-bold tracking-tight text-heading">
+          Katalog Fasilitas Sekolah
+        </h1>
+        <p class="mt-1 font-body text-xs text-muted">
+          Kelola sarana prasarana sekolah, laboratorium, ruang belajar, dan
+          fasilitas sekolah.
+        </p>
+      </div>
+      <button
+        type="button"
+        id="open-facility-modal-btn"
+        class="inline-flex h-[36px] items-center justify-center gap-1.5 rounded-[6px] bg-primary px-4 text-xs font-semibold text-white transition-all hover:bg-primary-hover shadow-xs shrink-0 cursor-pointer"
+      >
+        <Icon name="plus" class="h-4 w-4" />
+        <span>Tambah Sarana</span>
+      </button>
+    </div>
+
+    <!-- Alert / Toast Banner -->
+    <div
+      id="status-banner"
+      class="hidden rounded-[6px] p-3 text-xs font-medium transition-all"
+    ></div>
+
+    <!--  Pencarian -->
+    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4">
+      <!-- Search Input -->
+      <form
+        method="GET"
+        action="/admin/fasilitas"
+        class="flex items-center gap-2 shrink-0 w-full lg:w-auto"
+      >
+        {currentCategory !== "all" && (
+          <input type="hidden" name="kategori" value={currentCategory} />
+        )}
+        <div class="relative flex-1 lg:w-72">
+          <input
+            type="search"
+            name="q"
+            value={searchQuery}
+            placeholder="Cari fasilitas, lokasi, kapasitas..."
+            class="h-[36px] w-full rounded-[6px] border border-border bg-surface pl-9 pr-3 text-xs text-heading placeholder:text-muted/60 transition-colors"
+          />
+          <Icon
+            name="search"
+            class="h-4 w-4 absolute left-2.5 top-2.5 text-muted pointer-events-none"
+          />
+        </div>
+        {searchQuery && (
+          <a
+            href={`/admin/fasilitas${currentCategory !== "all" ? `?kategori=${encodeURIComponent(currentCategory)}` : ""}`}
+            class="h-[36px] inline-flex items-center justify-center rounded-[6px] border border-border bg-surface px-3 text-xs text-muted hover:text-heading hover:bg-surface-subtle transition-colors shrink-0"
+            title="Reset Pencarian"
+            aria-label="Reset pencarian"
+          >
+            ✕
+          </a>
+        )}
+      </form>
+    </div>
+
+    <!-- Tabel Data Fasilitas -->
+    <div class="overflow-x-auto rounded-[8px] border border-border bg-surface shadow-xs">
+      <table class="w-full min-w-[860px] text-left font-body text-xs">
+        <thead class="bg-surface-subtle text-[11px] font-semibold uppercase tracking-wider text-muted">
+          <tr>
+            <th class="px-4 py-3 w-14 text-center">No.</th>
+            <th class="px-4 py-3 w-20">Foto</th>
+            <th class="px-4 py-3 min-w-[260px]">Nama Fasilitas</th>
+            <th class="px-4 py-3 w-36 whitespace-nowrap">Kategori</th>
+            <th class="px-4 py-3 w-72 min-w-[220px]">Lokasi & Kapasitas</th>
+            <th class="px-4 py-3 w-28 whitespace-nowrap">Status</th>
+            <th class="px-4 py-3 w-24 text-right whitespace-nowrap">Aksi</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-border">
+          {facilityList.length === 0 ? (
+            <tr>
+              <td colspan="7" class="px-5 py-14 text-center">
+                <div class="mx-auto max-w-sm flex flex-col items-center justify-center text-center">
+                  <div class="h-10 w-10 rounded-full bg-surface-subtle border border-border flex items-center justify-center text-muted mb-3">
+                    <svg
+                      class="h-5 w-5"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                        d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
+                      />
+                    </svg>
+                  </div>
+                  <p class="font-semibold text-heading text-sm">
+                    {searchQuery || currentCategory !== "all"
+                      ? "Tidak ada hasil yang sesuai"
+                      : "Belum ada fasilitas sekolah"}
+                  </p>
+                  <p class="text-xs text-muted mt-1 leading-relaxed">
+                    {searchQuery || currentCategory !== "all"
+                      ? "Tidak ditemukan fasilitas yang cocok dengan kriteria filter saat ini."
+                      : "Katalog fasilitas sekolah masih kosong. Silakan tambahkan fasilitas pertama."}
+                  </p>
+                  {searchQuery || currentCategory !== "all" ? (
+                    <a
+                      href="/admin/fasilitas"
+                      class="mt-3.5 inline-flex h-[32px] items-center justify-center rounded-[6px] border border-border bg-surface px-3 text-xs font-medium text-heading hover:bg-surface-subtle transition-colors"
+                    >
+                      Reset Semua Filter
+                    </a>
+                  ) : (
+                    <button
+                      type="button"
+                      onclick="document.getElementById('open-facility-modal-btn')?.click()"
+                      class="mt-3.5 inline-flex h-[32px] items-center justify-center rounded-[6px] bg-primary px-3 text-xs font-semibold text-white hover:bg-primary-hover transition-colors cursor-pointer"
+                    >
+                      Tambah Fasilitas Sekolah
+                    </button>
+                  )}
+                </div>
+              </td>
+            </tr>
+          ) : (
+            facilityList.map((item, index) => (
+              <tr
+                class="transition-colors hover:bg-surface-subtle"
+                id={`row-${item.id}`}
+              >
+                <!-- No. -->
+                <td class="px-4 py-3.5 text-center font-mono text-xs text-muted font-medium">
+                  {(validPage - 1) * pageSize + index + 1}
+                </td>
+
+                <!-- Foto (Thumbnail 48x36 px) -->
+                <td class="px-4 py-3.5 whitespace-nowrap">
+                  <div class="h-9 w-12 rounded-[6px] overflow-hidden bg-surface-subtle border border-border shrink-0">
+                    {item.imageUrl ? (
+                      <img
+                        src={item.imageUrl}
+                        alt={item.name}
+                        class="h-full w-full object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div class="h-full w-full flex items-center justify-center text-[9px] text-muted font-mono uppercase">
+                        No Img
+                      </div>
+                    )}
+                  </div>
+                </td>
+
+                <!-- Nama Fasilitas & Excerpt Deskripsi -->
+                <td class="px-4 py-3.5">
+                  <div class="max-w-md">
+                    <button
+                      type="button"
+                      class="edit-btn font-bold text-heading text-xs hover:text-primary hover:underline text-left truncate block cursor-pointer transition-colors"
+                      data-item={JSON.stringify(item)}
+                      title={`Edit fasilitas: ${item.name}`}
+                    >
+                      {item.name}
+                    </button>
+                    {item.description && (
+                      <p
+                        class="text-[11px] text-muted line-clamp-1 mt-0.5"
+                        title={item.description}
+                      >
+                        {item.description}
+                      </p>
+                    )}
+                  </div>
+                </td>
+
+                <!-- Kategori (Badge Netral) -->
+                <td class="px-4 py-3.5 whitespace-nowrap">
+                  <span class="inline-flex items-center rounded-[4px] border border-border bg-surface-subtle px-2 py-0.5 text-[11px] font-medium text-muted">
+                    {item.category}
+                  </span>
+                </td>
+
+                <!-- Lokasi & Kapasitas (Tanpa Ikon: Lokasi Utama, Kapasitas Sekunder Abu-abu) -->
+                <td class="px-4 py-3.5">
+                  <div class="space-y-0.5">
+                    <p
+                      class="font-medium text-heading text-xs truncate"
+                      title={item.location || ""}
+                    >
+                      {item.location || "-"}
+                    </p>
+                    {item.capacity ? (
+                      <p
+                        class="text-[11px] text-muted truncate"
+                        title={item.capacity}
+                      >
+                        {item.capacity}
+                      </p>
+                    ) : (
+                      <p class="text-[11px] text-muted/50 italic">-</p>
+                    )}
+                  </div>
+                </td>
+
+                <!-- Status (Switch Toggle) -->
+                <td class="px-4 py-3.5 whitespace-nowrap">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={item.isActive ? "true" : "false"}
+                    class:list={[
+                      "toggle-status-btn relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden",
+                      item.isActive ? "bg-primary" : "bg-border",
+                    ]}
+                    data-id={item.id}
+                    title={
+                      item.isActive
+                        ? "Aktif (Klik untuk nonaktifkan)"
+                        : "Nonaktif (Klik untuk aktifkan)"
+                    }
+                    aria-label={`Status ${item.name}`}
+                  >
+                    <span class="sr-only">
+                      {item.isActive ? "Aktif" : "Nonaktif"}
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      class:list={[
+                        "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out",
+                        item.isActive ? "translate-x-4" : "translate-x-0",
+                      ]}
+                    />
+                  </button>
+                </td>
+
+                <!-- Aksi (Icon-Only, DRY child selector) -->
+                <td class="px-4 py-3.5 text-right whitespace-nowrap">
+                  <div class="inline-flex items-center justify-end gap-1.5 *:inline-flex *:h-7 *:w-7 *:items-center *:justify-center *:rounded-[6px] *:border *:transition-colors *:cursor-pointer">
+                    <button
+                      type="button"
+                      class="edit-btn border-border bg-surface text-muted hover:text-primary hover:border-primary/40 hover:bg-surface-subtle shadow-2xs"
+                      data-item={JSON.stringify(item)}
+                      title="Edit Fasilitas Sekolah"
+                      aria-label={`Edit ${item.name}`}
+                    >
+                      <Icon
+                        name="edit"
+                        class="h-3.5 w-3.5 pointer-events-none"
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      class="delete-btn border-border bg-surface text-muted hover:text-error hover:border-error/40 hover:bg-error-light shadow-2xs"
+                      data-id={item.id}
+                      data-name={item.name}
+                      title="Hapus Fasilitas Sekolah"
+                      aria-label={`Hapus ${item.name}`}
+                    >
+                      <Icon
+                        name="trash"
+                        class="h-3.5 w-3.5 pointer-events-none"
+                      />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+
+      {totalFiltered > 0 && (
+        <Pagination
+          currentPage={validPage}
+          totalPages={totalPages}
+          totalItems={totalFiltered}
+          pageSize={pageSize}
+          itemLabel="fasilitas"
+          getPageUrl={getPageUrl}
+          class="border-t-0"
+        />
+      )}
+    </div>
+  </div>
+
+  <!-- Modal Form Fasilitas -->
+  <div
+    id="facility-modal"
+    class="fixed inset-0 z-50 hidden bg-heading/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4"
+  >
+    <div class="w-full max-w-lg rounded-[10px] border border-border bg-surface shadow-2xl max-h-[calc(100dvh-32px)] flex flex-col overflow-hidden">
+      <!-- Modal Header (Fixed) -->
+      <div class="flex items-center justify-between px-6 py-4 bg-surface shrink-0">
+        <div>
+          <h3
+            id="facility-modal-title"
+            class="font-display text-sm font-bold text-heading"
+          >
+            Tambah Fasilitas Sekolah
+          </h3>
+          <p id="facility-modal-subtitle" class="text-[11px] text-muted mt-0.5">
+            Perbarui informasi sarana dan prasarana sekolah.
+          </p>
+        </div>
+        <button
+          type="button"
+          id="close-modal-btn"
+          class="p-1 rounded-[6px] text-muted hover:text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+          aria-label="Tutup modal"
+        >
+          <Icon name="close" class="h-5 w-5" />
+        </button>
+      </div>
+
+      <!-- Form with scrollable body and fixed footer -->
+      <form
+        id="facility-form"
+        class="flex-1 flex flex-col min-h-0 overflow-hidden"
+      >
+        <input type="hidden" id="facility-id" name="id" value="" />
+
+        <!-- Scrollable Body (Single vertical scroll) -->
+        <div class="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+          <!-- Input Utama (2 Kolom Sejajar) -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div class="space-y-1">
+              <label
+                for="facility-name"
+                class="block font-body text-xs font-semibold text-heading"
+              >
+                Nama Sarana / Ruangan <span class="text-error">*</span>
+              </label>
+              <input
+                type="text"
+                id="facility-name"
+                name="name"
+                required
+                placeholder="Contoh: Laboratorium Komputer AI"
+                class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading transition-colors"
+              />
+            </div>
+
+            <div class="space-y-1">
+              <label
+                for="facility-category"
+                class="block font-body text-xs font-semibold text-heading"
+              >
+                Kategori <span class="text-error">*</span>
+              </label>
+              <select
+                id="facility-category"
+                name="category"
+                class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-2.5 font-body text-xs text-heading transition-colors cursor-pointer"
+              >
+                {categories.map((cat) => (
+                  <option value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+
+            <div class="space-y-1">
+              <label
+                for="facility-location"
+                class="block font-body text-xs font-semibold text-heading"
+              >
+                Lokasi Gedung / Lantai
+              </label>
+              <input
+                type="text"
+                id="facility-location"
+                name="location"
+                placeholder="Contoh: Gedung Riset Lt. 2"
+                class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading transition-colors"
+              />
+            </div>
+
+            <div class="space-y-1">
+              <label
+                for="facility-capacity"
+                class="block font-body text-xs font-semibold text-heading"
+              >
+                Daya Tampung / Kapasitas
+              </label>
+              <input
+                type="text"
+                id="facility-capacity"
+                name="capacity"
+                placeholder="Contoh: 40 Siswa / Stasiun"
+                class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading transition-colors"
+              />
+            </div>
+          </div>
+
+          <!-- Foto Cover (Identik dengan Ekstrakurikuler) -->
+          <div>
+            <label class="block font-body text-xs font-semibold text-heading mb-0.5">
+              Foto Cover
+            </label>
+            <div class="flex items-center gap-3">
+              <div class="h-14 w-14 rounded-[8px] border border-border bg-surface-subtle flex items-center justify-center shrink-0 overflow-hidden shadow-2xs">
+                <img
+                  id="facility-image-preview"
+                  src=""
+                  alt="Preview Sarana"
+                  class="h-full w-full object-cover hidden"
+                />
+                <svg
+                  id="facility-image-placeholder"
+                  class="h-6 w-6 text-muted/60"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.5"
+                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                  />
+                </svg>
+              </div>
+
+              <div class="flex flex-col gap-1.5 flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <button
+                    type="button"
+                    id="open-media-picker-btn"
+                    class="inline-flex h-8 items-center justify-center gap-1.5 rounded-[6px] bg-surface border border-border px-3 text-xs font-semibold text-heading hover:bg-surface-subtle hover:border-primary/50 transition-colors shadow-2xs cursor-pointer"
+                  >
+                    <Icon
+                      name="plus"
+                      class="h-3.5 w-3.5 text-primary shrink-0"
+                    />
+                    <span id="image-action-text">Pilih dari Media Library</span>
+                  </button>
+                  <button
+                    type="button"
+                    id="remove-facility-image-btn"
+                    class="hidden inline-flex h-8 items-center justify-center px-2.5 rounded-[6px] border border-border bg-surface text-xs font-medium text-error hover:bg-error-light hover:border-error/30 transition-colors cursor-pointer"
+                  >
+                    Hapus
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  id="toggle-image-url-btn"
+                  class="text-[11px] text-muted hover:text-primary transition-colors text-left font-medium cursor-pointer"
+                >
+                  &plus; Gunakan tautan URL gambar
+                </button>
+              </div>
+            </div>
+
+            <!-- Collapsible URL Input Field -->
+            <div id="image-url-container" class="hidden mt-2">
+              <input
+                type="text"
+                id="facility-image"
+                name="imageUrl"
+                placeholder="https://... atau tempel URL gambar eksternal"
+                class="h-[34px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading transition-colors font-mono"
+              />
+            </div>
+          </div>
+
+          <!-- Deskripsi Kelengkapan & Spesifikasi -->
+          <div class="space-y-1">
+            <label
+              for="facility-desc"
+              class="block font-body text-xs font-semibold text-heading"
+            >
+              Deskripsi Kelengkapan & Spesifikasi
+            </label>
+            <textarea
+              id="facility-desc"
+              name="description"
+              rows="3"
+              placeholder="Jelaskan spesifikasi alat, kelayakan standar industri, atau peruntukan kegiatan..."
+              class="w-full rounded-[6px] border border-border bg-surface p-2.5 font-body text-xs text-heading transition-colors"
+            ></textarea>
+          </div>
+        </div>
+
+        <!-- Fixed Modal Footer -->
+        <div class="flex items-center justify-end gap-2.5 px-6 py-3.5 bg-surface-subtle shrink-0">
+          <button
+            type="button"
+            id="cancel-modal-btn"
+            class="h-[36px] rounded-[6px] border border-border bg-surface px-4 font-body text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+          >
+            Batal
+          </button>
+          <button
+            type="submit"
+            id="submit-facility-btn"
+            class="inline-flex h-[36px] items-center justify-center gap-2 rounded-[6px] bg-primary px-4 font-body text-xs font-semibold text-white transition-all hover:bg-primary-hover shadow-xs cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <svg
+              id="save-spinner"
+              class="hidden h-3.5 w-3.5 animate-spin text-white"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                class="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                stroke-width="4"
+              ></circle>
+              <path
+                class="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              ></path>
+            </svg>
+            <span id="save-btn-text">Simpan Fasilitas Sekolah</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal Konfirmasi Hapus Data -->
+  <div
+    id="delete-modal"
+    class="fixed inset-0 z-50 hidden bg-heading/50 backdrop-blur-xs flex items-center justify-center p-4"
+  >
+    <div class="w-full max-w-md rounded-[12px] border border-border bg-surface p-6 shadow-2xl space-y-4">
+      <div class="flex items-start gap-3">
+        <div class="h-10 w-10 rounded-full bg-error-light text-error flex items-center justify-center shrink-0">
+          <Icon name="trash" class="h-5 w-5" />
+        </div>
+        <div class="space-y-1">
+          <h3 class="font-display text-sm font-bold text-heading">
+            Hapus Fasilitas Sekolah
+          </h3>
+          <p class="text-xs text-muted leading-relaxed">
+            Apakah Anda yakin ingin menghapus fasilitas sekolah{" "}
+            <strong
+              id="delete-item-name"
+              class="font-semibold text-heading"
+            ></strong>
+            ? Tindakan ini akan menghapus data dari katalog publik secara
+            permanen.
+          </p>
+        </div>
+      </div>
+      <div class="flex items-center justify-end gap-2 pt-2">
+        <button
+          type="button"
+          id="cancel-delete-btn"
+          class="h-9 rounded-[6px] border border-border bg-surface px-4 text-xs font-medium text-muted hover:bg-surface-subtle hover:text-heading transition-colors cursor-pointer"
+        >
+          Batal
+        </button>
+        <button
+          type="button"
+          id="confirm-delete-btn"
+          class="h-9 rounded-[6px] bg-error px-4 text-xs font-semibold text-white hover:bg-error-hover transition-colors shadow-xs cursor-pointer"
+        >
+          Hapus Fasilitas Sekolah
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <MediaPickerModal modalId="media-picker-modal" />
+
+  <script>
+    const modal = document.getElementById("facility-modal");
+    const form = document.getElementById("facility-form") as HTMLFormElement;
+    const modalTitle = document.getElementById("facility-modal-title");
+    const modalSubtitle = document.getElementById("facility-modal-subtitle");
+    const openModalBtn = document.getElementById("open-facility-modal-btn");
+    const closeModalBtn = document.getElementById("close-modal-btn");
+    const cancelModalBtn = document.getElementById("cancel-modal-btn");
+    const statusBanner = document.getElementById("status-banner");
+
+    const idInput = document.getElementById("facility-id") as HTMLInputElement;
+    const nameInput = document.getElementById(
+      "facility-name",
+    ) as HTMLInputElement;
+    const categoryInput = document.getElementById(
+      "facility-category",
+    ) as HTMLSelectElement;
+    const locationInput = document.getElementById(
+      "facility-location",
+    ) as HTMLInputElement;
+    const capacityInput = document.getElementById(
+      "facility-capacity",
+    ) as HTMLInputElement;
+    const imageInput = document.getElementById(
+      "facility-image",
+    ) as HTMLInputElement;
+    const imagePreview = document.getElementById(
+      "facility-image-preview",
+    ) as HTMLImageElement;
+    const imagePlaceholder = document.getElementById(
+      "facility-image-placeholder",
+    );
+    const imageActionText = document.getElementById("image-action-text");
+    const toggleImageUrlBtn = document.getElementById("toggle-image-url-btn");
+    const imageUrlContainer = document.getElementById("image-url-container");
+    const openMediaPickerBtn = document.getElementById("open-media-picker-btn");
+    const removeImageBtn = document.getElementById("remove-facility-image-btn");
+    const descInput = document.getElementById(
+      "facility-desc",
+    ) as HTMLTextAreaElement;
+    const submitBtn = document.getElementById(
+      "submit-facility-btn",
+    ) as HTMLButtonElement;
+    const saveSpinner = document.getElementById("save-spinner");
+    const saveBtnText = document.getElementById("save-btn-text");
+    let currentOrderNumber = 0;
+    let currentIsActive = true;
+
+    // Elements for Delete Confirmation Modal
+    const deleteModal = document.getElementById("delete-modal");
+    const deleteItemName = document.getElementById("delete-item-name");
+    const cancelDeleteBtn = document.getElementById("cancel-delete-btn");
+    const confirmDeleteBtn = document.getElementById(
+      "confirm-delete-btn",
+    ) as HTMLButtonElement;
+    let pendingDeleteId: string | null = null;
+
+    function updateImagePreview(url: string) {
+      if (imageInput) imageInput.value = url;
+      if (url && url.trim()) {
+        if (imagePreview) {
+          imagePreview.src = url;
+          imagePreview.classList.remove("hidden");
+        }
+        imagePlaceholder?.classList.add("hidden");
+        removeImageBtn?.classList.remove("hidden");
+        if (imageActionText) imageActionText.textContent = "Ubah Gambar";
+      } else {
+        if (imagePreview) {
+          imagePreview.src = "";
+          imagePreview.classList.add("hidden");
+        }
+        imagePlaceholder?.classList.remove("hidden");
+        removeImageBtn?.classList.add("hidden");
+        if (imageActionText)
+          imageActionText.textContent = "Pilih dari Media Library";
+      }
+    }
+
+    imageInput?.addEventListener("input", () => {
+      updateImagePreview(imageInput.value.trim());
+    });
+
+    toggleImageUrlBtn?.addEventListener("click", () => {
+      imageUrlContainer?.classList.toggle("hidden");
+      if (!imageUrlContainer?.classList.contains("hidden")) {
+        imageInput?.focus();
+      }
+    });
+
+    openMediaPickerBtn?.addEventListener("click", () => {
+      if (typeof (window as any).openMediaPicker === "function") {
+        (window as any).openMediaPicker(
+          (media: any) => {
+            if (media) {
+              const url = media.fileUrl || media.mediumUrl || media.url || "";
+              updateImagePreview(url);
+            }
+          },
+          { type: "image" },
+        );
+      } else {
+        window.open("/admin/media", "_blank");
+      }
+    });
+
+    removeImageBtn?.addEventListener("click", () => {
+      updateImagePreview("");
+    });
+
+    function showStatus(message: string, type: "success" | "error") {
+      if (!statusBanner) return;
+      statusBanner.innerText = message;
+      statusBanner.className = `rounded-[6px] p-3 text-xs font-semibold block transition-all ${
+        type === "success"
+          ? "bg-success-light border border-success/30 text-success-text"
+          : "bg-error-light border border-error/30 text-error-text"
+      }`;
+      setTimeout(() => {
+        statusBanner.className = "hidden";
+      }, 5000);
+    }
+
+    function openModal(data?: any) {
+      if (!modal || !form) return;
+      imageUrlContainer?.classList.add("hidden");
+      form.reset();
+      if (data) {
+        if (modalTitle) modalTitle.innerText = "Edit Fasilitas Sekolah";
+        if (modalSubtitle)
+          modalSubtitle.innerText =
+            "Perbarui informasi sarana dan prasarana sekolah.";
+        if (saveBtnText) saveBtnText.innerText = "Simpan Perubahan";
+        idInput.value = data.id || "";
+        nameInput.value = data.name || "";
+        categoryInput.value = data.category || "Laboratorium";
+        currentOrderNumber = data.orderNumber || 0;
+        locationInput.value = data.location || "";
+        capacityInput.value = data.capacity || "";
+        updateImagePreview(data.imageUrl || "");
+        descInput.value = data.description || "";
+        currentIsActive = data.isActive !== false;
+      } else {
+        if (modalTitle) modalTitle.innerText = "Tambah Fasilitas Sekolah";
+        if (modalSubtitle)
+          modalSubtitle.innerText =
+            "Perbarui informasi sarana dan prasarana sekolah.";
+        if (saveBtnText) saveBtnText.innerText = "Simpan Fasilitas Sekolah";
+        idInput.value = "";
+        currentOrderNumber = 0;
+        updateImagePreview("");
+        currentIsActive = true;
+      }
+      modal.classList.remove("hidden");
+    }
+
+    openModalBtn?.addEventListener("click", () => openModal());
+    closeModalBtn?.addEventListener("click", () =>
+      modal?.classList.add("hidden"),
+    );
+    cancelModalBtn?.addEventListener("click", () =>
+      modal?.classList.add("hidden"),
+    );
+    modal?.addEventListener("click", (e) => {
+      if (e.target === modal) modal.classList.add("hidden");
+    });
+
+    document.querySelectorAll(".edit-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const item = JSON.parse(btn.getAttribute("data-item") || "{}");
+        openModal(item);
+      });
+    });
+
+    form?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      submitBtn.disabled = true;
+      saveSpinner?.classList.remove("hidden");
+      const originalText = saveBtnText?.innerText || "Simpan Fasilitas Sekolah";
+      if (saveBtnText) saveBtnText.innerText = "Menyimpan...";
+
+      const id = idInput.value;
+      const payload = {
+        name: nameInput.value.trim(),
+        category: categoryInput.value,
+        orderNumber: currentOrderNumber,
+        location: locationInput.value.trim(),
+        capacity: capacityInput.value.trim(),
+        imageUrl: imageInput.value.trim(),
+        description: descInput.value.trim(),
+        isActive: currentIsActive,
+      };
+
+      try {
+        const url = id
+          ? `/api/admin/facilities/${id}`
+          : "/api/admin/facilities";
+        const method = id ? "PUT" : "POST";
+        const res = await fetch(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const json = await res.json();
+        if (json.success) {
+          window.location.reload();
+        } else {
+          showStatus(json.error || "Gagal menyimpan fasilitas", "error");
+          submitBtn.disabled = false;
+          saveSpinner?.classList.add("hidden");
+          if (saveBtnText) saveBtnText.innerText = originalText;
+        }
+      } catch {
+        showStatus("Koneksi server gagal", "error");
+        submitBtn.disabled = false;
+        saveSpinner?.classList.add("hidden");
+        if (saveBtnText) saveBtnText.innerText = originalText;
+      }
+    });
+
+    document.querySelectorAll(".toggle-status-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.getAttribute("data-id");
+        if (!id) return;
+        try {
+          const res = await fetch(`/api/admin/facilities/${id}/toggle`, {
+            method: "PUT",
+          });
+          const json = await res.json();
+          if (json.success) {
+            window.location.reload();
+          } else {
+            showStatus(json.error || "Gagal mengubah status", "error");
+          }
+        } catch {
+          showStatus("Koneksi server gagal", "error");
+        }
+      });
+    });
+
+    // Delete modal triggers
+    document.querySelectorAll(".delete-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.getAttribute("data-id");
+        const name = btn.getAttribute("data-name");
+        if (!id) return;
+        pendingDeleteId = id;
+        if (deleteItemName) deleteItemName.textContent = `"${name || "ini"}"`;
+        deleteModal?.classList.remove("hidden");
+      });
+    });
+
+    cancelDeleteBtn?.addEventListener("click", () => {
+      deleteModal?.classList.add("hidden");
+      pendingDeleteId = null;
+    });
+
+    deleteModal?.addEventListener("click", (e) => {
+      if (e.target === deleteModal) {
+        deleteModal.classList.add("hidden");
+        pendingDeleteId = null;
+      }
+    });
+
+    confirmDeleteBtn?.addEventListener("click", async () => {
+      if (!pendingDeleteId) return;
+      try {
+        confirmDeleteBtn.disabled = true;
+        const res = await fetch(`/api/admin/facilities/${pendingDeleteId}`, {
+          method: "DELETE",
+        });
+        const json = await res.json();
+        if (json.success) {
+          window.location.reload();
+        } else {
+          deleteModal?.classList.add("hidden");
+          showStatus(json.error || "Gagal menghapus fasilitas", "error");
+        }
+      } catch {
+        deleteModal?.classList.add("hidden");
+        showStatus("Koneksi server gagal", "error");
+      } finally {
+        confirmDeleteBtn.disabled = false;
+      }
+    });
+  </script>
+</AdminLayout>

@@ -1,0 +1,9 @@
+# robots.txt for SMAN 1 Unggulan Official Portal
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /api/admin/
+Disallow: /api/auth/
+
+# Sitemap index
+Sitemap: https://sman1unggulan.sch.id/sitemap.xml

@@ -1,0 +1,135 @@
+---
+import Icon from './Icon.astro';
+---
+
+<div
+  id="__confirm_dialog_backdrop"
+  class="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-heading/60 backdrop-blur-xs hidden transition-opacity duration-200 opacity-0"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="__confirm_dialog_title"
+  aria-describedby="__confirm_dialog_message"
+>
+  <div
+    id="__confirm_dialog_box"
+    class="relative w-full max-w-md rounded-[12px] border border-border bg-surface p-5 sm:p-6 shadow-2xl space-y-4 transform transition-all duration-200 scale-95 opacity-0"
+  >
+    <div class="flex items-start gap-3.5">
+      <div
+        id="__confirm_dialog_icon_container"
+        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-[8px] border shadow-xs transition-colors"
+      >
+        <span id="__confirm_dialog_icon" class="flex items-center justify-center">
+          <Icon name="alert-triangle" class="h-5 w-5" />
+        </span>
+      </div>
+      <div class="min-w-0 flex-1 space-y-1 pt-0.5">
+        <h3 id="__confirm_dialog_title" class="font-display text-base font-bold text-heading leading-snug">
+          Konfirmasi Tindakan
+        </h3>
+        <p id="__confirm_dialog_message" class="font-body text-xs text-muted leading-relaxed whitespace-pre-line">
+          Apakah Anda yakin ingin melanjutkan tindakan ini?
+        </p>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-end gap-2.5 pt-2">
+      <button
+        type="button"
+        id="__confirm_dialog_cancel"
+        class="inline-flex h-[36px] items-center justify-center rounded-[6px] border border-border bg-surface px-4 font-body text-xs font-semibold text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+      >
+        Batal
+      </button>
+      <button
+        type="button"
+        id="__confirm_dialog_confirm"
+        class="inline-flex h-[36px] items-center justify-center rounded-[6px] bg-error px-4 font-body text-xs font-semibold text-white hover:bg-error-hover transition-colors shadow-xs cursor-pointer"
+      >
+        Ya, Lanjutkan
+      </button>
+    </div>
+  </div>
+</div>
+
+<script is:inline>
+  (function () {
+    let resolver = null;
+    const backdrop = document.getElementById('__confirm_dialog_backdrop');
+    const box = document.getElementById('__confirm_dialog_box');
+    const titleEl = document.getElementById('__confirm_dialog_title');
+    const messageEl = document.getElementById('__confirm_dialog_message');
+    const iconContainer = document.getElementById('__confirm_dialog_icon_container');
+    const cancelBtn = document.getElementById('__confirm_dialog_cancel');
+    const confirmBtn = document.getElementById('__confirm_dialog_confirm');
+
+    function closeDialog(result) {
+      if (!backdrop || !box) return;
+      box.classList.remove('scale-100', 'opacity-100');
+      box.classList.add('scale-95', 'opacity-0');
+      backdrop.classList.remove('opacity-100');
+      backdrop.classList.add('opacity-0');
+      setTimeout(function () {
+        backdrop.classList.add('hidden');
+        if (typeof resolver === 'function') {
+          resolver(result);
+          resolver = null;
+        }
+      }, 150);
+    }
+
+    cancelBtn?.addEventListener('click', function () { closeDialog(false); });
+    confirmBtn?.addEventListener('click', function () { closeDialog(true); });
+
+    backdrop?.addEventListener('click', function (e) {
+      if (e.target === backdrop) closeDialog(false);
+    });
+
+    window.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && backdrop && !backdrop.classList.contains('hidden')) {
+        closeDialog(false);
+      }
+    });
+
+    window.confirmDialog = function (options) {
+      return new Promise(function (resolve) {
+        resolver = resolve;
+        if (!backdrop || !box || !titleEl || !messageEl || !confirmBtn || !cancelBtn || !iconContainer) {
+          resolve(window.confirm(options.message || 'Apakah Anda yakin?'));
+          return;
+        }
+
+        const title = options.title || 'Konfirmasi Tindakan';
+        const message = options.message || 'Apakah Anda yakin ingin melanjutkan tindakan ini?';
+        const confirmText = options.confirmText || 'Ya, Lanjutkan';
+        const cancelText = options.cancelText || 'Batal';
+        const type = options.type || 'danger';
+
+        titleEl.textContent = title;
+        messageEl.textContent = message;
+        confirmBtn.textContent = confirmText;
+        cancelBtn.textContent = cancelText;
+
+        if (type === 'danger') {
+          iconContainer.className = 'flex h-10 w-10 shrink-0 items-center justify-center rounded-[8px] border border-error bg-error text-white shadow-xs';
+          confirmBtn.className = 'inline-flex h-[36px] items-center justify-center rounded-[6px] bg-error px-4 font-body text-xs font-semibold text-white hover:bg-error-hover transition-colors shadow-xs cursor-pointer';
+        } else if (type === 'warning') {
+          iconContainer.className = 'flex h-10 w-10 shrink-0 items-center justify-center rounded-[8px] border border-warning bg-warning text-white shadow-xs';
+          confirmBtn.className = 'inline-flex h-[36px] items-center justify-center rounded-[6px] bg-warning px-4 font-body text-xs font-semibold text-white hover:bg-warning-hover transition-colors shadow-xs cursor-pointer';
+        } else {
+          iconContainer.className = 'flex h-10 w-10 shrink-0 items-center justify-center rounded-[8px] border border-primary bg-primary text-primary-foreground shadow-xs';
+          confirmBtn.className = 'inline-flex h-[36px] items-center justify-center rounded-[6px] bg-primary px-4 font-body text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition-colors shadow-xs cursor-pointer';
+        }
+
+        backdrop.classList.remove('hidden');
+        void backdrop.offsetWidth;
+        backdrop.classList.remove('opacity-0');
+        backdrop.classList.add('opacity-100');
+        box.classList.remove('scale-95', 'opacity-0');
+        box.classList.add('scale-100', 'opacity-100');
+
+        setTimeout(function () { confirmBtn.focus(); }, 50);
+      });
+    };
+  })();
+</script>

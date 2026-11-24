@@ -1,0 +1,75 @@
+---
+export const prerender = false;
+
+import Layout from '../layouts/Layout.astro';
+import Icon from '../components/Icon.astro';
+import { db, settings } from '../db';
+
+// Ambil konfigurasi nama sekolah dari basis data
+let schoolSettings: Record<string, string> = {};
+try {
+  const allSettings = await db.select().from(settings);
+  schoolSettings = allSettings.reduce((acc, curr) => {
+    acc[curr.key] = curr.value;
+    return acc;
+  }, {} as Record<string, string>);
+} catch {
+  schoolSettings = {};
+}
+
+const schoolName = schoolSettings['school_name'] || 'SMAN 1 Unggulan';
+---
+
+<Layout
+  title={`404: Opps, I think we're lost — ${schoolName}`}
+  description="Halaman yang Anda tuju tidak ditemukan atau telah dipindahkan."
+  showFab={false}
+>
+  <main class="min-h-screen w-full flex flex-col items-center justify-center p-4 sm:p-6 bg-background text-body">
+    <!-- Center Stage: Giant 404 + Transparent Mascot Character -->
+    <div class="relative flex items-center justify-center select-none w-full max-w-2xl">
+      <!-- Typographic Giant 404 (Sesuai Token Tema) -->
+      <div class="flex items-center justify-center font-display font-black text-surface-subtle dark:text-border/60 tracking-tight text-[120px] sm:text-[180px] md:text-[240px] lg:text-[280px] leading-none select-none">
+        <span>4</span>
+        <span class="opacity-80">0</span>
+        <span>4</span>
+      </div>
+
+      <!-- Maskot Karakter 3D Transparan di Tengah Angka 0 -->
+      <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <picture>
+          <source srcset="/images/404-character.webp" type="image/webp" />
+          <img
+            src="/images/404-character.png"
+            alt="404 Lost Mascot"
+            class="h-44 sm:h-56 md:h-68 lg:h-76 object-contain drop-shadow-md translate-y-2 sm:translate-y-3"
+            width="320"
+            height="320"
+            loading="eager"
+          />
+        </picture>
+      </div>
+    </div>
+
+    <!-- Headline & Subheading -->
+    <div class="text-center space-y-1.5 mt-3 sm:mt-4 max-w-md mx-auto px-4">
+      <h1 class="font-display text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-heading">
+        Opps, I think we're lost
+      </h1>
+      <p class="font-body text-xs sm:text-sm text-muted leading-relaxed">
+        Let's get you back somewhere familiar...
+      </p>
+    </div>
+
+    <!-- Tombol Aksi: Back to home -->
+    <div class="mt-6">
+      <a
+        href="/"
+        class="inline-flex h-[40px] items-center justify-center gap-2 rounded-[6px] bg-primary text-primary-foreground font-body text-xs font-semibold hover:bg-primary-hover shadow-xs hover:shadow-(--shadow-button-glow) hover:-translate-y-[1px] transition-all cursor-pointer px-6"
+      >
+        <Icon name="chevron-left" class="h-3.5 w-3.5" />
+        <span>Back to home</span>
+      </a>
+    </div>
+  </main>
+</Layout>

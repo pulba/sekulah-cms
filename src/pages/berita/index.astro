@@ -1,0 +1,1057 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import Header from "../../components/Header.astro";
+import Footer from "../../components/Footer.astro";
+import Breadcrumb from "../../components/Breadcrumb.astro";
+import Icon from "../../components/Icon.astro";
+import { db, articles, categories, users, settings } from "../../db";
+import { eq, desc, and, isNull, sql } from "drizzle-orm";
+
+export const prerender = false;
+
+// Query parameters
+const currentCategoryParam = (Astro.url.searchParams.get("kategori") || "").trim();
+const currentPage = Math.max(1, parseInt(Astro.url.searchParams.get("page") || "1", 10) || 1);
+const pageSize = 8;
+
+const allCategories = await db.select().from(categories);
+
+const activeCategory = currentCategoryParam
+  ? allCategories.find(
+      (c) =>
+        c.slug.toLowerCase() === currentCategoryParam.toLowerCase() ||
+        String(c.id) === currentCategoryParam,
+    ) || null
+  : null;
+
+// Query conditions
+const conditions = [
+  eq(articles.status, "published"),
+  isNull(articles.deletedAt),
+  sql`${articles.publishedAt} <= ${new Date().toISOString()}`,
+];
+
+// If category filter is active, filter articles for this category
+if (activeCategory) {
+  conditions.push(eq(articles.categoryId, activeCategory.id));
+}
+
+const [allArticles, popularArticles, rawSettings] = await Promise.all([
+  db
+    .select({
+      id: articles.id,
+      slug: articles.slug,
+      title: articles.title,
+      summary: articles.summary,
+      coverImage: articles.coverImage,
+      publishedAt: articles.publishedAt,
+      viewCount: articles.viewCount,
+      categoryName: categories.name,
+      categorySlug: categories.slug,
+      authorId: articles.authorId,
+      authorName: users.name,
+    })
+    .from(articles)
+    .leftJoin(categories, eq(articles.categoryId, categories.id))
+    .leftJoin(users, eq(articles.authorId, users.id))
+    .where(and(...conditions))
+    .orderBy(desc(articles.publishedAt)),
+  db
+    .select({
+      id: articles.id,
+      slug: articles.slug,
+      title: articles.title,
+      summary: articles.summary,
+      coverImage: articles.coverImage,
+      publishedAt: articles.publishedAt,
+      viewCount: articles.viewCount,
+      categoryName: categories.name,
+      categorySlug: categories.slug,
+    })
+    .from(articles)
+    .leftJoin(categories, eq(articles.categoryId, categories.id))
+    .where(
+      and(
+        eq(articles.status, "published"),
+        isNull(articles.deletedAt),
+        sql`${articles.publishedAt} <= ${new Date().toISOString()}`,
+      ),
+    )
+    .orderBy(desc(articles.viewCount), desc(articles.publishedAt))
+    .limit(5),
+  db.select().from(settings).catch(() => []),
+]);
+
+const schoolSettings = (rawSettings || []).reduce((acc, curr) => {
+  acc[curr.key] = curr.value;
+  return acc;
+}, {} as Record<string, string>);
+
+// Konfigurasi Pendaftaran / PPDB Dinamis dari CMS
+const admissionsLabel = schoolSettings["admissions_label"] || schoolSettings["ppdb_label"] || "PPDB";
+const academicYear = schoolSettings["ppdb_year"] || schoolSettings["admissions_year"] || "2026/2027";
+const schoolType = (schoolSettings["school_type"] || schoolSettings["school_level"] || "SMA").toUpperCase();
+const boardingAvailable = schoolSettings["boarding_available"] === "true";
+
+const defaultAdmissionsTitle =
+  admissionsLabel.toUpperCase() === "PSB"
+    ? (boardingAvailable ? "Penerimaan Santri & Siswa Baru" : "Penerimaan Siswa Baru")
+    : admissionsLabel.toUpperCase() === "SPMB"
+      ? "Sistem Penerimaan Siswa Baru"
+      : admissionsLabel.toUpperCase() === "PPDBM"
+        ? "Penerimaan Peserta Didik Baru Madrasah"
+        : admissionsLabel.toUpperCase() === "PPDB"
+          ? "Penerimaan Peserta Didik Baru"
+          : `Pendaftaran Siswa Baru (${admissionsLabel})`;
+
+const rawAdmissionsTitle = (schoolSettings["admissions_title"] || schoolSettings["ppdb_title"] || "").trim();
+const admissionsTitle = rawAdmissionsTitle || `${defaultAdmissionsTitle} TA ${academicYear}`;
+
+const admissionsSubtitle =
+  (schoolSettings["admissions_subtitle"] || schoolSettings["ppdb_subtitle"] || "").trim() ||
+  "Akses alur registrasi resmi, jadwal seleksi akademik, dan persyaratan berkas secara daring.";
+
+const rawSocials = [
+  {
+    key: "youtube",
+    name: "YouTube",
+    url: (schoolSettings["social_youtube"] || "").trim(),
+    iconColor: "text-[#FF0000]",
+    hoverClass: "hover:border-[#FF0000]/60 hover:bg-surface-subtle hover:text-[#FF0000]",
+  },
+  {
+    key: "instagram",
+    name: "Instagram",
+    url: (schoolSettings["social_instagram"] || "").trim()
+      ? (schoolSettings["social_instagram"].trim().startsWith("http")
+          ? schoolSettings["social_instagram"].trim()
+          : `https://instagram.com/${schoolSettings["social_instagram"].trim().replace("@", "")}`)
+      : "",
+    iconColor: "text-[#E4405F]",
+    hoverClass: "hover:border-[#E4405F]/60 hover:bg-surface-subtle hover:text-[#E4405F]",
+  },
+  {
+    key: "facebook",
+    name: "Facebook",
+    url: (schoolSettings["social_facebook"] || "").trim(),
+    iconColor: "text-[#1877F2]",
+    hoverClass: "hover:border-[#1877F2]/60 hover:bg-surface-subtle hover:text-[#1877F2]",
+  },
+  {
+    key: "twitter",
+    name: "X (Twitter)",
+    url: (schoolSettings["social_twitter"] || "").trim()
+      ? (schoolSettings["social_twitter"].trim().startsWith("http")
+          ? schoolSettings["social_twitter"].trim()
+          : `https://x.com/${schoolSettings["social_twitter"].trim().replace("@", "")}`)
+      : "",
+    iconColor: "text-heading",
+    hoverClass: "hover:border-heading hover:bg-surface-subtle hover:text-heading",
+  },
+  {
+    key: "tiktok",
+    name: "TikTok",
+    url: (schoolSettings["social_tiktok"] || "").trim()
+      ? (schoolSettings["social_tiktok"].trim().startsWith("http")
+          ? schoolSettings["social_tiktok"].trim()
+          : `https://tiktok.com/@${schoolSettings["social_tiktok"].trim().replace("@", "")}`)
+      : "",
+    iconColor: "text-heading",
+    hoverClass: "hover:border-heading hover:bg-surface-subtle hover:text-heading",
+  },
+  {
+    key: "whatsapp",
+    name: "WhatsApp",
+    url: (schoolSettings["social_whatsapp"] || "").trim()
+      ? (schoolSettings["social_whatsapp"].trim().startsWith("http")
+          ? schoolSettings["social_whatsapp"].trim()
+          : `https://wa.me/${schoolSettings["social_whatsapp"].replace(/[^0-9]/g, "")}`)
+      : "",
+    iconColor: "text-[#25D366]",
+    hoverClass: "hover:border-[#25D366]/60 hover:bg-surface-subtle hover:text-[#25D366]",
+  },
+];
+
+const activeSocialChannels = rawSocials.filter((item) => Boolean(item.url));
+
+// Filter artikel yang tidak punya slug valid (mencegah /berita/undefined)
+const validArticles = allArticles.filter((a) => Boolean(a.slug));
+const validPopularArticles = popularArticles.filter((a) => Boolean(a.slug));
+
+// 1. Hero Showcase Data (Top 3 for carousel slider, next 4 for 2x2 grid) - only on main portal page
+const heroSlides = !activeCategory ? validArticles.slice(0, 3) : [];
+const heroSub = !activeCategory ? validArticles.slice(1, 5) : [];
+
+// 2. Editor's Pick Data (Mid section) - only on main portal page
+const editorFeatured = !activeCategory ? (validArticles[2] || validArticles[0] || null) : null;
+const editorMinis = !activeCategory ? validArticles.slice(3, 7) : [];
+const editorSides = !activeCategory ? validArticles.slice(7, 9) : [];
+
+// 3. Main Stream Data with Pagination
+const totalArticlesCount = validArticles.length;
+const totalPages = Math.max(1, Math.ceil(totalArticlesCount / pageSize));
+const startIndex = (currentPage - 1) * pageSize;
+const paginatedArticles = validArticles.slice(startIndex, startIndex + pageSize);
+const feedFeatured = !activeCategory ? (paginatedArticles[0] || null) : null;
+const feedList = !activeCategory ? paginatedArticles.slice(1) : paginatedArticles;
+
+// Visual category strip items (5 items)
+const visualCategories = [
+  { name: "Prestasi", slug: "prestasi", image: "https://images.unsplash.com/photo-1561557944-6e7860d1a7eb?auto=format&fit=crop&w=600&q=80" },
+  { name: "Akademik", slug: "akademik", image: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=600&q=80" },
+  { name: "Fasilitas", slug: "fasilitas", image: "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=600&q=80" },
+  { name: "Kesiswaan", slug: "kesiswaan", image: "https://images.unsplash.com/photo-1511556532299-8f662fc26c06?auto=format&fit=crop&w=600&q=80" },
+  { name: "Galeri Foto", href: "/galeri", image: "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=600&q=80" },
+];
+
+// Popular tags
+const popularTags = [
+  { label: "#Robotika", slug: "prestasi" },
+  { label: "#KurikulumAI", slug: "akademik" },
+  { label: "#OSN2026", slug: "prestasi" },
+  { label: "#GrahaRiset", slug: "fasilitas" },
+  { label: "#GelarKaryaP5", slug: "kesiswaan" },
+  { label: "#BulanBahasa", slug: "kesiswaan" },
+  { label: "#Perpustakaan", slug: "fasilitas" },
+];
+---
+
+<Layout
+  title={activeCategory
+    ? `Berita ${activeCategory.name} — SMAN 1 Unggulan`
+    : "Berita Resmi — SMAN 1 Unggulan"}
+  description="Arsip publikasi kegiatan kurikuler, prestasi kejuaraan, pengumuman akademik, dan dokumentasi sekolah."
+>
+  <Header currentPath="/berita" />
+  <main class="flex-1 py-8 sm:py-12 bg-background">
+    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-8 sm:space-y-10">    
+      {
+        activeCategory ? (
+          <div class="pb-4 flex flex-col items-center justify-center gap-2 text-center">
+            <Breadcrumb
+              class="mb-1"
+              items={[
+                { label: "Beranda", href: "/" },
+                { label: "Berita", href: "/berita" },
+                { label: activeCategory.name },
+              ]}
+            />
+            <h1 class="font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-heading">
+              {activeCategory.name}
+            </h1>
+            <span id="stream-count" class="font-body text-xs text-muted">
+              {allArticles.length} Publikasi Kategori {activeCategory.name}
+            </span>
+          </div>
+        ) : (
+          <div class="flex items-center justify-between">
+            <Breadcrumb
+              class="mb-0"
+              items={[
+                { label: "Beranda", href: "/" },
+                { label: "Berita" },
+              ]}
+            />
+          </div>
+        )
+      }
+
+      <!-- ═══════════════════════════════════════════════════════════════ -->
+      <!-- 1. TOP HERO SHOWCASE (Carousel Left + 4 Sub-cards 2x2 Right) -->
+      <!-- ═══════════════════════════════════════════════════════════════ -->
+      {
+        !activeCategory && allArticles.length > 0 && (
+          <section class="overflow-hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4">
+              <!-- Left: Carousel Hero Slider Card (lg:col-span-7) -->
+              <div class={heroSub.length > 0 ? "lg:col-span-7" : "lg:col-span-12"}>
+                <div class="relative overflow-hidden rounded-[12px] border border-border bg-heading h-[380px] sm:h-[450px] lg:h-[480px]" id="hero-carousel">
+                  <!-- Slides -->
+                  {heroSlides.map((slide, sIdx) => (
+                    <article
+                      class={`hero-slide absolute inset-0 transition-opacity duration-500 ease-in-out ${
+                        sIdx === 0 ? "opacity-100 z-10" : "opacity-0 pointer-events-none z-0"
+                      }`}
+                      data-slide-index={sIdx}
+                    >
+                      <img
+                        src={
+                          slide.coverImage ||
+                          "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=1200&q=80"
+                        }
+                        alt={slide.title}
+                        width="1200"
+                        height="675"
+                        class="h-full w-full object-cover"
+                        loading={sIdx === 0 ? "eager" : "lazy"}
+                        fetchpriority={sIdx === 0 ? "high" : "low"}
+                      />
+                      <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/10" />
+
+                      <div class="absolute inset-x-0 bottom-0 p-5 sm:p-7 flex flex-col justify-end">
+                        <div class="mb-2.5">
+                          {slide.categorySlug ? (
+                            <a
+                              href={`/berita?kategori=${slide.categorySlug}`}
+                              class="inline-block rounded-[4px] bg-primary px-2.5 py-1 text-[11px] font-semibold text-white uppercase tracking-wider hover:bg-primary-hover transition-colors"
+                            >
+                              {slide.categoryName || "Umum"}
+                            </a>
+                          ) : (
+                            <span class="inline-block rounded-[4px] bg-primary px-2.5 py-1 text-[11px] font-semibold text-white uppercase tracking-wider">
+                              {slide.categoryName || "Umum"}
+                            </span>
+                          )}
+                        </div>
+
+                        <h2 class="font-display text-xl sm:text-2xl lg:text-3xl font-bold text-white leading-tight hover:text-primary-light transition-colors max-w-xl">
+                          <a href={`/berita/${slide.slug || ""}`}>
+                            {slide.title}
+                          </a>
+                        </h2>
+
+                        <div class="mt-3 flex items-center gap-3 text-xs text-white/75 font-body">
+                          {slide.authorId ? (
+                            <a
+                              href={`/penulis/${encodeURIComponent(slide.authorId)}`}
+                              class="hover:text-white hover:underline transition-colors"
+                            >
+                              {slide.authorName || "Humas Sekolah"}
+                            </a>
+                          ) : (
+                            <span>{slide.authorName || "Humas Sekolah"}</span>
+                          )}
+                          <span>&bull;</span>
+                          <time class="font-mono">
+                            {slide.publishedAt
+                              ? new Date(slide.publishedAt).toLocaleDateString(
+                                  "id-ID",
+                                  {
+                                    day: "numeric",
+                                    month: "short",
+                                    year: "numeric",
+                                  },
+                                )
+                              : "-"}
+                          </time>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+
+                  <!-- Carousel Controls (< and > di pojok kanan bawah persis desain) -->
+                  {heroSlides.length > 1 && (
+                    <div class="absolute bottom-5 right-5 z-20 flex items-center gap-1.5 *:h-8 *:w-8 *:rounded-[6px] *:bg-black/60 *:backdrop-blur-xs *:text-white *:flex *:items-center *:justify-center *:transition-colors *:cursor-pointer *:border *:border-white/20">
+                      <button
+                        type="button"
+                        id="btn-hero-prev"
+                        aria-label="Artikel sebelumnya"
+                        class="hover:bg-primary"
+                      >
+                        <Icon name="chevron-left" class="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        id="btn-hero-next"
+                        aria-label="Artikel berikutnya"
+                        class="hover:bg-primary"
+                      >
+                        <Icon name="chevron-right" class="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <!-- Right: 4 Sub-Cards (2x2 Grid) -->
+              {heroSub.length > 0 && (
+                <div class="lg:col-span-5 grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 lg:h-[480px] *:relative *:overflow-hidden *:rounded-[12px] *:border *:border-border *:bg-heading *:h-[180px] sm:*:h-auto lg:*:h-full">
+                  {heroSub.map((sub) => (
+                    <article class="group">
+                      <img
+                        src={
+                          sub.coverImage ||
+                          "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80"
+                        }
+                        alt={sub.title}
+                        width="400"
+                        height="240"
+                        class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                        loading="lazy"
+                      />
+                      <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/10" />
+
+                      <div class="absolute inset-x-0 bottom-0 p-3.5 sm:p-4 flex flex-col justify-end">
+                        <div class="mb-1.5">
+                          {sub.categorySlug ? (
+                            <a
+                              href={`/berita?kategori=${sub.categorySlug}`}
+                              class="inline-block rounded-[4px] bg-primary-light border border-primary/20 px-2 py-0.5 text-[10px] font-semibold text-primary uppercase tracking-wider hover:bg-primary hover:text-white transition-colors"
+                            >
+                              {sub.categoryName || "Umum"}
+                            </a>
+                          ) : (
+                            <span class="inline-block rounded-[4px] bg-primary-light border border-primary/20 px-2 py-0.5 text-[10px] font-semibold text-primary uppercase tracking-wider">
+                              {sub.categoryName || "Umum"}
+                            </span>
+                          )}
+                        </div>
+
+                        <h3 class="font-display text-xs sm:text-sm font-bold text-white leading-snug line-clamp-2 group-hover:text-primary-light transition-colors">
+                          <a href={`/berita/${sub.slug || ""}`}>{sub.title}</a>
+                        </h3>
+
+                        <time class="mt-1.5 font-mono text-[10px] text-white/70">
+                          {sub.publishedAt
+                            ? new Date(sub.publishedAt).toLocaleDateString(
+                                "id-ID",
+                                {
+                                  day: "numeric",
+                                  month: "short",
+                                  year: "numeric",
+                                },
+                              )
+                            : "-"}
+                        </time>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        )
+      }
+
+      <!-- ═══════════════════════════════════════════════════════════════ -->
+      <!-- 2. ANNOUNCEMENT / HIGHLIGHT LEADERBOARD BANNER                -->
+      <!-- ═══════════════════════════════════════════════════════════════ -->
+      {
+        !activeCategory && (
+          <section class="rounded-[10px] border border-border bg-surface p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-2xs">
+            <div class="flex items-center gap-3.5">
+              <div class="h-10 w-10 rounded-[8px] bg-primary text-white flex items-center justify-center shrink-0">
+                <Icon name="bell" class="h-5 w-5" />
+              </div>
+              <div>
+                <h3 class="font-display text-sm font-bold text-heading">
+                  {admissionsTitle} Telah Dibuka
+                </h3>
+                <p class="text-xs text-muted font-body">
+                  Pendaftaran online jalur prestasi akademik, afirmasi, dan zonasi dapat diakses secara transparan.
+                </p>
+              </div>
+            </div>
+            <a
+              href="/pendaftaran"
+              class="inline-flex h-9 items-center justify-center rounded-[6px] bg-primary px-4 font-body text-xs font-semibold text-white transition-all duration-200 hover:bg-primary-hover hover:shadow-(--shadow-button-glow) shrink-0 shadow-xs"
+            >
+              Lihat Alur {admissionsLabel} &rarr;
+            </a>
+          </section>
+        )
+      }
+
+      <!-- ═══════════════════════════════════════════════════════════════ -->
+      <!-- 3. HIGHLIGHT TENGAH / EDITOR'S PICK (2 Kolom)                 -->
+      <!-- ═══════════════════════════════════════════════════════════════ -->
+      {
+        !activeCategory && editorFeatured && (
+          <section class="space-y-5">
+            <!-- Header Seksi (Clean No-Divider) -->
+            <div class="flex items-center justify-between pb-1">
+              <div class="flex items-center gap-2">
+                <span class="h-2.5 w-2.5 bg-primary rounded-[2px]" />
+                <h2 class="font-display text-base sm:text-lg font-bold uppercase tracking-wider text-heading">
+                  Pilihan Redaksi
+                </h2>
+              </div>
+              <span class="text-xs text-muted font-body">Sorotan Khusus</span>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+              <!-- Left (8 cols): 1 Horizontal Card + 4 Mini Cards -->
+              <div class="lg:col-span-8 flex flex-col justify-between gap-5">
+                <!-- 1 Horizontal Card -->
+                <article class="group overflow-hidden rounded-[10px] border border-border bg-surface p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-(--shadow-hover) flex flex-col sm:flex-row gap-4">
+                  <a
+                    href={`/berita/${editorFeatured.slug || ""}`}
+                    class="sm:w-5/12 aspect-[16/10] overflow-hidden rounded-[8px] bg-surface-subtle block shrink-0"
+                  >
+                    <img
+                      src={editorFeatured.coverImage || "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80"}
+                      alt={editorFeatured.title}
+                      class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      loading="lazy"
+                    />
+                  </a>
+                  <div class="sm:w-7/12 flex flex-col justify-between py-0.5">
+                    <div>
+                      <div class="mb-1.5">
+                        <a
+                          href={`/berita?kategori=${editorFeatured.categorySlug}`}
+                          class="inline-block rounded-[4px] bg-primary-light border border-primary/20 px-2 py-0.5 text-[10px] font-semibold text-primary uppercase hover:bg-primary hover:text-white transition-colors"
+                        >
+                          {editorFeatured.categoryName || "Umum"}
+                        </a>
+                      </div>
+                      <h3 class="font-display text-base font-bold text-heading leading-snug group-hover:text-primary transition-colors">
+                        <a href={`/berita/${editorFeatured.slug || ""}`}>{editorFeatured.title}</a>
+                      </h3>
+                      <p class="mt-2 line-clamp-2 text-xs leading-relaxed text-muted font-body">
+                        {editorFeatured.summary}
+                      </p>
+                    </div>
+                    <div class="mt-3 flex items-center gap-2 text-[11px] text-muted font-mono">
+                      {editorFeatured.authorId ? (
+                        <a
+                          href={`/penulis/${encodeURIComponent(editorFeatured.authorId)}`}
+                          class="font-body font-medium text-heading hover:text-primary hover:underline transition-colors"
+                        >
+                          {editorFeatured.authorName || "Humas"}
+                        </a>
+                      ) : (
+                        <span>{editorFeatured.authorName || "Humas"}</span>
+                      )}
+                      <span>&bull;</span>
+                      <time>{editorFeatured.publishedAt ? new Date(editorFeatured.publishedAt).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : "-"}</time>
+                    </div>
+                  </div>
+                </article>
+
+                <!-- 4 Mini Cards (2x2 Grid) -->
+                {editorMinis.length > 0 && (
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 *:flex *:items-start *:gap-3 *:p-3 *:rounded-[8px] *:border *:border-border *:bg-surface *:transition-all">
+                    {editorMinis.map((mini) => (
+                      <article class="group hover:border-primary/40">
+                        <a
+                          href={`/berita/${mini.slug || ""}`}
+                          class="w-20 sm:w-24 aspect-video overflow-hidden rounded-[6px] bg-surface-subtle shrink-0 block"
+                        >
+                          <img
+                            src={mini.coverImage || "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=400&q=80"}
+                            alt={mini.title}
+                            class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                            loading="lazy"
+                          />
+                        </a>
+                        <div class="min-w-0 flex-1">
+                          <a
+                            href={`/berita?kategori=${mini.categorySlug}`}
+                            class="text-[9px] font-semibold uppercase text-primary tracking-wider hover:underline"
+                          >
+                            {mini.categoryName || "Umum"}
+                          </a>
+                          <h4 class="mt-0.5 font-display text-xs font-bold text-heading leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+                            <a href={`/berita/${mini.slug || ""}`}>{mini.title}</a>
+                          </h4>
+                          <time class="mt-1 block font-mono text-[10px] text-muted">
+                            {mini.publishedAt ? new Date(mini.publishedAt).toLocaleDateString("id-ID", { day: "numeric", month: "short" }) : "-"}
+                          </time>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <!-- Right (4 cols): 2 Compact Vertical Cards aligned with Left Column -->
+              <div class="lg:col-span-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 lg:grid-rows-2 gap-4 h-full *:flex *:flex-col *:h-full *:overflow-hidden *:rounded-[10px] *:border *:border-border *:bg-surface *:p-3 *:transition-all *:duration-200">
+                {editorSides.map((side) => (
+                  <article class="group hover:-translate-y-0.5 hover:shadow-(--shadow-hover)">
+                    <a
+                      href={`/berita/${side.slug || ""}`}
+                      class="h-32 sm:h-28 lg:h-24 xl:h-28 w-full overflow-hidden rounded-[6px] bg-surface-subtle block shrink-0"
+                    >
+                      <img
+                        src={side.coverImage || "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=600&q=80"}
+                        alt={side.title}
+                        class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                        loading="lazy"
+                      />
+                    </a>
+                    <div class="pt-2.5 flex-1 flex flex-col justify-between">
+                      <div>
+                        <a
+                          href={`/berita?kategori=${side.categorySlug}`}
+                          class="inline-block rounded-[4px] bg-primary-light border border-primary/20 px-2 py-0.5 text-[9px] font-semibold text-primary uppercase hover:bg-primary hover:text-white transition-colors"
+                        >
+                          {side.categoryName || "Umum"}
+                        </a>
+                        <h4 class="mt-1 font-display text-xs font-bold text-heading leading-snug group-hover:text-primary transition-colors line-clamp-2">
+                          <a href={`/berita/${side.slug || ""}`}>{side.title}</a>
+                        </h4>
+                      </div>
+                      <time class="mt-1.5 block font-mono text-[10px] text-muted">
+                        {side.publishedAt ? new Date(side.publishedAt).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : "-"}
+                      </time>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
+          </section>
+        )
+      }
+
+      <!-- ═══════════════════════════════════════════════════════════════ -->
+      <!-- 4. VISUAL STRIP KATEGORI / FOTO (5 Kolom Penuh)              -->
+      <!-- ═══════════════════════════════════════════════════════════════ -->
+      {
+        !activeCategory && (
+          <section class="overflow-hidden">
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 *:relative *:h-28 sm:*:h-32 *:overflow-hidden *:rounded-[8px] *:border *:border-border *:bg-heading">
+              {visualCategories.map((vCat) => (
+                <div class="group">
+                  <img
+                    src={vCat.image}
+                    alt={vCat.name}
+                    class="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+                    loading="lazy"
+                  />
+                  <div class="absolute inset-0 bg-black/40 group-hover:bg-black/25 transition-colors" />
+                  <div class="absolute inset-0 flex items-center justify-center p-2">
+                    <a
+                      href={vCat.href || `/berita?kategori=${vCat.slug}`}
+                      class="rounded-[4px] bg-surface/95 backdrop-blur-xs px-3 py-1 font-display text-xs font-bold text-heading group-hover:bg-primary group-hover:text-white transition-colors shadow-xs"
+                    >
+                      {vCat.name}
+                    </a>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )
+      }
+
+      <!-- ═══════════════════════════════════════════════════════════════ -->
+      <!-- 5. MAIN MAGAZINE FEED (8 Cols) + SIDEBAR LENGKAP (4 Cols)     -->
+      <!-- ═══════════════════════════════════════════════════════════════ -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-start" id="stream-section">
+
+        <!-- Left: Main Stream & Feed (lg:col-span-8) -->
+        <div class="lg:col-span-8 space-y-6" id="stream-container">
+
+          
+
+          <!-- Empty State (Shown when category has 0 items) -->
+          {
+            allArticles.length === 0 ? (
+              <div id="empty-state" class="rounded-[12px] border border-border bg-surface p-12 text-center">
+                <p class="font-display text-lg font-bold text-heading">
+                  Belum ada berita dalam kategori {activeCategory ? activeCategory.name : ""}
+                </p>
+                <p class="mt-1 text-xs text-muted">
+                  Silakan pilih kategori lain atau kembali ke seluruh arsip berita.
+                </p>
+                <div class="mt-4">
+                  <a
+                    href="/berita"
+                    class="inline-flex h-[38px] items-center justify-center rounded-[6px] border border-border bg-surface px-4 font-body text-xs font-medium text-heading hover:bg-surface-subtle transition-colors"
+                  >
+                    Lihat Semua Berita
+                  </a>
+                </div>
+              </div>
+            ) : (
+              <div id="stream-articles-container" class="space-y-6">
+                <!-- Featured Horizontal Card (Hanya di mode Semua Berita) -->
+                {feedFeatured && (
+                  <article class="group overflow-hidden rounded-[12px] border border-border bg-surface p-4 sm:p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-(--shadow-hover) flex flex-col md:flex-row gap-5">
+                    <a
+                      href={`/berita/${feedFeatured.slug || ""}`}
+                      class="md:w-1/2 aspect-[16/10] overflow-hidden rounded-[8px] bg-surface-subtle block shrink-0"
+                    >
+                      <img
+                        src={
+                          feedFeatured.coverImage ||
+                          "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80"
+                        }
+                        alt={feedFeatured.title}
+                        class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                        loading="lazy"
+                      />
+                    </a>
+
+                    <div class="md:w-1/2 flex flex-col justify-between py-1">
+                      <div>
+                        <div class="mb-2">
+                          {feedFeatured.categorySlug ? (
+                            <a
+                              href={`/berita?kategori=${feedFeatured.categorySlug}`}
+                              class="inline-block rounded-[4px] bg-primary-light px-2 py-0.5 text-[10px] font-semibold text-primary uppercase transition-colors hover:bg-primary hover:text-white"
+                            >
+                              {feedFeatured.categoryName || "Umum"}
+                            </a>
+                          ) : (
+                            <span class="inline-block rounded-[4px] bg-primary-light px-2 py-0.5 text-[10px] font-semibold text-primary uppercase">
+                              {feedFeatured.categoryName || "Umum"}
+                            </span>
+                          )}
+                        </div>
+
+                        <h3 class="font-display text-lg sm:text-xl font-bold text-heading leading-snug group-hover:text-primary transition-colors">
+                          <a href={`/berita/${feedFeatured.slug || ""}`}>
+                            {feedFeatured.title}
+                          </a>
+                        </h3>
+
+                        <p class="mt-2.5 line-clamp-3 text-xs sm:text-sm leading-relaxed text-muted font-body">
+                          {feedFeatured.summary}
+                        </p>
+                      </div>
+
+                      <div class="mt-4 pt-1 flex items-center justify-between text-[11px] text-muted">
+                        {feedFeatured.authorId ? (
+                          <a
+                            href={`/penulis/${encodeURIComponent(feedFeatured.authorId)}`}
+                            class="font-medium text-heading truncate max-w-[140px] hover:text-primary hover:underline transition-colors"
+                            title={feedFeatured.authorName || "Humas Sekolah"}
+                          >
+                            {feedFeatured.authorName || "Humas Sekolah"}
+                          </a>
+                        ) : (
+                          <span
+                            class="font-medium text-heading truncate max-w-[140px]"
+                            title={feedFeatured.authorName || "Humas Sekolah"}
+                          >
+                            {feedFeatured.authorName || "Humas Sekolah"}
+                          </span>
+                        )}
+                        <time class="font-mono">
+                          {feedFeatured.publishedAt
+                            ? new Date(
+                                feedFeatured.publishedAt,
+                              ).toLocaleDateString("id-ID", {
+                                day: "numeric",
+                                month: "short",
+                                year: "numeric",
+                              })
+                            : "-"}
+                        </time>
+                      </div>
+                    </div>
+                  </article>
+                )}
+
+                <!-- Stream List of Articles (Zero divide-y, Solid Card Policy 5.4) -->
+                <div class="space-y-4" id="stream-list">
+                  {feedList.map((article) => (
+                    <article class="stream-article group rounded-[10px] border border-border bg-surface p-4 sm:p-5 flex flex-col sm:flex-row gap-4 sm:gap-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-(--shadow-hover)">
+                      <a
+                        href={`/berita/${article.slug || ""}`}
+                        class="w-full sm:w-48 md:w-56 aspect-[16/10] overflow-hidden rounded-[8px] bg-surface-subtle shrink-0 block"
+                      >
+                        <img
+                          src={
+                            article.coverImage ||
+                            "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80"
+                          }
+                          alt={article.title}
+                          class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                          loading="lazy"
+                        />
+                      </a>
+
+                      <div class="flex-1 flex flex-col justify-between py-0.5">
+                        <div>
+                          <div class="mb-2">
+                            {article.categorySlug ? (
+                              <a
+                                href={`/berita?kategori=${article.categorySlug}`}
+                                class="inline-block rounded-[4px] bg-primary-light border border-primary/20 px-2 py-0.5 text-[10px] font-semibold text-primary uppercase transition-colors hover:bg-primary hover:text-white"
+                                title={`Halaman kategori ${article.categoryName}`}
+                              >
+                                {article.categoryName}
+                              </a>
+                            ) : (
+                              <span class="inline-block rounded-[4px] bg-primary-light border border-primary/20 px-2 py-0.5 text-[10px] font-semibold text-primary uppercase">
+                                {article.categoryName || "Umum"}
+                              </span>
+                            )}
+                          </div>
+
+                          <h3 class="font-display text-base sm:text-lg font-bold text-heading leading-snug group-hover:text-primary transition-colors">
+                            <a href={`/berita/${article.slug || ""}`}>
+                              {article.title}
+                            </a>
+                          </h3>
+
+                          <p class="mt-2 line-clamp-2 text-xs leading-relaxed text-muted font-body">
+                            {article.summary}
+                          </p>
+                        </div>
+
+                        <div class="mt-3 flex items-center gap-3 text-[11px] text-muted font-mono">
+                          {article.authorId ? (
+                            <a
+                              href={`/penulis/${encodeURIComponent(article.authorId)}`}
+                              class="font-body font-medium text-heading truncate max-w-[130px] hover:text-primary hover:underline transition-colors"
+                              title={article.authorName || "Humas Sekolah"}
+                            >
+                              {article.authorName || "Humas Sekolah"}
+                            </a>
+                          ) : (
+                            <span
+                              class="font-body font-medium text-heading truncate max-w-[130px]"
+                              title={article.authorName || "Humas Sekolah"}
+                            >
+                              {article.authorName || "Humas Sekolah"}
+                            </span>
+                          )}
+                          <span>&bull;</span>
+                          <time>
+                            {article.publishedAt
+                              ? new Date(
+                                  article.publishedAt,
+                                ).toLocaleDateString("id-ID", {
+                                  day: "numeric",
+                                  month: "short",
+                                  year: "numeric",
+                                })
+                              : "-"}
+                          </time>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+
+                <!-- Pagination Berita -->
+                {totalPages > 1 && (
+                  <nav
+                    class="flex items-center justify-center gap-2 pt-6 *:flex *:h-9 *:w-9 *:items-center *:justify-center *:rounded-[6px] *:font-mono *:text-xs *:font-semibold *:transition-colors"
+                    aria-label="Pagination Berita"
+                  >
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => {
+                      const isCurrent = p === currentPage;
+                      const pUrl = new URL(Astro.url);
+                      pUrl.searchParams.set("page", String(p));
+                      return (
+                        <a
+                          href={pUrl.search}
+                          class={
+                            isCurrent
+                              ? "bg-primary text-white shadow-xs"
+                              : "border border-border bg-surface text-heading hover:bg-surface-subtle"
+                          }
+                        >
+                          {p}
+                        </a>
+                      );
+                    })}
+
+                    {currentPage < totalPages && (
+                      <a
+                        href={`?page=${currentPage + 1}${activeCategory ? `&kategori=${encodeURIComponent(activeCategory.slug)}` : ""}`}
+                        aria-label="Halaman berikutnya"
+                        class="border border-border bg-surface text-heading hover:bg-surface-subtle"
+                      >
+                        <Icon name="chevron-right" class="h-3.5 w-3.5" />
+                      </a>
+                    )}
+                  </nav>
+                )}
+              </div>
+            )
+          }
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <!-- 6. SIDEBAR LENGKAP (4 Cols)                                   -->
+        <!-- ═══════════════════════════════════════════════════════════════ -->
+        <aside class="lg:col-span-4 space-y-8 sticky top-20">
+
+          <!-- Widget 1: Berita Populer (Zero divide-y) -->
+          <div class="rounded-[12px] border border-border bg-surface p-5 sm:p-6 shadow-xs">
+            <div class="flex items-center justify-between pb-3">
+              <h3 class="font-display text-sm font-bold uppercase tracking-wider text-heading">
+                Berita Populer
+              </h3>
+            </div>
+
+            <div class="space-y-2">
+              {
+                validPopularArticles.map((pop, idx) => (
+                  <article class="group p-2 rounded-[8px] hover:bg-surface-subtle transition-colors flex items-start gap-3">
+                    <span
+                      class={`flex h-6 w-6 shrink-0 items-center justify-center rounded-[4px] font-mono text-xs font-bold ${
+                        idx === 0
+                          ? "bg-primary text-white"
+                          : "bg-surface-subtle text-muted group-hover:bg-primary group-hover:text-white"
+                      } transition-colors`}
+                    >
+                      {idx + 1}
+                    </span>
+
+                    <a
+                      href={`/berita/${pop.slug || ""}`}
+                      class="w-16 h-14 overflow-hidden rounded-[6px] bg-surface-subtle shrink-0 block"
+                    >
+                      <img
+                        src={
+                          pop.coverImage ||
+                          "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=400&q=80"
+                        }
+                        alt={pop.title}
+                        class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                        loading="lazy"
+                      />
+                    </a>
+
+                    <div class="min-w-0 flex-1">
+                      <h4 class="font-display text-xs font-bold text-heading leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+                        <a href={`/berita/${pop.slug || ""}`}>{pop.title}</a>
+                      </h4>
+                      <div class="mt-1 flex items-center gap-2 text-[10px] text-muted font-mono">
+                        <span>{pop.viewCount || 0} views</span>
+                        {pop.publishedAt && (
+                          <>
+                            <span>&bull;</span>
+                            <time>
+                              {new Date(pop.publishedAt).toLocaleDateString(
+                                "id-ID",
+                                { day: "numeric", month: "short" },
+                              )}
+                            </time>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </article>
+                ))
+              }
+            </div>
+          </div>
+
+          <!-- Widget 2: Saluran Media Sosial -->
+          {
+            activeSocialChannels.length > 0 && (
+              <div class="rounded-[12px] border border-border bg-surface p-5 sm:p-6 shadow-xs space-y-4">
+                <div class="pb-2">
+                  <h3 class="font-display text-xs sm:text-sm font-bold uppercase tracking-wider text-heading">
+                    Saluran Resmi Sekolah
+                  </h3>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2.5 *:flex *:items-center *:gap-2.5 *:px-3 *:py-2.5 *:rounded-[8px] *:border *:border-border *:bg-surface *:text-heading *:transition-all *:duration-200">
+                  {activeSocialChannels.map((soc, idx) => {
+                    const isLastOdd = idx === activeSocialChannels.length - 1 && activeSocialChannels.length % 2 === 1;
+                    return (
+                      <a
+                        href={soc.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={`Kunjungi ${soc.name} Resmi Sekolah`}
+                        aria-label={`Kunjungi ${soc.name} Resmi Sekolah`}
+                        class={`group hover:-translate-y-0.5 hover:shadow-xs ${soc.hoverClass} ${isLastOdd ? 'col-span-2 sm:col-span-1' : ''}`}
+                      >
+                        <span class={`flex h-5 w-5 shrink-0 items-center justify-center transition-colors ${soc.iconColor} group-hover:text-current`}>
+                          <Icon name={soc.key === "twitter" ? "x" : soc.key} class="h-4.5 w-4.5 transition-transform duration-200 group-hover:scale-110" />
+                        </span>
+                        <span class="font-display text-xs font-semibold text-heading group-hover:text-current transition-colors truncate">
+                          {soc.name}
+                        </span>
+                      </a>
+                    );
+                  })}
+                </div>
+              </div>
+            )
+          }
+
+          <!-- Widget 3: Kategori Publikasi (Daftar Kategori Lengkap) -->
+          <div class="rounded-[12px] border border-border bg-surface p-5 sm:p-6 shadow-xs space-y-4">
+            <div class="flex items-center justify-between pb-2">
+              <h3 class="font-display text-sm font-bold uppercase tracking-wider text-heading">
+                Kategori Berita
+              </h3>
+            </div>
+
+            <div class="flex flex-wrap gap-2 *:rounded-[4px] *:px-2.5 *:py-1 *:text-xs *:font-medium *:transition-colors">
+              <a
+                href="/berita"
+                class={`sidebar-cat-btn ${
+                  !activeCategory
+                    ? "bg-primary text-white font-semibold shadow-xs"
+                    : "border border-border bg-surface text-muted hover:border-heading hover:text-heading"
+                }`}
+              >
+                Semua Kategori
+              </a>
+              {allCategories.map((cat) => {
+                const isActive = activeCategory?.id === cat.id;
+                return (
+                  <a
+                    href={`/berita?kategori=${cat.slug}`}
+                    class={`sidebar-cat-btn ${
+                      isActive
+                        ? "bg-primary text-white font-semibold shadow-xs"
+                        : "border border-border bg-surface text-muted hover:border-heading hover:text-heading"
+                    }`}
+                  >
+                    {cat.name}
+                  </a>
+                );
+              })}
+            </div>
+          </div>
+
+
+          <!-- Widget 4: PPDB & Informasi Publik Dinamis -->
+          <div class="rounded-[12px] border border-border bg-surface p-5 sm:p-6 shadow-xs space-y-3">
+            <span class="inline-block rounded-[4px] bg-primary-light text-primary font-bold px-2 py-0.5 text-[10px] tracking-wider uppercase border border-primary/20">
+              Informasi {admissionsLabel}
+            </span>
+            <h4 class="font-display text-sm font-bold text-heading">
+              {admissionsTitle}
+            </h4>
+            <p class="text-xs leading-relaxed text-muted font-body">
+              {admissionsSubtitle}
+            </p>
+            <div class="pt-2">
+              <a
+                href="/pendaftaran"
+                class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[8px] bg-primary px-5 font-display text-xs sm:text-sm font-semibold text-white shadow-xs transition-all duration-200 hover:bg-primary-hover hover:shadow-(--shadow-button-glow) group"
+              >
+                <span>Lihat Informasi {admissionsLabel}</span>
+                <span class="transition-transform duration-200 group-hover:translate-x-1">&rarr;</span>
+              </a>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </main>
+
+  <!-- Script Hero Carousel Slider (< >) -->
+  <script is:inline>
+    document.addEventListener("DOMContentLoaded", () => {
+      const slides = document.querySelectorAll(".hero-slide");
+      const btnPrev = document.getElementById("btn-hero-prev");
+      const btnNext = document.getElementById("btn-hero-next");
+      if (slides.length && btnPrev && btnNext) {
+        let current = 0;
+        const total = slides.length;
+        function showSlide(index) {
+          slides.forEach((s, idx) => {
+            if (idx === index) {
+              s.classList.remove("opacity-0", "pointer-events-none", "z-0");
+              s.classList.add("opacity-100", "z-10");
+            } else {
+              s.classList.remove("opacity-100", "z-10");
+              s.classList.add("opacity-0", "pointer-events-none", "z-0");
+            }
+          });
+          current = index;
+        }
+        btnPrev.addEventListener("click", () => showSlide((current - 1 + total) % total));
+        btnNext.addEventListener("click", () => showSlide((current + 1) % total));
+        setInterval(() => showSlide((current + 1) % total), 7000);
+      }
+    });
+  </script>
+
+  <Footer />
+</Layout>

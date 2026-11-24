@@ -1,0 +1,2229 @@
+---
+import AdminLayout from "../../../layouts/AdminLayout.astro";
+import Icon from "../../../components/Icon.astro";
+import { db, settings, registrations } from "../../../db";
+import { sql, desc } from "drizzle-orm";
+import {
+  getDefaultPpdbConfig,
+  type PpdbFullConfig,
+} from "../../../utils/ppdbConfigDefaults";
+
+export const prerender = false;
+
+// 1. Ambil data profil sekolah dan konfigurasi PPDB
+const allSettings = await db.select().from(settings);
+const settingMap = allSettings.reduce(
+  (acc, curr) => {
+    acc[curr.key] = curr.value;
+    return acc;
+  },
+  {} as Record<string, string>,
+);
+
+const schoolName = settingMap["school_name"] || "SMAN 1 Unggulan";
+const academicYear = settingMap["ppdb_year"] || "2026/2027";
+const schoolType = (
+  settingMap["school_type"] ||
+  settingMap["school_level"] ||
+  "SMA"
+).toUpperCase();
+const schoolStatus = settingMap["school_status"] || "Negeri";
+const npsn = settingMap["npsn"] || settingMap["school_npsn"] || "20108921";
+const schoolAddress = settingMap["address"] || "Jl. Pendidikan No. 45";
+const schoolCity = settingMap["city"] || "Kota Jakarta Selatan";
+const schoolProvince = settingMap["province"] || "DKI Jakarta";
+const schoolPostal = settingMap["postal_code"] || "12340";
+const schoolPhone = settingMap["phone"] || "(021) 555-0199";
+const schoolEmail = settingMap["email"] || "info@sekolah.sch.id";
+const schoolWebsite =
+  settingMap["website"] || settingMap["school_website"] || "www.sekolah.sch.id";
+const logoUrl = settingMap["logo_url"] || "";
+const principalName = settingMap["principal_name"] || "Dr. H. Sulaiman, M.Pd.";
+
+const isMadrasah = ["MA", "MTS", "MI"].includes(schoolType);
+const isVocational = schoolType === "SMK";
+const ministryTitle = isMadrasah
+  ? "KEMENTERIAN AGAMA REPUBLIK INDONESIA"
+  : isVocational
+    ? "KEMENTERIAN PENDIDIKAN, KEBUDAYAAN, RISET DAN TEKNOLOGI"
+    : "PEMERINTAH DAERAH PROVINSI / KEMENTERIAN PENDIDIKAN";
+const subMinistryTitle = isMadrasah
+  ? "KANTOR KEMENTERIAN AGAMA KABUPATEN/KOTA"
+  : "DINAS PENDIDIKAN DAN KEBUDAYAAN";
+
+// 2. Ambil daftar gelombang untuk filter
+let wavesList: string[] = ["Gelombang 1", "Gelombang 2", "Gelombang 3"];
+if (settingMap["ppdb_form_config"]) {
+  try {
+    const parsed = JSON.parse(settingMap["ppdb_form_config"]);
+    if (parsed.waves && Array.isArray(parsed.waves)) {
+      wavesList = parsed.waves.map((w: any) => w.name);
+    }
+  } catch {}
+}
+
+// 3. Statistik awal dari database
+const statsTotal = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(registrations)
+  .then((r) => Number(r[0]?.count || 0));
+const statsSubmitted = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(registrations)
+  .where(sql`${registrations.status} = 'submitted'`)
+  .then((r) => Number(r[0]?.count || 0));
+const statsVerified = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(registrations)
+  .where(sql`${registrations.status} = 'verified'`)
+  .then((r) => Number(r[0]?.count || 0));
+const statsAccepted = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(registrations)
+  .where(sql`${registrations.status} = 'accepted'`)
+  .then((r) => Number(r[0]?.count || 0));
+const statsRejected = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(registrations)
+  .where(sql`${registrations.status} = 'rejected'`)
+  .then((r) => Number(r[0]?.count || 0));
+---
+
+<AdminLayout title="Data Pendaftar" activeNav="pendaftar" settingsMap={settingMap}>
+  <div class="max-w-6xl mx-auto space-y-6 pb-24 font-body text-body">
+    
+    <!-- HEADER HALAMAN & AKSI SEKUNDER                           -->
+    
+    <div
+      class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5"
+    >
+      <div>
+        <div class="flex items-center gap-2.5">
+          <h1
+            class="font-display text-2xl font-bold tracking-tight text-heading"
+          >
+            Data Pendaftar
+          </h1>
+        </div>
+        <p class="mt-1 font-body text-xs text-muted">
+          Pusat verifikasi pendaftaran tahun ajaran {academicYear}.
+        </p>
+      </div>
+
+      <!-- Aksi Sekunder Header -->
+      <div class="flex flex-wrap items-center gap-2 shrink-0 *:inline-flex *:h-9 *:items-center *:justify-center *:gap-1.5 *:rounded-[6px] *:border *:border-border *:bg-surface *:text-xs *:transition-colors *:shadow-xs">
+        <!-- Pengaturan Pendaftaran (Aksi Sekunder) -->
+        <a
+          href="/admin/pendaftaran"
+          class="px-3 font-medium text-muted hover:text-heading hover:bg-surface-subtle"
+          title="Buka Pusat Pengaturan Pendaftaran"
+        >
+          <svg
+            class="h-3.5 w-3.5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+            ></path>
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+          </svg>
+          <span>Pengaturan Pendaftaran</span>
+        </a>
+
+        <!-- Ekspor Data Excel (Mengikuti Filter yang Aktif) -->
+        <a
+          id="btn-export-excel"
+          href="/api/admin/ppdb/export"
+          target="_blank"
+          class="px-3.5 font-semibold text-heading hover:bg-surface-subtle"
+          title="Unduh data pendaftar dalam format Excel (.xlsx)"
+        >
+          <svg
+            class="h-3.5 w-3.5 text-success"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+            ></path>
+          </svg>
+          <span id="export-excel-label">Ekspor Excel (.xlsx)</span>
+        </a>
+      </div>
+    </div>
+
+    <!-- Alert Feedback Banner -->
+    <div id="status-banner" class="hidden rounded-lg p-3.5 text-xs font-medium">
+    </div>
+
+    
+    <!-- 5 KARTU STATISTIK (KONTRAS WARNA TIAP KATEGORI - TANPA BORDER) -->
+    
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 *:text-left *:rounded-lg *:p-4 *:transition-all *:cursor-pointer *:shadow-xs">
+      <!-- Data Pendaftar (Calon Siswa) / Total -->
+      <button
+        type="button"
+        id="card-stat-all"
+        class="stat-card bg-primary text-primary-foreground hover:bg-primary-hover shadow-md"
+        data-filter=""
+        title="Klik untuk melihat seluruh calon siswa"
+      >
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-semibold">Data Pendaftar</span>
+        </div>
+        <div
+          id="stat-total"
+          class="font-display text-2xl sm:text-3xl font-bold mt-1"
+        >
+          {statsTotal}
+        </div>
+      </button>
+
+      <!-- Menunggu Verifikasi -->
+      <button
+        type="button"
+        id="card-stat-submitted"
+        class="stat-card bg-warning text-white hover:bg-warning-hover"
+        data-filter="submitted"
+        title="Klik untuk menyaring calon siswa yang menunggu verifikasi"
+      >
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-semibold">Menunggu Verifikasi</span>
+        </div>
+        <div
+          id="stat-submitted"
+          class="font-display text-2xl sm:text-3xl font-bold mt-1"
+        >
+          {statsSubmitted}
+        </div>
+      </button>
+
+      <!-- Berkas Terverifikasi -->
+      <button
+        type="button"
+        id="card-stat-verified"
+        class="stat-card bg-secondary text-secondary-foreground hover:bg-secondary-hover"
+        data-filter="verified"
+        title="Klik untuk menyaring berkas yang sudah sah terverifikasi"
+      >
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-semibold">Berkas Terverifikasi</span>
+        </div>
+        <div
+          id="stat-verified"
+          class="font-display text-2xl sm:text-3xl font-bold mt-1"
+        >
+          {statsVerified}
+        </div>
+      </button>
+
+      <!-- Diterima Resmi -->
+      <button
+        type="button"
+        id="card-stat-accepted"
+        class="stat-card bg-success text-white hover:bg-success-hover"
+        data-filter="accepted"
+        title="Klik untuk menyaring calon siswa yang telah diterima resmi"
+      >
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-semibold">Diterima Resmi</span>
+        </div>
+        <div
+          id="stat-accepted"
+          class="font-display text-2xl sm:text-3xl font-bold mt-1"
+        >
+          {statsAccepted}
+        </div>
+      </button>
+
+      <!-- Tidak Diterima -->
+      <button
+        type="button"
+        id="card-stat-rejected"
+        class="stat-card bg-error text-white hover:bg-error-hover"
+        data-filter="rejected"
+        title="Klik untuk menyaring calon siswa yang tidak diterima"
+      >
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-semibold">Tidak Diterima</span>
+        </div>
+        <div
+          id="stat-rejected"
+          class="font-display text-2xl sm:text-3xl font-bold mt-1"
+        >
+          {statsRejected}
+        </div>
+      </button>
+    </div>
+
+    
+    <!-- TOOLBAR FILTER (SATU BARIS RAPI, SEGAR DIBUAT SEKUNDER) -->
+    
+    <div
+      class="rounded-lg border border-border bg-surface p-3 sm:p-4 shadow-xs"
+    >
+      <div
+        class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5"
+      >
+        <!-- Input Pencarian (Fleksibel) -->
+        <div class="relative flex-1 min-w-[200px]">
+          <input
+            type="text"
+            id="applicant-search"
+            placeholder="Cari nama, NIK, NISN, no reg..."
+            class="h-9 w-full rounded-[6px] border border-border bg-surface pl-8 pr-8 text-xs text-heading placeholder:text-muted/60"
+          />
+          <Icon name="search" class="h-4 w-4 text-muted absolute left-2.5 top-2.5 pointer-events-none" />
+          <button
+            type="button"
+            id="btn-clear-search"
+            class="hidden absolute right-2.5 top-2.5 text-muted hover:text-heading cursor-pointer text-xs"
+            title="Hapus pencarian"
+          >
+            &times;
+          </button>
+        </div>
+
+        <!-- Filter Gelombang -->
+        <div class="w-full sm:w-44 shrink-0">
+          <select
+            id="applicant-wave-filter"
+            class="h-9 w-full rounded-[6px] border border-border bg-surface px-3 text-xs text-heading cursor-pointer"
+          >
+            <option value="">Semua Gelombang</option>
+            {wavesList.map((w) => <option value={w}>{w}</option>)}
+          </select>
+        </div>
+
+        <!-- Filter Status Seleksi -->
+        <div class="w-full sm:w-48 shrink-0">
+          <select
+            id="applicant-status-filter"
+            class="h-9 w-full rounded-[6px] border border-border bg-surface px-3 text-xs text-heading cursor-pointer"
+          >
+            <option value="">Semua Status</option>
+            <option value="submitted">Menunggu Verifikasi</option>
+            <option value="verified">Berkas Terverifikasi</option>
+            <option value="accepted">Diterima Resmi</option>
+            <option value="rejected">Ditolak / Tidak Lolos</option>
+          </select>
+        </div>
+
+        <!-- Tombol Segarkan (Sekunder Ringkas) -->
+        <div class="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
+          <button
+            type="button"
+            id="btn-refresh-applicants"
+            class="h-9 w-9 inline-flex items-center justify-center rounded-[6px] border border-border bg-surface text-muted hover:text-heading hover:bg-surface-subtle transition-colors cursor-pointer shadow-xs"
+            title="Segarkan Data Pendaftar"
+            aria-label="Segarkan Data"
+          >
+            <svg
+              class="h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+              ></path>
+            </svg>
+          </button>
+
+          <!-- Tombol Reset Filter (Hanya tampil saat filter aktif) -->
+          <button
+            type="button"
+            id="btn-reset-filters"
+            class="hidden h-9 px-2.5 rounded-[6px] border border-border bg-surface text-[11px] font-medium text-muted hover:text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+            title="Kembalikan semua filter ke awal"
+          >
+            Reset Filter
+          </button>
+        </div>
+      </div>
+    </div>
+
+    
+    <!-- TABEL DATA PENDAFTAR (KETERBACAAN JERNIH, LEBAR AKSI)    -->
+    
+    <div
+      class="rounded-lg border border-border bg-surface overflow-hidden shadow-xs"
+    >
+      <div class="overflow-x-auto">
+        <table class="w-full text-left font-body text-xs">
+          <thead
+            class="border-b border-border bg-surface-subtle text-[11px] font-semibold uppercase tracking-wider text-muted"
+          >
+            <tr class="*:py-3 *:px-4 *:last:text-right">
+              <th>Calon Siswa</th>
+              <th>No. Registrasi</th>
+              <th>Jalur &amp; Asal Sekolah</th>
+              <th>Tanggal &amp; Kontak</th>
+              <th>Status</th>
+              <th class="min-w-[210px]">Aksi</th>
+            </tr>
+          </thead>
+          <tbody id="applicant-table-body" class="divide-y divide-border">
+            <tr>
+              <td colspan="6" class="py-12 text-center text-muted">
+                Memuat data pendaftar terbaru...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination Toolbar Lengkap & Terukur -->
+      <div
+        class="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 border-t border-border bg-surface-subtle text-xs text-muted"
+      >
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-[11px] text-muted">Baris:</span>
+          <select
+            id="pagination-limit"
+            class="h-8 rounded-[5px] border border-border bg-surface px-2.5 text-xs font-semibold text-heading cursor-pointer"
+          >
+            <option value="10">10</option>
+            <option value="15" selected>15</option>
+            <option value="25">25</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+          <span id="pagination-info" class="font-medium text-heading ml-1"
+            >Menampilkan 0 pendaftar</span
+          >
+        </div>
+
+        <!-- Tombol Navigasi Halaman -->
+        <div class="flex items-center gap-1 *:h-8 *:px-2.5 *:rounded-[5px] *:border *:border-border *:bg-surface *:text-xs *:font-medium *:text-heading *:transition-colors" id="pagination-controls-wrapper">
+          <button
+            type="button"
+            id="btn-first-page"
+            class="hover:bg-surface-subtle disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            title="Halaman Pertama"
+            disabled
+          >
+            &laquo;
+          </button>
+          <button
+            type="button"
+            id="btn-prev-page"
+            class="hover:bg-surface-subtle disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            title="Halaman Sebelumnya"
+            disabled
+          >
+            &lsaquo;
+          </button>
+
+          <!-- Dynamic Numbered Page Buttons -->
+          <div id="page-numbers-container" class="flex items-center gap-1 *:h-8 *:min-w-[32px] *:px-2 *:rounded-[5px] *:text-xs *:font-semibold *:cursor-pointer *:transition-colors">
+          </div>
+
+          <button
+            type="button"
+            id="btn-next-page"
+            class="hover:bg-surface-subtle disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            title="Halaman Berikutnya"
+            disabled
+          >
+            &rsaquo;
+          </button>
+          <button
+            type="button"
+            id="btn-last-page"
+            class="hover:bg-surface-subtle disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            title="Halaman Terakhir"
+            disabled
+          >
+            &raquo;
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 1: PRATINJAU LEMBAR FORMULIR A4 & PERSYARATAN DOKUMEN -->
+  
+  <div
+    id="modal-a4-preview"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Pratinjau Formulir A4"
+    class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-2 sm:p-4 backdrop-blur-xs overflow-hidden"
+  >
+    <div
+      class="max-w-5xl w-full h-[92vh] max-h-[92vh] rounded-[12px] border border-border bg-surface shadow-2xl flex flex-col overflow-hidden"
+    >
+      <!-- Modal Header (Fixed / Non-scrollable) -->
+      <div
+        class="flex items-center justify-between px-4 sm:px-6 py-3.5 border-b border-border bg-surface shrink-0"
+      >
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="h-8 w-8 rounded-[6px] bg-primary-light text-primary flex items-center justify-center shrink-0">
+            <svg
+              class="h-4 w-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+              ></path>
+            </svg>
+          </div>
+          <div class="min-w-0">
+            <h3 class="font-display text-sm sm:text-base font-bold text-heading leading-tight truncate">
+              Lembar Formulir Pendaftaran A4
+            </h3>
+            <p id="a4-modal-subtitle" class="font-mono text-xs text-muted truncate mt-0.5">
+              -
+            </p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 shrink-0 *:inline-flex *:h-8 *:items-center *:justify-center *:gap-1.5 *:rounded-[6px] *:px-3 *:text-xs *:font-medium *:shadow-xs *:transition-colors *:whitespace-nowrap">
+          <!-- Tombol Cetak PDF (Aksi Utama) -->
+          <button
+            type="button"
+            id="btn-a4-print"
+            class="bg-primary text-white hover:bg-primary-hover cursor-pointer"
+            title="Cetak Dokumen Formulir A4"
+          >
+            <svg
+              class="h-3.5 w-3.5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"
+              ></path>
+            </svg>
+            <span>Cetak PDF</span>
+          </button>
+
+          <!-- Tombol Buka Tab Baru (Aksi Sekunder) -->
+          <a
+            id="link-a4-standalone"
+            href="#"
+            target="_blank"
+            class="border border-border bg-surface text-heading hover:bg-surface-subtle"
+            title="Buka Dokumen di Tab Baru"
+          >
+            <svg
+              class="h-3.5 w-3.5 text-muted"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+              ></path>
+            </svg>
+            <span class="hidden sm:inline">Buka Tab Baru</span>
+          </a>
+
+          <!-- Tombol Tutup -->
+          <button
+            type="button"
+            id="btn-close-a4-modal"
+            class="!w-8 !px-0 text-muted hover:text-heading hover:bg-surface-subtle text-lg font-bold cursor-pointer !shadow-none"
+            title="Tutup Modal"
+          >
+            &times;
+          </button>
+        </div>
+      </div>
+
+      <!-- Bar Informasi Kode Akses Verifikasi (Neutral Surface dengan Aksen Primary) -->
+      <div
+        id="a4-credential-banner"
+        class="px-4 sm:px-6 py-2.5 bg-surface border-b border-border flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs shrink-0"
+      >
+        <div class="flex flex-wrap items-center gap-2 min-w-0">
+          <span class="font-semibold text-heading">Kode Akses Verifikasi</span>
+          <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-surface-subtle text-muted border border-border">
+            Informasi
+          </span>
+          <span class="text-[11px] text-muted hidden sm:inline">
+            &bull; Berikan kode ini kepada calon siswa jika diperlukan untuk verifikasi.
+          </span>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <strong
+            id="a4-credential-code"
+            class="font-mono text-xs px-2.5 py-1 rounded-[6px] bg-surface-subtle border border-border text-primary font-bold tracking-wider shadow-2xs select-all"
+          >-</strong>
+          <button
+            type="button"
+            id="btn-copy-a4-credential"
+            class="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[6px] border border-border bg-surface text-heading font-medium text-[11px] hover:bg-primary hover:text-white hover:border-primary cursor-pointer shadow-2xs transition-colors shrink-0"
+            title="Salin Kode Akses"
+          >
+            <svg
+              class="h-3.5 w-3.5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+              ></path>
+            </svg>
+            <span class="copy-label">Salin Kode</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Area Scroll Dokumen Tunggal (Single Scrollable Viewport) -->
+      <div
+        class="flex-1 overflow-y-auto p-4 sm:p-8 bg-surface-subtle flex justify-center items-start"
+      >
+        <div
+          id="a4-sheet-container"
+          class="w-full max-w-[210mm] min-h-[297mm] box-border bg-white text-heading border border-border shadow-md rounded-[2px] p-6 sm:p-10 font-sans text-[8.5pt] leading-relaxed mx-auto my-0 select-text"
+        >
+          <!-- Konten formulir diisi dinamis via JavaScript -->
+          <div class="py-20 text-center text-muted">
+            Memuat lembar formulir pendaftaran A4...
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  
+  <!-- MODAL 2: DETAIL & VERIFIKASI STATUS PENDAFTAR            -->
+  
+  <div
+    id="modal-applicant-detail"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Detail dan Verifikasi Pendaftar"
+    class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-4 backdrop-blur-xs"
+  >
+    <div
+      class="max-w-3xl w-full rounded-[12px] border border-border bg-surface shadow-2xl flex flex-col max-h-[90vh] overflow-hidden"
+    >
+      <!-- HEADER MODAL (IDENTITAS UTAMA & METADATA SATU BARIS) -->
+      <div
+        class="shrink-0 p-4 sm:p-5 border-b border-border bg-surface flex items-start justify-between gap-3"
+      >
+        <div class="space-y-1 min-w-0">
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] font-semibold uppercase tracking-wider text-primary">Verifikasi Calon Siswa</span>
+            <span id="modal-header-status-badge" class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-surface-subtle text-muted border border-border"></span>
+          </div>
+          <h3 id="modal-detail-student-name" class="font-display text-base sm:text-lg font-bold text-heading truncate">
+            -
+          </h3>
+          <p id="modal-detail-reg-number" class="text-xs font-mono text-muted truncate">
+            -
+          </p>
+        </div>
+
+        <div class="flex items-center gap-2 shrink-0">
+          <!-- Kode Akses Verifikasi Ringkas (Bukan Box Kuning Raksasa) -->
+          <div id="applicant-access-code-box" class="hidden sm:flex items-center gap-1.5 bg-surface-subtle px-2.5 py-1 rounded-[6px] border border-border text-xs">
+            <span class="text-muted text-[11px]">Kode Akses:</span>
+            <span id="modal-detail-access-code" class="font-mono font-bold text-heading text-xs">-</span>
+            <button
+              type="button"
+              id="btn-copy-modal-code"
+              class="ml-1 text-[11px] font-medium text-primary hover:underline cursor-pointer"
+              title="Salin Kode Akses"
+            >
+              Salin
+            </button>
+          </div>
+
+          <button
+            type="button"
+            id="btn-close-detail-modal"
+            class="h-8 w-8 inline-flex items-center justify-center rounded-[6px] text-muted hover:text-heading hover:bg-surface-subtle text-lg font-bold cursor-pointer transition-colors"
+            title="Tutup Modal"
+          >
+            &times;
+          </button>
+        </div>
+      </div>
+
+      <!-- FORM VERIFIKASI & KEPUTUSAN TERPADU -->
+      <form id="form-verify-applicant" class="flex flex-col flex-1 overflow-hidden m-0 p-0">
+        <input type="hidden" id="verify-applicant-id" />
+
+        <!-- SCROLLABLE BODY (SATU AREA SCROLL UTAMA) -->
+        <div class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 divide-y divide-border">
+          
+          
+          <!-- BAGIAN 1: DATA CALON SISWA                                -->
+          
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <div>
+                <h4 class="font-display text-sm font-bold text-heading">
+                  1. Data Calon Siswa
+                </h4>
+                <p class="text-[11px] text-muted">
+                  Identitas, orang tua, dan informasi pendaftaran
+                </p>
+              </div>
+              <button
+                type="button"
+                id="btn-toggle-student-details"
+                class="text-xs font-medium text-primary hover:underline cursor-pointer"
+              >
+                Sembunyikan
+              </button>
+            </div>
+
+            <!-- Konten Grid Data Siswa (Tanpa Kotak Berulang) -->
+            <div id="student-details-wrapper" class="rounded-[8px] bg-surface-subtle p-4 border border-border-subtle">
+              <div id="applicant-detail-content" class="text-xs">
+                <div class="py-6 text-center text-muted">
+                  Memuat rincian berkas pendaftar...
+                </div>
+              </div>
+            </div>
+          </div>
+
+          
+          <!-- BAGIAN 2: VERIFIKASI PERSYARATAN BERKAS                  -->
+          
+          <div class="pt-6 space-y-4">
+            <div>
+              <h4 class="font-display text-sm font-bold text-heading">
+                2. Verifikasi Persyaratan
+              </h4>
+              <p class="text-[11px] text-muted">
+                Pemeriksaan dokumen, status validasi, dan instruksi perbaikan
+              </p>
+            </div>
+
+            <!-- Tabel / List Berkas Dokumen Eksplisit -->
+            <div class="overflow-hidden rounded-[8px] border border-border bg-surface">
+              <table class="w-full text-left font-body text-xs">
+                <thead class="border-b border-border bg-surface-subtle/60 text-[11px] font-semibold uppercase tracking-wider text-muted">
+                  <tr>
+                    <th class="py-2.5 px-3.5">Dokumen Persyaratan</th>
+                    <th class="py-2.5 px-3.5 w-32 text-center">Status Unggah</th>
+                    <th class="py-2.5 px-3.5 w-36 text-right">Tindakan Berkas</th>
+                  </tr>
+                </thead>
+                <tbody id="modal-detail-documents-list" class="divide-y divide-border">
+                  <tr>
+                    <td colspan="3" class="py-4 text-center text-muted">Memuat daftar berkas...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Status Verifikasi Berkas (Segmented Radio Cards) -->
+            <div class="space-y-2">
+              <label class="block font-medium text-heading text-xs">
+                Status Verifikasi Administrasi Dokumen:
+              </label>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <label
+                  class="ver-status-card p-3 rounded-[6px] border border-border bg-surface hover:border-warning cursor-pointer flex items-start gap-2.5 transition-all"
+                >
+                  <input
+                    type="radio"
+                    name="verification_status"
+                    value="pending"
+                    class="mt-0.5 text-primary cursor-pointer"
+                  />
+                  <div>
+                    <span class="font-semibold text-xs text-heading block">Menunggu</span>
+                    <span class="text-[11px] text-muted">Berkas belum diperiksa</span>
+                  </div>
+                </label>
+
+                <label
+                  class="ver-status-card p-3 rounded-[6px] border border-border bg-surface hover:border-warning cursor-pointer flex items-start gap-2.5 transition-all"
+                >
+                  <input
+                    type="radio"
+                    name="verification_status"
+                    value="revision_required"
+                    class="mt-0.5 text-warning cursor-pointer"
+                  />
+                  <div>
+                    <span class="font-semibold text-xs text-warning-text block">Perlu Perbaikan</span>
+                    <span class="text-[11px] text-muted">Ada berkas kurang / buram</span>
+                  </div>
+                </label>
+
+                <label
+                  class="ver-status-card p-3 rounded-[6px] border border-border bg-surface hover:border-success cursor-pointer flex items-start gap-2.5 transition-all"
+                >
+                  <input
+                    type="radio"
+                    name="verification_status"
+                    value="verified"
+                    class="mt-0.5 text-success cursor-pointer"
+                  />
+                  <div>
+                    <span class="font-semibold text-xs text-success-text block">Terverifikasi</span>
+                    <span class="text-[11px] text-muted">Berkas lengkap &amp; sah</span>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <!-- Instruksi Perbaikan Berkas -->
+            <div id="revision-notes-container" class="space-y-1.5 pt-1">
+              <label
+                for="verify-revision-notes"
+                class="block font-medium text-heading text-[11px]"
+              >
+                Instruksi Perbaikan Berkas (Akan dibaca calon siswa saat cek status):
+              </label>
+              <input
+                type="text"
+                id="verify-revision-notes"
+                placeholder="Contoh: Kartu Keluarga buram, mohon unggah ulang scan KK asli berformat PDF/JPG."
+                class="h-9 w-full rounded-[6px] border border-border bg-surface px-3 text-xs text-heading placeholder:text-muted/60"
+              />
+            </div>
+          </div>
+
+          
+          <!-- BAGIAN 3: KEPUTUSAN SELEKSI                               -->
+          
+          <div class="pt-6 space-y-4">
+            <div>
+              <h4 class="font-display text-sm font-bold text-heading">
+                3. Keputusan Seleksi
+              </h4>
+              <p class="text-[11px] text-muted">
+                Status kelulusan penerimaan peserta didik baru
+              </p>
+            </div>
+
+            <div class="flex items-center gap-2 p-2.5 rounded-[6px] bg-surface-subtle/80 border border-border-subtle text-[11px] text-muted">
+              <svg class="h-4 w-4 text-primary shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>Hasil keputusan seleksi hanya dapat dilihat oleh publik/calon siswa setelah jadwal pengumuman resmi.</span>
+            </div>
+
+            <!-- 4 Radio Cards untuk Keputusan Seleksi -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <label
+                class="sel-status-card p-3 rounded-[6px] border border-border bg-surface hover:border-heading cursor-pointer flex items-start gap-2 transition-all"
+              >
+                <input
+                  type="radio"
+                  name="selection_status"
+                  value="not_announced"
+                  class="mt-0.5 text-primary cursor-pointer"
+                />
+                <div>
+                  <span class="font-semibold text-xs text-heading block">Menunggu</span>
+                  <span class="text-[10px] text-muted">Dalam proses</span>
+                </div>
+              </label>
+
+              <label
+                class="sel-status-card p-3 rounded-[6px] border border-border bg-surface hover:border-success cursor-pointer flex items-start gap-2 transition-all"
+              >
+                <input
+                  type="radio"
+                  name="selection_status"
+                  value="accepted"
+                  class="mt-0.5 text-success cursor-pointer"
+                />
+                <div>
+                  <span class="font-semibold text-xs text-success-text block">Diterima</span>
+                  <span class="text-[10px] text-muted">Lolos seleksi</span>
+                </div>
+              </label>
+
+              <label
+                class="sel-status-card p-3 rounded-[6px] border border-border bg-surface hover:border-error cursor-pointer flex items-start gap-2 transition-all"
+              >
+                <input
+                  type="radio"
+                  name="selection_status"
+                  value="rejected"
+                  class="mt-0.5 text-error cursor-pointer"
+                />
+                <div>
+                  <span class="font-semibold text-xs text-error-text block">Tidak Diterima</span>
+                  <span class="text-[10px] text-muted">Tidak lolos</span>
+                </div>
+              </label>
+
+              <label
+                class="sel-status-card p-3 rounded-[6px] border border-border bg-surface hover:border-primary cursor-pointer flex items-start gap-2 transition-all"
+              >
+                <input
+                  type="radio"
+                  name="selection_status"
+                  value="waitlist"
+                  class="mt-0.5 text-primary cursor-pointer"
+                />
+                <div>
+                  <span class="font-semibold text-xs text-primary block">Daftar Tunggu</span>
+                  <span class="text-[10px] text-muted">Cadangan kuota</span>
+                </div>
+              </label>
+            </div>
+
+            <!-- Catatan Internal Panitia -->
+            <div class="space-y-1.5 pt-1">
+              <label for="verify-notes" class="block font-medium text-heading text-[11px]">
+                Catatan Tambahan Panitia (Internal / Audit):
+              </label>
+              <textarea
+                id="verify-notes"
+                rows="2"
+                placeholder="Catatan pertimbangan keputusan atau catatan verifikasi internal panitia..."
+                class="w-full rounded-[6px] border border-border bg-surface p-2.5 text-xs text-heading placeholder:text-muted/60"
+              ></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- FOOTER MODAL (STICKY BOTTOM ACTION BAR) -->
+        <div class="shrink-0 px-4 sm:px-6 py-3.5 border-t border-border bg-surface-subtle flex flex-wrap items-center justify-between gap-3">
+          <button
+            type="button"
+            id="btn-open-a4-from-detail"
+            class="inline-flex h-9 items-center justify-center gap-1.5 rounded-[6px] border border-border bg-surface px-3 text-xs font-semibold text-heading hover:bg-surface-subtle cursor-pointer shadow-xs whitespace-nowrap transition-colors"
+            title="Lihat Formulir A4 Pendaftaran Lengkap"
+          >
+            <svg class="h-3.5 w-3.5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <span>Lihat Form A4</span>
+          </button>
+
+          <div class="flex items-center gap-2.5">
+            <span id="unsaved-changes-badge" class="hidden text-[11px] font-medium text-warning-text bg-warning-light border border-warning px-2 py-0.5 rounded-[4px]">
+              Perubahan belum disimpan
+            </span>
+            <button
+              type="button"
+              id="btn-cancel-verify"
+              class="h-9 px-4 rounded-[6px] border border-border bg-surface text-xs font-semibold text-heading hover:bg-surface-subtle cursor-pointer transition-colors"
+            >
+              Tutup
+            </button>
+            <button
+              type="submit"
+              id="btn-submit-verify"
+              class="h-9 px-5 rounded-[6px] bg-primary text-xs font-semibold text-white hover:bg-primary-hover shadow-xs cursor-pointer transition-colors"
+            >
+              Simpan Keputusan
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+<!-- Client State Initialization: Data Profil Sekolah untuk Lembar Kop Surat A4 -->
+<script
+  is:inline
+  define:vars={{
+    schoolInfo: {
+      schoolName,
+      schoolType,
+      schoolStatus,
+      npsn,
+      schoolAddress,
+      schoolCity,
+      schoolProvince,
+      schoolPostal,
+      schoolPhone,
+      schoolEmail,
+      schoolWebsite,
+      logoUrl,
+      principalName,
+      academicYear,
+      ministryTitle,
+      subMinistryTitle,
+    },
+  }}
+>
+  window.__SCHOOL_INFO__ = schoolInfo;
+</script>
+
+<script is:inline>
+  function initPendaftar() {
+    // XSS Prevention: Escape all user-provided data before innerHTML interpolation
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    const schoolMeta = window.__SCHOOL_INFO__ || {};
+
+    const searchInput = document.getElementById("applicant-search");
+    const btnClearSearch = document.getElementById("btn-clear-search");
+    const waveFilter = document.getElementById("applicant-wave-filter");
+    const statusFilter = document.getElementById("applicant-status-filter");
+    const btnRefresh = document.getElementById("btn-refresh-applicants");
+    const btnResetFilters = document.getElementById("btn-reset-filters");
+    const tableBody = document.getElementById("applicant-table-body");
+    const banner = document.getElementById("status-banner");
+    const badgeTotalHeader = document.getElementById("badge-total-header");
+
+    // Stat cards for direct filtering
+    const statCards = document.querySelectorAll(".stat-card");
+
+    // Export button
+    const btnExportExcel = document.getElementById("btn-export-excel");
+    const exportExcelLabel = document.getElementById("export-excel-label");
+
+    // Pagination elements
+    const paginationLimit = document.getElementById("pagination-limit");
+    const paginationInfo = document.getElementById("pagination-info");
+    const btnFirstPage = document.getElementById("btn-first-page");
+    const btnPrevPage = document.getElementById("btn-prev-page");
+    const btnNextPage = document.getElementById("btn-next-page");
+    const btnLastPage = document.getElementById("btn-last-page");
+    const pageNumbersContainer = document.getElementById(
+      "page-numbers-container",
+    );
+
+    // Verification Modal elements
+    const modalDetail = document.getElementById("modal-applicant-detail");
+    const modalDetailStudentName = document.getElementById("modal-detail-student-name");
+    const modalDetailRegNumber = document.getElementById("modal-detail-reg-number");
+    const modalHeaderStatusBadge = document.getElementById("modal-header-status-badge");
+    const modalDetailAccessCode = document.getElementById("modal-detail-access-code");
+    const btnCopyModalCode = document.getElementById("btn-copy-modal-code");
+    const modalDetailContent = document.getElementById("applicant-detail-content");
+    const modalDetailDocumentsList = document.getElementById("modal-detail-documents-list");
+    const btnToggleStudentDetails = document.getElementById("btn-toggle-student-details");
+    const studentDetailsWrapper = document.getElementById("student-details-wrapper");
+    const unsavedChangesBadge = document.getElementById("unsaved-changes-badge");
+    const btnCloseDetailModal = document.getElementById("btn-close-detail-modal");
+    const btnCancelVerify = document.getElementById("btn-cancel-verify");
+    const formVerify = document.getElementById("form-verify-applicant");
+    const verifyApplicantId = document.getElementById("verify-applicant-id");
+    const verifyRevisionNotes = document.getElementById("verify-revision-notes");
+    const verifyNotes = document.getElementById("verify-notes");
+    const btnOpenA4FromDetail = document.getElementById("btn-open-a4-from-detail");
+    let isFormDirty = false;
+    let isStudentDetailsExpanded = true;
+
+    // A4 Preview Modal elements
+    const modalA4 = document.getElementById("modal-a4-preview");
+    const a4ModalSubtitle = document.getElementById("a4-modal-subtitle");
+    const a4SheetContainer = document.getElementById("a4-sheet-container");
+    const btnCloseA4Modal = document.getElementById("btn-close-a4-modal");
+    const btnA4Print = document.getElementById("btn-a4-print");
+    const linkA4Standalone = document.getElementById("link-a4-standalone");
+
+    let currentPage = 1;
+    let currentLimit = 15;
+    let totalPages = 1;
+    let searchTimer = null;
+    let currentViewingStudent = null;
+
+    function showBanner(message, type = "success") {
+      if (!banner) return;
+      banner.className = `rounded-lg p-3.5 text-xs font-medium ${
+        type === "success"
+          ? "border border-success/30 bg-success-light text-success-text"
+          : "border border-error/30 bg-error-light text-error-text"
+      }`;
+      banner.textContent = message;
+      banner.classList.remove("hidden");
+      setTimeout(() => banner.classList.add("hidden"), 5000);
+    }
+
+    // Theme maps for 5 contrasting stat cards (solid semantic tokens dari global.css, darkmode sinkron)
+    const cardThemes = {
+      "": {
+        base: "stat-card bg-primary text-primary-foreground hover:bg-primary-hover",
+        active: "stat-card bg-primary text-primary-foreground shadow-md",
+      },
+      submitted: {
+        base: "stat-card bg-warning text-white hover:bg-warning-hover",
+        active: "stat-card bg-warning text-white shadow-md",
+      },
+      verified: {
+        base: "stat-card bg-secondary text-secondary-foreground hover:bg-secondary-hover",
+        active: "stat-card bg-secondary text-secondary-foreground shadow-md",
+      },
+      accepted: {
+        base: "stat-card bg-success text-white hover:bg-success-hover",
+        active: "stat-card bg-success text-white shadow-md",
+      },
+      rejected: {
+        base: "stat-card bg-error text-white hover:bg-error-hover",
+        active: "stat-card bg-error text-white shadow-md",
+      },
+    };
+
+    // Update active highlight on stat cards
+    function updateStatCardHighlights(activeStatus) {
+      statCards.forEach((card) => {
+        const cardFilter = card.getAttribute("data-filter") || "";
+        const theme = cardThemes[cardFilter];
+        if (!theme) return;
+        const isActive =
+          cardFilter === activeStatus || (cardFilter === "" && !activeStatus);
+        card.className = isActive ? theme.active : theme.base;
+      });
+    }
+
+    // Update export button href to match current filters
+    function updateExportUrl(q, wave, status) {
+      if (!btnExportExcel) return;
+      const params = new URLSearchParams();
+      if (q) params.set("q", q);
+      if (wave) params.set("wave", wave);
+      if (status) params.set("status", status);
+
+      const qs = params.toString();
+      btnExportExcel.href = qs
+        ? `/api/admin/ppdb/export?${qs}`
+        : "/api/admin/ppdb/export";
+
+      if (exportExcelLabel) {
+        exportExcelLabel.textContent = qs
+          ? "Ekspor Terfilter (.xlsx)"
+          : "Ekspor Excel (.xlsx)";
+      }
+
+      // Toggle Reset Filter button
+      if (btnResetFilters) {
+        if (q || wave || status) {
+          btnResetFilters.classList.remove("hidden");
+        } else {
+          btnResetFilters.classList.add("hidden");
+        }
+      }
+
+      // Toggle clear search button
+      if (btnClearSearch) {
+        if (q) {
+          btnClearSearch.classList.remove("hidden");
+        } else {
+          btnClearSearch.classList.add("hidden");
+        }
+      }
+    }
+
+    // ========================================================
+    // LOAD APPLICANTS & RENDER PAGINATION
+    // ========================================================
+    async function loadApplicants(page = 1, limit = currentLimit) {
+      if (!tableBody) return;
+      currentPage = page;
+      currentLimit = limit;
+      tableBody.innerHTML = `<tr><td colspan="6" class="py-12 text-center text-muted">Memuat data pendaftar terbaru...</td></tr>`;
+
+      const q = searchInput?.value.trim() || "";
+      const wave = waveFilter?.value || "";
+      const status = statusFilter?.value || "";
+
+      updateExportUrl(q, wave, status);
+      updateStatCardHighlights(status);
+
+      const params = new URLSearchParams();
+      params.set("page", String(page));
+      params.set("limit", String(limit));
+      if (q) params.set("q", q);
+      if (wave) params.set("wave", wave);
+      if (status) params.set("status", status);
+
+      try {
+        const res = await fetch(
+          `/api/admin/ppdb/registrations?${params.toString()}`,
+        );
+        const result = await res.json();
+
+        if (!result.success) {
+          tableBody.innerHTML = `<tr><td colspan="6" class="py-12 text-center text-error">${result.error || "Gagal memuat data."}</td></tr>`;
+          return;
+        }
+
+        // Update stats counter
+        if (result.stats) {
+          const sTotal = document.getElementById("stat-total");
+          const sSub = document.getElementById("stat-submitted");
+          const sVer = document.getElementById("stat-verified");
+          const sAcc = document.getElementById("stat-accepted");
+          const sRej = document.getElementById("stat-rejected");
+
+          if (sTotal) sTotal.textContent = String(result.stats.total || 0);
+          if (sSub) sSub.textContent = String(result.stats.submitted || 0);
+          if (sVer) sVer.textContent = String(result.stats.verified || 0);
+          if (sAcc) sAcc.textContent = String(result.stats.accepted || 0);
+          if (sRej) sRej.textContent = String(result.stats.rejected || 0);
+          if (badgeTotalHeader)
+            badgeTotalHeader.textContent = `${result.stats.total || 0} Siswa`;
+        }
+
+        // Update pagination UI
+        if (result.pagination) {
+          totalPages = result.pagination.totalPages || 1;
+          const totalRecords = result.pagination.total || 0;
+          const startRecord = totalRecords > 0 ? (page - 1) * limit + 1 : 0;
+          const endRecord = Math.min(page * limit, totalRecords);
+
+          if (paginationInfo) {
+            paginationInfo.textContent = `Menampilkan ${startRecord} – ${endRecord} dari ${totalRecords} calon siswa (Halaman ${page} dari ${totalPages})`;
+          }
+          if (paginationLimit) {
+            paginationLimit.value = String(limit);
+          }
+
+          renderPaginationControls(result.pagination);
+        }
+
+        const items = result.data || [];
+        if (items.length === 0) {
+          tableBody.innerHTML = `<tr><td colspan="6" class="py-12 text-center text-muted">Belum ada calon peserta didik yang cocok dengan kriteria pencarian.</td></tr>`;
+          return;
+        }
+
+        const getVerificationBadge = (vStatus) => {
+          if (vStatus === "verified") {
+            return `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-success-light text-success-text border border-success">Berkas Sah</span>`;
+          }
+          if (vStatus === "revision_required") {
+            return `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-warning-light text-warning-text border border-warning">Perlu Perbaikan</span>`;
+          }
+          return `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-surface-subtle text-body border border-border">Menunggu Berkas</span>`;
+        };
+
+        const getSelectionBadge = (sStatus) => {
+          if (sStatus === "accepted") {
+            return `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-success-light text-success-text border border-success">Diterima</span>`;
+          }
+          if (sStatus === "rejected") {
+            return `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-error-light text-error-text border border-error">Tidak Diterima</span>`;
+          }
+          if (sStatus === "waitlist") {
+            return `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-primary-light text-primary border border-primary">Daftar Tunggu</span>`;
+          }
+          return `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-surface-subtle text-muted border border-border">Menunggu</span>`;
+        };
+
+        tableBody.innerHTML = items
+          .map((item) => {
+            const dateStr = item.createdAt
+              ? new Date(item.createdAt).toLocaleDateString("id-ID", {
+                  day: "numeric",
+                  month: "short",
+                  year: "numeric",
+                })
+              : "-";
+            const verBadge = getVerificationBadge(
+              item.verificationStatus ||
+                (item.status === "verified" ? "verified" : "pending"),
+            );
+            const selBadge = getSelectionBadge(
+              item.selectionStatus ||
+                (item.status === "accepted"
+                  ? "accepted"
+                  : item.status === "rejected"
+                    ? "rejected"
+                    : "not_announced"),
+            );
+
+            return `
+              <tr class="hover:bg-surface-subtle transition-colors *:py-3 *:px-4">
+                <!-- 1. Calon Siswa (Teks Utama Tegas, Sekunder Redup) -->
+                <td>
+                  <div class="font-semibold text-heading text-[13px]">${escapeHtml(item.fullName)}</div>
+                  <div class="text-[11px] font-mono text-muted">NISN: ${escapeHtml(item.nisn || "-")} &bull; ${item.gender === "L" ? "L" : "P"}</div>
+                </td>
+
+                <!-- 2. No. Registrasi & Gelombang -->
+                <td class="font-mono">
+                  <div class="font-semibold text-primary text-[12px]">${escapeHtml(item.registrationNumber)}</div>
+                  <div class="text-[11px] text-muted font-sans font-medium">${escapeHtml(item.wave || "Gelombang 1")}</div>
+                </td>
+
+                <!-- 3. Jalur & Asal Sekolah -->
+                <td>
+                  <div class="font-medium text-heading text-[12px]">${escapeHtml(item.admissionPath)}</div>
+                  <div class="text-[11px] text-muted truncate max-w-[180px]" title="${escapeHtml(item.prevSchool)}">${escapeHtml(item.prevSchool)}</div>
+                </td>
+
+                <!-- 4. Tanggal & Kontak -->
+                <td>
+                  <div class="text-[11px] font-medium text-heading">${dateStr}</div>
+                  <div class="text-[11px] font-mono text-muted">${item.phoneStudent}</div>
+                </td>
+
+                <!-- 5. Status Berkas & Hasil Seleksi -->
+                <td>
+                  <div class="flex flex-col gap-1 items-center text-center *:rounded-full">
+                    ${selBadge}
+                  </div>
+                </td>
+
+                <!-- 6. Aksi (Verifikasi, Cetak A4, Hapus) -->
+                <td class="min-w-[210px]">
+                  <div class="flex items-center gap-1.5 justify-end *:inline-flex *:h-7 *:items-center *:justify-center *:rounded-[5px] *:cursor-pointer *:shadow-xs *:transition-colors">
+                    <button
+                      type="button"
+                      class="btn-detail-applicant gap-1 bg-primary text-white hover:bg-primary-hover px-2.5 text-[11px] font-semibold whitespace-nowrap"
+                      data-id="${item.id}"
+                      title="Verifikasi Dokumen & Keputusan Seleksi"
+                    >
+                      <span>Verifikasi</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="btn-open-a4 w-7 border border-border bg-surface text-primary hover:bg-surface-subtle"
+                      data-id="${item.id}"
+                      title="Lihat Formulir Pendaftaran A4 & Ekspor PDF"
+                    >
+                      <svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      class="btn-delete-applicant gap-1 border border-error/30 bg-surface px-2 text-[11px] font-semibold text-error hover:bg-error hover:text-white whitespace-nowrap"
+                      data-id="${item.id}"
+                      data-name="${escapeHtml(item.fullName)}"
+                      data-reg="${escapeHtml(item.registrationNumber)}"
+                      title="Hapus Data Calon Siswa"
+                    >
+                      <svg class="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            `;
+          })
+          .join("");
+
+        // Attach action listeners
+        tableBody.querySelectorAll(".btn-open-a4").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const id = btn.getAttribute("data-id");
+            if (id) openA4Modal(id);
+          });
+        });
+
+        tableBody.querySelectorAll(".btn-detail-applicant").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const id = btn.getAttribute("data-id");
+            if (id) openDetailModal(id);
+          });
+        });
+
+        tableBody.querySelectorAll(".btn-delete-applicant").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const id = btn.getAttribute("data-id");
+            const name = btn.getAttribute("data-name") || "Calon Siswa";
+            const reg = btn.getAttribute("data-reg") || "";
+            if (!id) return;
+
+            const confirmed = await window.confirmDialog({
+              title: "Hapus Data Calon Siswa",
+              message: `Nama: ${name}\nNo. Registrasi: ${reg}\n\nPERINGATAN: Tindakan ini permanen. Seluruh berkas dan data pendaftaran siswa ini akan dihapus dari sistem.`,
+              confirmText: "Hapus Permanen",
+              cancelText: "Batal",
+              type: "danger",
+            });
+            if (!confirmed) return;
+
+            try {
+              btn.disabled = true;
+              btn.innerHTML = `<span class="inline-block animate-spin">&#9696;</span>`;
+              const res = await fetch(`/api/admin/ppdb/registrations/${id}`, {
+                method: "DELETE",
+              });
+              const result = await res.json();
+              if (result.success) {
+                showBanner(
+                  `Data calon siswa "${name}" (${reg}) berhasil dihapus.`,
+                  "success",
+                );
+                loadApplicants(currentPage, currentLimit);
+              } else {
+                showBanner(
+                  result.error || "Gagal menghapus data calon siswa.",
+                  "error",
+                );
+                btn.disabled = false;
+                btn.innerHTML = `<span>Hapus</span>`;
+              }
+            } catch (err) {
+              showBanner(
+                "Terjadi kesalahan jaringan saat menghapus calon siswa.",
+                "error",
+              );
+              btn.disabled = false;
+              btn.innerHTML = `<span>Hapus</span>`;
+            }
+          });
+        });
+      } catch (err) {
+        tableBody.innerHTML = `<tr><td colspan="6" class="py-12 text-center text-error">Gangguan koneksi server saat memuat pendaftar.</td></tr>`;
+      }
+    }
+
+    // ========================================================
+    // RENDER PAGINATION CONTROLS
+    // ========================================================
+    function renderPaginationControls(pagination) {
+      if (!pageNumbersContainer) return;
+      const { page, totalPages: pages } = pagination;
+
+      if (btnFirstPage) {
+        btnFirstPage.disabled = page <= 1;
+        btnFirstPage.onclick = () => loadApplicants(1, currentLimit);
+      }
+      if (btnPrevPage) {
+        btnPrevPage.disabled = page <= 1;
+        btnPrevPage.onclick = () => loadApplicants(page - 1, currentLimit);
+      }
+      if (btnNextPage) {
+        btnNextPage.disabled = page >= pages;
+        btnNextPage.onclick = () => loadApplicants(page + 1, currentLimit);
+      }
+      if (btnLastPage) {
+        btnLastPage.disabled = page >= pages;
+        btnLastPage.onclick = () => loadApplicants(pages, currentLimit);
+      }
+
+      // Generate page number buttons
+      pageNumbersContainer.innerHTML = "";
+
+      let pageNumbers = [];
+      if (pages <= 7) {
+        for (let i = 1; i <= pages; i++) pageNumbers.push(i);
+      } else {
+        if (page <= 4) {
+          pageNumbers = [1, 2, 3, 4, 5, "...", pages];
+        } else if (page >= pages - 3) {
+          pageNumbers = [
+            1,
+            "...",
+            pages - 4,
+            pages - 3,
+            pages - 2,
+            pages - 1,
+            pages,
+          ];
+        } else {
+          pageNumbers = [1, "...", page - 1, page, page + 1, "...", pages];
+        }
+      }
+
+      pageNumbers.forEach((p) => {
+        if (p === "...") {
+          const span = document.createElement("span");
+          span.className = "px-1.5 text-muted text-xs select-none";
+          span.textContent = "...";
+          pageNumbersContainer.appendChild(span);
+        } else {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.textContent = String(p);
+          const isActive = p === page;
+          btn.className = `border ${
+            isActive
+              ? "bg-primary text-white border-primary shadow-xs"
+              : "border-border bg-surface text-heading hover:bg-surface-subtle"
+          }`;
+          btn.onclick = () => loadApplicants(Number(p), currentLimit);
+          pageNumbersContainer.appendChild(btn);
+        }
+      });
+    }
+
+    // ========================================================
+    // STAT CARDS CLICK EVENTS (FILTER STATUS LANGSUNG)
+    // ========================================================
+    statCards.forEach((card) => {
+      card.addEventListener("click", () => {
+        const filterVal = card.getAttribute("data-filter") || "";
+        if (statusFilter) {
+          statusFilter.value = filterVal;
+        }
+        loadApplicants(1, currentLimit);
+      });
+    });
+
+    // ========================================================
+    // MODAL A4 PREVIEW & EXPORT PDF CONTROLLER
+    // ========================================================
+    async function openA4Modal(id) {
+      if (!modalA4 || !a4SheetContainer) return;
+      modalA4.classList.remove("hidden");
+      a4SheetContainer.innerHTML = `<div class="py-16 text-center text-muted">Mengambil data lengkap calon siswa untuk lembar A4...</div>`;
+
+      try {
+        const res = await fetch(`/api/admin/ppdb/registrations/${id}`);
+        const result = await res.json();
+        if (!result.success || !result.data) {
+          a4SheetContainer.innerHTML = `<div class="p-6 rounded text-error-text bg-error-light">Data pendaftar tidak ditemukan.</div>`;
+          return;
+        }
+
+        const s = result.data;
+        currentViewingStudent = s;
+
+        if (a4ModalSubtitle) {
+          a4ModalSubtitle.textContent = `${s.registrationNumber} • ${s.fullName} (${s.wave || "Gelombang 1"})`;
+        }
+        if (linkA4Standalone) {
+          linkA4Standalone.href = `/admin/pendaftaran/cetak?id=${s.id}`;
+        }
+
+        const a4CredCode = document.getElementById("a4-credential-code");
+        const btnCopyA4 = document.getElementById("btn-copy-a4-credential");
+        if (a4CredCode) a4CredCode.textContent = s.verificationCode || "-";
+        if (btnCopyA4) {
+          btnCopyA4.onclick = () => {
+            if (s.verificationCode) {
+              navigator.clipboard.writeText(s.verificationCode);
+              const label = btnCopyA4.querySelector(".copy-label") || btnCopyA4;
+              label.textContent = "Tersalin!";
+              btnCopyA4.classList.add("bg-primary", "text-white", "border-primary");
+              setTimeout(() => {
+                label.textContent = "Salin Kode";
+                btnCopyA4.classList.remove("bg-primary", "text-white", "border-primary");
+              }, 2000);
+            }
+          };
+        }
+
+        // Render Lembar A4
+        renderA4Sheet(s, schoolMeta);
+      } catch (err) {
+        a4SheetContainer.innerHTML = `<div class="p-6 rounded text-error-text bg-error-light">Gangguan jaringan saat memuat data lembar A4.</div>`;
+      }
+    }
+
+    function renderA4Sheet(s, school) {
+      const createdDate = s.createdAt
+        ? new Date(s.createdAt).toLocaleDateString("id-ID", {
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          }) + " WIB"
+        : "-";
+
+      const currentDateStr = new Date().toLocaleDateString("id-ID", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
+
+      const statusMap = {
+        submitted: {
+          label: "MENUNGGU VERIFIKASI",
+          cls: "border-warning text-warning-text bg-warning-light",
+        },
+        verified: {
+          label: "BERKAS TERVERIFIKASI SAH",
+          cls: "border-primary text-primary bg-primary-light",
+        },
+        accepted: {
+          label: "DITERIMA RESMI",
+          cls: "border-success text-success-text bg-success-light",
+        },
+        rejected: {
+          label: "BERKAS DITOLAK",
+          cls: "border-error text-error-text bg-error-light",
+        },
+      };
+      const curStatus = statusMap[s.status] || {
+        label: (s.status || "").toUpperCase(),
+        cls: "border-border text-muted bg-surface-subtle",
+      };
+
+      a4SheetContainer.innerHTML = `
+        <div class="space-y-3.5 text-heading font-sans">
+          <!-- KOP SURAT RESMI -->
+          <div class="border-b-2 border-heading pb-2">
+            <div class="flex items-center gap-3.5">
+              <div class="w-16 h-16 shrink-0 flex items-center justify-center overflow-hidden">
+                ${
+                  school.logoUrl
+                    ? `<img src="${school.logoUrl}" alt="Logo" class="max-h-14 max-w-14 w-auto h-auto object-contain" />`
+                    : `<div class="w-14 h-14 rounded-full border-2 border-heading flex items-center justify-center font-bold text-xl text-heading">${(school.schoolName || "S").charAt(0)}</div>`
+                }
+              </div>
+              <div class="flex-1 text-center pr-2">
+                <div class="text-[8.5pt] font-semibold uppercase tracking-wider text-heading leading-tight">${school.ministryTitle || "KEMENTERIAN PENDIDIKAN DAN KEBUDAYAAN"}</div>
+                <div class="text-[7.5pt] font-medium uppercase tracking-wider text-muted leading-tight">${school.subMinistryTitle || "DINAS PENDIDIKAN DAN KEBUDAYAAN"}</div>
+                <div class="text-[12.5pt] font-extrabold uppercase tracking-tight text-heading mt-0.5 leading-tight">${school.schoolName}</div>
+                <div class="text-[7.5pt] text-muted mt-0.5 leading-snug">
+                  ${school.schoolAddress}, ${school.schoolCity}, ${school.schoolProvince} ${school.schoolPostal} <br />
+                  Telepon: ${school.schoolPhone} &bull; Email: ${school.schoolEmail} &bull; Website: ${school.schoolWebsite} <br />
+                  <span class="font-semibold text-heading">NPSN: ${school.npsn}</span> &bull; Status: ${school.schoolStatus} (${school.schoolType})
+                </div>
+              </div>
+            </div>
+            <div class="border-b border-border mt-1"></div>
+          </div>
+
+          <!-- JUDUL FORMULIR -->
+          <div class="text-center pt-0.5 pb-0.5">
+            <h4 class="text-[11pt] font-bold uppercase tracking-wide underline underline-offset-4 text-heading">
+              FORMULIR PENDAFTARAN &amp; BUKTI VERIFIKASI CALON SISWA BARU
+            </h4>
+            <p class="text-[8.5pt] font-semibold text-muted mt-0.5">
+              TAHUN AJARAN ${s.academicYear || school.academicYear}
+            </p>
+          </div>
+
+          <!-- METADATA REGISTRASI -->
+          <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 border border-border p-2.5 rounded text-[8pt] bg-surface-subtle">
+            <div>
+              <span class="text-muted block text-[7pt] uppercase font-semibold">No. Registrasi:</span>
+              <strong class="font-mono text-[9.5pt] font-bold text-heading">${s.registrationNumber}</strong>
+            </div>
+            <div>
+              <span class="text-muted block text-[7pt] uppercase font-semibold">Kode Akses:</span>
+              <strong class="font-mono text-[9.5pt] font-bold text-heading">${s.verificationCode || "-"}</strong>
+            </div>
+            <div>
+              <span class="text-muted block text-[7pt] uppercase font-semibold">Gelombang:</span>
+              <strong class="text-heading text-[8.5pt] font-bold">${s.wave || "Gelombang 1"}</strong>
+            </div>
+            <div>
+              <span class="text-muted block text-[7pt] uppercase font-semibold">Waktu Pendaftaran:</span>
+              <strong class="text-heading text-[8pt]">${createdDate}</strong>
+            </div>
+            <div class="text-right">
+              <span class="text-muted block text-[7pt] uppercase font-semibold">Status Keputusan:</span>
+              <span class="inline-block px-1.5 py-0.5 text-[7.5pt] font-bold border rounded-full uppercase ${curStatus.cls}">
+                ${curStatus.label}
+              </span>
+            </div>
+          </div>
+
+          <!-- BAGIAN I: IDENTITAS SISWA -->
+          <div class="space-y-0.5">
+            <div class="text-[8.5pt] font-bold uppercase bg-surface-subtle px-2.5 py-1 border border-border text-heading">
+              I. DATA IDENTITAS CALON PESERTA DIDIK
+            </div>
+            <table class="w-full text-[8pt] border border-border border-collapse">
+              <tbody>
+                <tr class="border-b border-border">
+                  <td class="w-40 py-1.5 px-2.5 font-medium text-muted bg-surface-subtle border-r border-border">Nama Lengkap Siswa</td>
+                  <td class="py-1.5 px-2.5 font-bold uppercase text-heading" colspan="3">${escapeHtml(s.fullName)}</td>
+                </tr>
+                <tr class="border-b border-border">
+                  <td class="w-44 py-1.5 px-2.5 font-medium text-muted bg-surface-subtle border-r border-border">NIK (Nomor Induk Kependudukan)</td>
+                  <td class="w-44 py-1.5 px-2.5 font-mono font-bold text-heading border-r border-border">${escapeHtml(s.nik)}</td>
+                  <td class="w-32 py-1.5 px-2.5 font-medium text-muted bg-surface-subtle border-r border-border">NISN</td>
+                  <td class="py-1.5 px-2.5 font-mono text-heading">${escapeHtml(s.nisn || "-")}</td>
+                </tr>
+                <tr class="border-b border-border">
+                  <td class="py-1.5 px-2.5 font-medium text-muted bg-surface-subtle border-r border-border">Jenis Kelamin</td>
+                  <td class="py-1.5 px-2.5 text-heading border-r border-border">${s.gender === "L" ? "Laki-laki" : "Perempuan"}</td>
+                  <td class="py-1.5 px-2.5 font-medium text-muted bg-surface-subtle border-r border-border">Agama</td>
+                  <td class="py-1.5 px-2.5 text-heading">${escapeHtml(s.religion)}</td>
+                </tr>
+                <tr class="border-b border-border">
+                  <td class="py-1.5 px-2.5 font-medium text-muted bg-surface-subtle border-r border-border">Tempat, Tanggal Lahir</td>
+                  <td class="py-1.5 px-2.5 text-heading border-r border-border">${escapeHtml(s.birthPlace)}, ${escapeHtml(s.birthDate)}</td>
+                  <td class="py-1.5 px-2.5 font-medium text-muted bg-surface-subtle border-r border-border">Jenis Pendaftaran</td>
+                  <td class="py-1.5 px-2.5 text-heading">${escapeHtml(s.regType)}</td>
+                </tr>
+                <tr class="border-b border-border">
+                  <td class="py-1.5 px-2.5 font-medium text-muted bg-surface-subtle border-r border-border">Asal Sekolah / Madrasah</td>
+                  <td class="py-1.5 px-2.5 text-heading font-semibold border-r border-border">${escapeHtml(s.prevSchool)}</td>
+                  <td class="py-1.5 px-2.5 font-medium text-muted bg-surface-subtle border-r border-border">WhatsApp Siswa</td>
+                  <td class="py-1.5 px-2.5 font-mono text-heading">${escapeHtml(s.phoneStudent)}</td>
+                </tr>
+                <tr>
+                  <td class="py-1.5 px-2.5 font-medium text-muted bg-surface-subtle border-r border-border">Email Calon Siswa</td>
+                  <td class="py-1.5 px-2.5 text-heading font-mono" colspan="3">${escapeHtml(s.emailStudent || "-")}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- BAGIAN II: PILIHAN JALUR & PROGRAM -->
+          <div class="space-y-0.5">
+            <div class="text-[8.5pt] font-bold uppercase bg-surface-subtle px-2.5 py-1 border border-border text-heading">
+              II. PILIHAN JALUR PENERIMAAN &amp; PEMINATAN
+            </div>
+            <table class="w-full text-[8pt] border border-border border-collapse">
+              <tbody>
+                <tr class="border-b border-border">
+                  <td class="w-40 py-1.5 px-2.5 font-medium text-muted bg-surface-subtle border-r border-border">Jalur Pendaftaran</td>
+                  <td class="w-44 py-1.5 px-2.5 font-bold text-heading border-r border-border">${escapeHtml(s.admissionPath)}</td>
+                  <td class="w-32 py-1.5 px-2.5 font-medium text-muted bg-surface-subtle border-r border-border">Layanan Asrama</td>
+                  <td class="py-1.5 px-2.5 font-semibold text-heading">${s.isBoarding ? "Ya (Pesantren / Boarding)" : "Tidak (Reguler)"}</td>
+                </tr>
+                <tr>
+                  <td class="py-1.5 px-2.5 font-medium text-muted bg-surface-subtle border-r border-border">Pilihan Keahlian / Jurusan 1</td>
+                  <td class="py-1.5 px-2.5 font-bold text-heading border-r border-border">${escapeHtml(s.majorChoice1 || "-")}</td>
+                  <td class="py-1.5 px-2.5 font-medium text-muted bg-surface-subtle border-r border-border">Pilihan Keahlian 2</td>
+                  <td class="py-1.5 px-2.5 text-heading">${escapeHtml(s.majorChoice2 || "-")}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- BAGIAN III: DATA ORANG TUA / WALI & ALAMAT -->
+          <div class="space-y-0.5">
+            <div class="text-[8.5pt] font-bold uppercase bg-surface-subtle px-2.5 py-1 border border-border text-heading">
+              III. DATA ORANG TUA / WALI &amp; ALAMAT DOMISILI
+            </div>
+            <table class="w-full text-[8pt] border border-border border-collapse">
+              <tbody>
+                <tr class="border-b border-border">
+                  <td class="w-40 py-1.5 px-2.5 font-medium text-muted bg-surface-subtle border-r border-border">Nama Ayah Kandung</td>
+                  <td class="w-44 py-1.5 px-2.5 text-heading font-semibold border-r border-border">${escapeHtml(s.fatherName)} (${escapeHtml(s.fatherStatus || "Hidup")})</td>
+                  <td class="w-32 py-1.5 px-2.5 font-medium text-muted bg-surface-subtle border-r border-border">Pekerjaan / Telp Ayah</td>
+                  <td class="py-1.5 px-2.5 text-heading">${escapeHtml(s.fatherJob || "-")} / ${escapeHtml(s.fatherPhone || "-")}</td>
+                </tr>
+                <tr class="border-b border-border">
+                  <td class="py-1.5 px-2.5 font-medium text-muted bg-surface-subtle border-r border-border">Nama Ibu Kandung</td>
+                  <td class="py-1.5 px-2.5 text-heading font-semibold border-r border-border">${escapeHtml(s.motherName)} (${escapeHtml(s.motherStatus || "Hidup")})</td>
+                  <td class="py-1.5 px-2.5 font-medium text-muted bg-surface-subtle border-r border-border">Pekerjaan / Telp Ibu</td>
+                  <td class="py-1.5 px-2.5 text-heading">${escapeHtml(s.motherJob || "-")} / ${escapeHtml(s.motherPhone || "-")}</td>
+                </tr>
+                ${
+                  s.guardianName
+                    ? `
+                    <tr class="border-b border-border">
+                      <td class="py-1.5 px-2.5 font-medium text-muted bg-surface-subtle border-r border-border">Nama Wali (Jika Ada)</td>
+                      <td class="py-1.5 px-2.5 text-heading border-r border-border">${escapeHtml(s.guardianName)}</td>
+                      <td class="py-1.5 px-2.5 font-medium text-muted bg-surface-subtle border-r border-border">Pekerjaan / Telp Wali</td>
+                      <td class="py-1.5 px-2.5 text-heading">${escapeHtml(s.guardianJob || "-")} / ${escapeHtml(s.guardianPhone || "-")}</td>
+                    </tr>
+                    `
+                    : ""
+                }
+                <tr>
+                  <td class="py-1.5 px-2.5 font-medium text-muted bg-surface-subtle border-r border-border">Alamat Tempat Tinggal</td>
+                  <td class="py-1.5 px-2.5 text-heading" colspan="3">
+                    ${escapeHtml(s.address)} ${s.rtRw ? `RT/RW ${escapeHtml(s.rtRw)}` : ""}, Kel/Desa ${escapeHtml(s.village)}, Kec. ${escapeHtml(s.district)}, ${escapeHtml(s.city)}, Prov. ${escapeHtml(s.province || school.schoolProvince)} ${s.postalCode ? `(${escapeHtml(s.postalCode)})` : ""}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- BAGIAN IV: PERSYARATAN BERKAS & DOKUMEN -->
+          <div class="space-y-0.5">
+            <div class="text-[8.5pt] font-bold uppercase bg-surface-subtle px-2.5 py-1 border border-border text-heading">
+              IV. CHECKLIST KELENGKAPAN &amp; VERIFIKASI PERSYARATAN BERKAS
+            </div>
+            <table class="w-full text-[8pt] border border-border border-collapse">
+              <thead class="bg-surface-subtle text-heading font-semibold border-b border-border">
+                <tr>
+                  <th class="w-8 py-1.5 px-2.5 text-center border-r border-border">No</th>
+                  <th class="py-1.5 px-2.5 text-left border-r border-border">Nama Dokumen Persyaratan</th>
+                  <th class="w-28 py-1.5 px-2.5 text-center border-r border-border">Status Unggah</th>
+                  <th class="w-36 py-1.5 px-2.5 text-center border-r border-border">Tautan Berkas</th>
+                  <th class="w-28 py-1.5 px-2.5 text-center">Hasil Validasi</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-border">
+                <tr>
+                  <td class="py-1.5 px-2.5 text-center border-r border-border text-heading">1</td>
+                  <td class="py-1.5 px-2.5 border-r border-border font-semibold text-heading">Kartu Keluarga (KK)</td>
+                  <td class="py-1.5 px-2.5 text-center border-r border-border font-bold">
+                    ${s.fileKk ? '<span class="text-success-text">&#10003; TERUNGGAH</span>' : '<span class="text-muted">&#10007; BELUM ADA</span>'}
+                  </td>
+                  <td class="py-1.5 px-2.5 text-center border-r border-border font-mono text-[7.5pt]">
+                    ${s.fileKk ? `<a href="${s.fileKk}" target="_blank" class="text-primary hover:text-primary-hover underline font-semibold">Buka Dokumen &rarr;</a>` : '<span class="text-muted">-</span>'}
+                  </td>
+                  <td class="py-1.5 px-2.5 text-center font-bold text-heading">
+                    ${s.fileKk ? "&#10003; Lengkap" : "&nbsp; Tidak Lengkap"}
+                  </td>
+                </tr>
+                <tr>
+                  <td class="py-1.5 px-2.5 text-center border-r border-border text-heading">2</td>
+                  <td class="py-1.5 px-2.5 border-r border-border font-semibold text-heading">Akta Kelahiran Calon Siswa</td>
+                  <td class="py-1.5 px-2.5 text-center border-r border-border font-bold">
+                    ${s.fileAkta ? '<span class="text-success-text">&#10003; TERUNGGAH</span>' : '<span class="text-muted">&#10007; BELUM ADA</span>'}
+                  </td>
+                  <td class="py-1.5 px-2.5 text-center border-r border-border font-mono text-[7.5pt]">
+                    ${s.fileAkta ? `<a href="${s.fileAkta}" target="_blank" class="text-primary hover:text-primary-hover underline font-semibold">Buka Dokumen &rarr;</a>` : '<span class="text-muted">-</span>'}
+                  </td>
+                  <td class="py-1.5 px-2.5 text-center font-bold text-heading">
+                    ${s.fileAkta ? "&#10003; Lengkap" : "&nbsp; Tidak Lengkap"}
+                  </td>
+                </tr>
+                <tr>
+                  <td class="py-1.5 px-2.5 text-center border-r border-border text-heading">3</td>
+                  <td class="py-1.5 px-2.5 border-r border-border font-semibold text-heading">Surat Keterangan Lulus (SKL) / Ijazah</td>
+                  <td class="py-1.5 px-2.5 text-center border-r border-border font-bold">
+                    ${s.fileSkl ? '<span class="text-success-text">&#10003; TERUNGGAH</span>' : '<span class="text-muted">&#10007; BELUM ADA</span>'}
+                  </td>
+                  <td class="py-1.5 px-2.5 text-center border-r border-border font-mono text-[7.5pt]">
+                    ${s.fileSkl ? `<a href="${s.fileSkl}" target="_blank" class="text-primary hover:text-primary-hover underline font-semibold">Buka Dokumen &rarr;</a>` : '<span class="text-muted">-</span>'}
+                  </td>
+                  <td class="py-1.5 px-2.5 text-center font-bold text-heading">
+                    ${s.fileSkl ? "&#10003; Lengkap" : "&nbsp; Tidak Lengkap"}
+                  </td>
+                </tr>
+                <tr>
+                  <td class="py-1.5 px-2.5 text-center border-r border-border text-heading">4</td>
+                  <td class="py-1.5 px-2.5 border-r border-border font-semibold text-heading">Dokumen Pendukung (Rapor / Tahfidz / Buta Warna)</td>
+                  <td class="py-1.5 px-2.5 text-center border-r border-border font-bold">
+                    ${s.fileAdditional ? '<span class="text-success-text">&#10003; TERUNGGAH</span>' : '<span class="text-muted">&#10007; BELUM ADA</span>'}
+                  </td>
+                  <td class="py-1.5 px-2.5 text-center border-r border-border font-mono text-[7.5pt]">
+                    ${s.fileAdditional ? `<a href="${s.fileAdditional}" target="_blank" class="text-primary hover:text-primary-hover underline font-semibold">Buka Dokumen &rarr;</a>` : '<span class="text-muted">-</span>'}
+                  </td>
+                  <td class="py-1.5 px-2.5 text-center font-bold text-heading">
+                    ${s.fileAdditional ? "&#10003; Lengkap" : "&nbsp; Opsional"}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            <!-- Catatan Panitia Verifikasi -->
+            <div class="border border-border p-2 text-[7.5pt] rounded bg-surface-subtle mt-1">
+              <span class="font-bold text-heading">Catatan Panitia Verifikasi / Alasan:</span>
+              <span class="text-muted ml-1 italic">${s.notes || "Seluruh berkas persyaratan telah dicatat ke dalam sistem pendaftaran resmi."}</span>
+            </div>
+          </div>
+
+          <!-- BAGIAN V: PENGESAHAN TANDA TANGAN -->
+          <div class="pt-2 space-y-1.5">
+            <p class="text-[7.5pt] text-muted italic text-justify leading-tight">
+              Pernyataan: Data dan berkas dokumen yang tercantum dalam formulir ini adalah benar, sah, dan dapat dipertanggungjawabkan menurut hukum. Apabila di kemudian hari ditemukan pemalsuan data, maka status pendaftaran dapat dibatalkan.
+            </p>
+
+            <div class="grid grid-cols-2 gap-6 text-[8.5pt] pt-2 text-center">
+              <div>
+                <p class="text-muted">Calon Peserta Didik / Orang Tua Wali,</p>
+                <div class="h-12"></div>
+                <p class="font-bold underline text-heading uppercase">(${s.fullName})</p>
+                <p class="text-[7.5pt] text-muted">Tanda Tangan &amp; Nama Terang</p>
+              </div>
+
+              <div>
+                <p class="text-muted">${school.schoolCity}, ${currentDateStr}</p>
+                <p class="text-muted font-medium">Panitia Penerimaan / Verifikator Pendaftaran,</p>
+                <div class="h-12 flex items-center justify-center">
+                  <span class="inline-block border border-dashed border-border text-muted text-[7.5pt] px-3 py-0.5 rounded">
+                    Cap / Stempel Resmi
+                  </span>
+                </div>
+                <p class="font-bold underline text-heading uppercase">PANITIA PENDAFTARAN SISWA BARU</p>
+                <p class="text-[7.5pt] text-muted font-mono">NIP/ID: ${s.verifiedBy || "PANITIA-VERIFIED"}</p>
+              </div>
+            </div>
+
+            <div class="border-t border-border pt-1.5 flex items-center justify-between text-[7pt] text-muted font-mono">
+              <span>Dicetak otomatis dari Sistem Pendaftaran ${school.schoolName} &bull; ID: ${s.id}</span>
+              <span>Lembar Resmi A4 &bull; Halaman 1 dari 1</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function closeA4Modal() {
+      if (modalA4) modalA4.classList.add("hidden");
+    }
+
+    btnCloseA4Modal?.addEventListener("click", closeA4Modal);
+
+    btnA4Print?.addEventListener("click", () => {
+      if (!currentViewingStudent) return;
+      window.open(
+        `/admin/pendaftaran/cetak?id=${currentViewingStudent.id}&print=true`,
+        "_blank",
+      );
+    });
+
+    // ========================================================
+    // ========================================================
+    // MODAL DETAIL VERIFIKASI STATUS & KEPUTUSAN SELEKSI
+    // ========================================================
+    function markFormDirty(dirty = true) {
+      isFormDirty = dirty;
+      if (unsavedChangesBadge) {
+        if (dirty) {
+          unsavedChangesBadge.classList.remove("hidden");
+        } else {
+          unsavedChangesBadge.classList.add("hidden");
+        }
+      }
+    }
+
+    // Attach dirty-check listeners to form inputs
+    formVerify?.querySelectorAll("input, textarea").forEach((el) => {
+      el.addEventListener("change", () => markFormDirty(true));
+      el.addEventListener("input", () => markFormDirty(true));
+    });
+
+    async function openDetailModal(id) {
+      if (!modalDetail) return;
+      modalDetail.classList.remove("hidden");
+      markFormDirty(false);
+
+      if (modalDetailContent) {
+        modalDetailContent.innerHTML = `<div class="py-6 text-center text-muted">Mengambil data lengkap calon siswa...</div>`;
+      }
+      if (modalDetailDocumentsList) {
+        modalDetailDocumentsList.innerHTML = `<tr><td colspan="3" class="py-4 text-center text-muted">Memuat daftar dokumen...</td></tr>`;
+      }
+
+      try {
+        const res = await fetch(`/api/admin/ppdb/registrations/${id}`);
+        const result = await res.json();
+        if (!result.success || !result.data) {
+          if (modalDetailContent) {
+            modalDetailContent.innerHTML = `<div class="p-4 rounded text-error-text bg-error-light">Data tidak ditemukan.</div>`;
+          }
+          return;
+        }
+
+        const s = result.data;
+        currentViewingStudent = s;
+
+        // 1. Header Metadata & Kode Akses
+        if (modalDetailStudentName) {
+          modalDetailStudentName.textContent = s.fullName;
+        }
+        if (modalDetailRegNumber) {
+          modalDetailRegNumber.textContent = `${s.registrationNumber} • ${s.academicYear} • ${s.wave || "Gelombang 1"} • Jalur: ${s.admissionPath}`;
+        }
+        if (modalHeaderStatusBadge) {
+          const statusText = s.status === "accepted" ? "Diterima" : s.status === "rejected" ? "Tidak Diterima" : s.status === "verified" ? "Berkas Sah" : "Menunggu";
+          const statusClass = s.status === "accepted" ? "bg-success-light text-success-text border-success" : s.status === "rejected" ? "bg-error-light text-error-text border-error" : s.status === "verified" ? "bg-primary-light text-primary border-primary" : "bg-surface-subtle text-muted border-border";
+          modalHeaderStatusBadge.className = `inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${statusClass}`;
+          modalHeaderStatusBadge.textContent = statusText;
+        }
+        if (modalDetailAccessCode) {
+          modalDetailAccessCode.textContent = s.verificationCode || "-";
+        }
+
+        if (verifyApplicantId) verifyApplicantId.value = s.id;
+        if (verifyNotes) verifyNotes.value = s.notes || "";
+        if (verifyRevisionNotes) verifyRevisionNotes.value = s.revisionNotes || "";
+
+        // Form Radios
+        const verRadios = document.querySelectorAll('input[name="verification_status"]');
+        verRadios.forEach((r) => {
+          r.checked = r.value === (s.verificationStatus || (s.status === "verified" ? "verified" : "pending"));
+        });
+
+        const selRadios = document.querySelectorAll('input[name="selection_status"]');
+        selRadios.forEach((r) => {
+          r.checked = r.value === (s.selectionStatus || (s.status === "accepted" ? "accepted" : s.status === "rejected" ? "rejected" : "not_announced"));
+        });
+
+        // 2. Render Bagian 1: Data Calon Siswa (2 Kolom Bersih, Tanpa Kotak Berulang)
+        if (modalDetailContent) {
+          modalDetailContent.innerHTML = `
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+              <div>
+                <span class="text-muted text-[11px] block">Nama Lengkap</span>
+                <span class="font-semibold text-heading text-xs">${escapeHtml(s.fullName)}</span>
+              </div>
+              <div>
+                <span class="text-muted text-[11px] block">NIK • NISN</span>
+                <span class="font-mono text-heading text-xs">${escapeHtml(s.nik)} • ${escapeHtml(s.nisn || "-")}</span>
+              </div>
+              <div>
+                <span class="text-muted text-[11px] block">Jenis Kelamin &amp; Agama</span>
+                <span class="text-heading text-xs">${s.gender === "L" ? "Laki-laki" : "Perempuan"} • ${escapeHtml(s.religion)}</span>
+              </div>
+              <div>
+                <span class="text-muted text-[11px] block">Tempat, Tanggal Lahir</span>
+                <span class="text-heading text-xs">${escapeHtml(s.birthPlace)}, ${escapeHtml(s.birthDate)}</span>
+              </div>
+              <div>
+                <span class="text-muted text-[11px] block">Asal Sekolah</span>
+                <span class="text-heading text-xs">${escapeHtml(s.prevSchool)}</span>
+              </div>
+              <div>
+                <span class="text-muted text-[11px] block">Kontak WhatsApp Calon Siswa</span>
+                <span class="font-mono text-primary text-xs font-semibold">${escapeHtml(s.phoneStudent)}</span>
+              </div>
+              <div>
+                <span class="text-muted text-[11px] block">Orang Tua (Ayah / Ibu)</span>
+                <span class="text-heading text-xs">${escapeHtml(s.fatherName)} • ${escapeHtml(s.motherName)}</span>
+              </div>
+              <div>
+                <span class="text-muted text-[11px] block">Pekerjaan Orang Tua</span>
+                <span class="text-heading text-xs">${escapeHtml(s.fatherJob || "-")} / ${escapeHtml(s.motherJob || "-")}</span>
+              </div>
+              <div class="sm:col-span-2">
+                <span class="text-muted text-[11px] block">Alamat Domisili</span>
+                <span class="text-heading text-xs leading-relaxed">${escapeHtml(s.address)}, ${escapeHtml(s.village)}, Kec. ${escapeHtml(s.district)}, ${escapeHtml(s.city)}</span>
+              </div>
+              <div class="sm:col-span-2 pt-2 border-t border-border flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
+                <span class="text-muted">Jalur: <strong class="text-heading font-semibold">${escapeHtml(s.admissionPath)}</strong></span>
+                <span class="text-muted">Satuan: <strong class="text-heading font-semibold">${escapeHtml(s.schoolType)}</strong></span>
+                <span class="text-muted">Asrama: <strong class="text-heading font-semibold">${s.isBoarding ? "Ya" : "Tidak"}</strong></span>
+                ${s.majorChoice1 ? `<span class="text-muted">Jurusan: <strong class="text-heading font-semibold">${escapeHtml(s.majorChoice1)}</strong></span>` : ""}
+              </div>
+            </div>
+          `;
+        }
+
+        // 3. Render Bagian 2: Checklist Dokumen Persyaratan
+        if (modalDetailDocumentsList) {
+          const docItems = [
+            { name: "Kartu Keluarga (KK)", url: s.fileKk, req: true },
+            { name: "Akta Kelahiran", url: s.fileAkta, req: true },
+            { name: "Surat Keterangan Lulus (SKL) / Rapor", url: s.fileSkl, req: true },
+            { name: "Dokumen Pendukung / Prestasi", url: s.fileAdditional, req: false },
+          ];
+
+          modalDetailDocumentsList.innerHTML = docItems
+            .map((doc) => {
+              const hasFile = Boolean(doc.url);
+              const statusBadge = hasFile
+                ? `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-success-light text-success-text border border-success">Terunggah</span>`
+                : `<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-surface-subtle text-muted border border-border">${doc.req ? "Belum Diunggah" : "Tidak Ada"}</span>`;
+              const actionBtn = hasFile
+                ? `<a href="${doc.url}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-primary hover:underline font-semibold text-xs">
+                     <span>Buka Berkas</span>
+                     <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                     </svg>
+                   </a>`
+                : `<span class="text-muted text-xs">-</span>`;
+
+              return `
+                <tr class="hover:bg-surface-subtle transition-colors">
+                  <td class="py-2.5 px-3.5">
+                    <span class="font-medium text-heading text-xs">${doc.name}</span>
+                    ${doc.req ? '<span class="text-error text-xs ml-0.5 font-bold">*</span>' : '<span class="text-[10px] text-muted ml-1">(opsional)</span>'}
+                  </td>
+                  <td class="py-2.5 px-3.5 text-center">${statusBadge}</td>
+                  <td class="py-2.5 px-3.5 text-right">${actionBtn}</td>
+                </tr>
+              `;
+            })
+            .join("");
+        }
+
+        markFormDirty(false);
+      } catch (err) {
+        if (modalDetailContent) {
+          modalDetailContent.innerHTML = `<div class="p-4 rounded text-error-text bg-error-light">Gangguan saat memuat detail pendaftar.</div>`;
+        }
+      }
+    }
+
+    async function closeDetailModal(force = false) {
+      if (!force && isFormDirty) {
+        const confirmed = await window.confirmDialog({
+          title: "Perubahan Belum Disimpan",
+          message: "Ada perubahan yang belum disimpan. Tetap keluar dari verifikasi calon siswa ini?",
+          confirmText: "Keluar Tanpa Simpan",
+          cancelText: "Lanjut Edit",
+          type: "warning",
+        });
+        if (!confirmed) return;
+      }
+      if (modalDetail) modalDetail.classList.add("hidden");
+      markFormDirty(false);
+    }
+
+    btnCloseDetailModal?.addEventListener("click", () => closeDetailModal());
+    btnCancelVerify?.addEventListener("click", () => closeDetailModal());
+
+    btnCopyModalCode?.addEventListener("click", () => {
+      if (!currentViewingStudent?.verificationCode) return;
+      navigator.clipboard.writeText(currentViewingStudent.verificationCode);
+      btnCopyModalCode.textContent = "Tersalin!";
+      setTimeout(() => {
+        if (btnCopyModalCode) btnCopyModalCode.textContent = "Salin";
+      }, 2000);
+    });
+
+    btnToggleStudentDetails?.addEventListener("click", () => {
+      isStudentDetailsExpanded = !isStudentDetailsExpanded;
+      if (studentDetailsWrapper) {
+        studentDetailsWrapper.classList.toggle("hidden", !isStudentDetailsExpanded);
+      }
+      if (btnToggleStudentDetails) {
+        btnToggleStudentDetails.textContent = isStudentDetailsExpanded ? "Sembunyikan" : "Tampilkan";
+      }
+    });
+
+    btnOpenA4FromDetail?.addEventListener("click", () => {
+      if (!currentViewingStudent) return;
+      closeDetailModal(true);
+      openA4Modal(currentViewingStudent.id);
+    });
+
+    // Form Submit Verifikasi
+    formVerify?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const id = verifyApplicantId?.value;
+      if (!id || !currentViewingStudent) return;
+
+      const checkedVerRadio = document.querySelector(
+        'input[name="verification_status"]:checked',
+      );
+      const verificationStatus = checkedVerRadio
+        ? checkedVerRadio.value
+        : "pending";
+
+      const checkedSelRadio = document.querySelector(
+        'input[name="selection_status"]:checked',
+      );
+      const selectionStatus = checkedSelRadio
+        ? checkedSelRadio.value
+        : "not_announced";
+
+      const revisionNotes = verifyRevisionNotes?.value || "";
+      const notes = verifyNotes?.value || "";
+
+      // UX Guard: Validasi sebelum penetapan status kelulusan diterima / ditolak
+      const initialSelStatus = currentViewingStudent.selectionStatus || "not_announced";
+      if (selectionStatus !== initialSelStatus && (selectionStatus === "accepted" || selectionStatus === "rejected")) {
+        const statusName = selectionStatus === "accepted" ? "DITERIMA" : "TIDAK DITERIMA";
+        const confirmed = await window.confirmDialog({
+          title: "Konfirmasi Keputusan Seleksi",
+          message: `Apakah Anda yakin ingin menetapkan keputusan "${statusName}" untuk siswa:\n${currentViewingStudent.fullName} (${currentViewingStudent.registrationNumber})?\n\nPastikan verifikasi berkas dan kuota penerimaan telah diperiksa dengan seksama.`,
+          confirmText: `Tetapkan ${statusName}`,
+          cancelText: "Periksa Kembali",
+          type: selectionStatus === "accepted" ? "info" : "danger",
+        });
+        if (!confirmed) return;
+      }
+
+      let legacyStatus = "submitted";
+      if (selectionStatus === "accepted") legacyStatus = "accepted";
+      else if (selectionStatus === "rejected") legacyStatus = "rejected";
+      else if (verificationStatus === "verified") legacyStatus = "verified";
+
+      const btnSubmit = document.getElementById("btn-submit-verify");
+      if (btnSubmit) {
+        btnSubmit.disabled = true;
+        btnSubmit.textContent = "Menyimpan...";
+      }
+
+      try {
+        const res = await fetch(`/api/admin/ppdb/registrations/${id}/status`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            status: legacyStatus,
+            verificationStatus,
+            selectionStatus,
+            revisionNotes,
+            notes,
+          }),
+        });
+
+        const data = await res.json();
+        if (btnSubmit) {
+          btnSubmit.disabled = false;
+          btnSubmit.textContent = "Simpan Keputusan";
+        }
+
+        if (data.success) {
+          markFormDirty(false);
+          closeDetailModal(true);
+          showBanner(
+            "Status verifikasi berkas & keputusan seleksi berhasil diperbarui!",
+            "success",
+          );
+          loadApplicants(currentPage, currentLimit);
+        } else {
+          alert(data.error || "Gagal memperbarui status.");
+        }
+      } catch (err) {
+        if (btnSubmit) {
+          btnSubmit.disabled = false;
+          btnSubmit.textContent = "Simpan Keputusan";
+        }
+        alert("Gangguan jaringan saat memproses verifikasi.");
+      }
+    });
+
+    // Limit selector event
+    paginationLimit?.addEventListener("change", (e) => {
+      const newLimit = Number(e.target.value) || 15;
+      loadApplicants(1, newLimit);
+    });
+
+    // Event filter & search
+    searchInput?.addEventListener("input", () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => {
+        loadApplicants(1, currentLimit);
+      }, 350);
+    });
+
+    btnClearSearch?.addEventListener("click", () => {
+      if (searchInput) searchInput.value = "";
+      loadApplicants(1, currentLimit);
+    });
+
+    waveFilter?.addEventListener("change", () =>
+      loadApplicants(1, currentLimit),
+    );
+    statusFilter?.addEventListener("change", () => {
+      updateStatCardHighlights(statusFilter.value);
+      loadApplicants(1, currentLimit);
+    });
+    btnRefresh?.addEventListener("click", () =>
+      loadApplicants(currentPage, currentLimit),
+    );
+
+    btnResetFilters?.addEventListener("click", () => {
+      if (searchInput) searchInput.value = "";
+      if (waveFilter) waveFilter.value = "";
+      if (statusFilter) statusFilter.value = "";
+      updateStatCardHighlights("");
+      loadApplicants(1, currentLimit);
+    });
+
+    // Load awal
+    loadApplicants(1, 15);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initPendaftar);
+  } else {
+    initPendaftar();
+  }
+</script>
+</AdminLayout>

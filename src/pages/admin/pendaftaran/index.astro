@@ -1,0 +1,2376 @@
+---
+import AdminLayout from "../../../layouts/AdminLayout.astro";
+import Icon from "../../../components/Icon.astro";
+import { db, settings, registrations, ppdbFormVersions } from "../../../db";
+import { sql, desc } from "drizzle-orm";
+import {
+  getDefaultPpdbConfig,
+  type PpdbFullConfig,
+} from "../../../utils/ppdbConfigDefaults";
+
+export const prerender = false;
+
+// 1. Ambil jumlah pendaftar
+const totalRegistrations = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(registrations)
+  .then((r) => Number(r[0]?.count || 0));
+
+// 2. Ambil seluruh konfigurasi dari tabel settings
+const allSettings = await db.select().from(settings);
+const settingMap = allSettings.reduce(
+  (acc, curr) => {
+    acc[curr.key] = curr.value;
+    return acc;
+  },
+  {} as Record<string, string>,
+);
+
+// 3. Sumber Identitas Lembaga (Profil Sekolah)
+const schoolName = settingMap["school_name"] || "SMAN 1 Unggulan";
+const educationLevel = settingMap["education_level"] || "menengah_atas";
+const schoolType = (
+  settingMap["school_type"] ||
+  settingMap["school_level"] ||
+  "SMA"
+).toUpperCase();
+const schoolStatus = settingMap["school_status"] || "Negeri";
+const boardingAvailable = settingMap["boarding_available"] === "true";
+const admissionsLabel =
+  settingMap["admissions_label"] || settingMap["ppdb_label"] || "PPDB";
+const defaultAdmissionsTitle =
+  admissionsLabel.toUpperCase() === "PSB"
+    ? boardingAvailable
+      ? "PENERIMAAN SANTRI & SISWA BARU"
+      : "PENERIMAAN SISWA BARU"
+    : admissionsLabel.toUpperCase() === "SPMB"
+      ? "SISTEM PENERIMAAN SISWA BARU"
+      : admissionsLabel.toUpperCase() === "PPDBM"
+        ? "PENERIMAAN PESERTA DIDIK BARU MADRASAH"
+        : admissionsLabel.toUpperCase() === "PPDB"
+          ? "PENERIMAAN PESERTA DIDIK BARU"
+          : `PENDAFTARAN SISWA BARU (${admissionsLabel})`;
+const admissionsTitle =
+  settingMap["admissions_title"] || defaultAdmissionsTitle;
+const admissionsSubtitle =
+  settingMap["admissions_subtitle"] ||
+  "Wujudkan masa depanmu bersama kami. Daftarkan dirimu secara online untuk tahun ajaran baru.";
+
+// Mapping kementerian pembina & tipe formulir deterministik
+const isMadrasah = ["MA", "MTS", "MI"].includes(schoolType);
+const isVocational = schoolType === "SMK";
+const ministryName = isMadrasah
+  ? "Kementerian Agama RI (Kemenag) / Ditjen Pendis"
+  : isVocational
+    ? "Kemendikbudristek (Ditjen Pendidikan Vokasi)"
+    : "Kemendikbudristek & Dinas Pendidikan Provinsi/Kab/Kota";
+
+const formTemplateMap: Record<string, string> = {
+  SD: "Pendidikan Dasar (Zonasi Usia & Tempat Tinggal)",
+  MI: "Madrasah Ibtidaiyah (Karakter Islami & Doa Harian Kemenag)",
+  SMP: "Menengah Pertama (Zonasi Domisili & Afirmasi Kemendikbud)",
+  MTS: "Madrasah Tsanawiyah (PPDBM, Potensi Akademik & Uji BTQ Kemenag)",
+  SMA: "Menengah Atas (Zonasi 50%, Prestasi Rapor & Riset Kemendikbud)",
+  MA: "Madrasah Aliyah (PPDBM CBT, Tahfidz & Uji BTQ Kemenag)",
+  SMK: "Menengah Kejuruan (Rapor Vokasi, Uji Buta Warna & Kemitraan DUDI)",
+};
+
+const resolvedFormTemplate =
+  formTemplateMap[schoolType] || formTemplateMap["SMA"];
+
+// 4. Ambil Konfigurasi Dinamis PPDB
+let currentConfig: PpdbFullConfig;
+
+if (settingMap["ppdb_form_config"]) {
+  try {
+    currentConfig = JSON.parse(settingMap["ppdb_form_config"]);
+    if (
+      !currentConfig ||
+      !Array.isArray(currentConfig.steps) ||
+      currentConfig.steps.length === 0
+    ) {
+      currentConfig = getDefaultPpdbConfig(
+        schoolType,
+        schoolName,
+        boardingAvailable,
+      );
+    }
+  } catch {
+    currentConfig = getDefaultPpdbConfig(
+      schoolType,
+      schoolName,
+      boardingAvailable,
+    );
+  }
+} else {
+  currentConfig = getDefaultPpdbConfig(
+    schoolType,
+    schoolName,
+    boardingAvailable,
+  );
+}
+
+// Pastikan gelombang (waves) dan activeWave terinisialisasi
+if (
+  !currentConfig.waves ||
+  !Array.isArray(currentConfig.waves) ||
+  currentConfig.waves.length === 0
+) {
+  const def = getDefaultPpdbConfig(schoolType, schoolName, boardingAvailable);
+  currentConfig.waves = def.waves;
+  currentConfig.activeWave = def.activeWave || "Gelombang 1";
+}
+if (!currentConfig.activeWave) {
+  currentConfig.activeWave = currentConfig.waves[0]?.name || "Gelombang 1";
+}
+
+// 5. Resolusi Tab Aktif dari Parameter URL
+const rawTab = Astro.url.searchParams.get("tab") || "identitas";
+const activeSubtab = rawTab.startsWith("subtab-") ? rawTab : `subtab-${rawTab}`;
+---
+
+<AdminLayout
+  title="Pengaturan Pendaftaran"
+  activeNav="pendaftaran"
+  settingsMap={settingMap}
+>
+  <div class="max-w-6xl mx-auto space-y-6 pb-24 font-body text-body">
+    <!-- Header Halaman -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-5">
+      <div>
+        <h1 class="font-display text-2xl font-bold tracking-tight text-heading">
+          Pusat Pengaturan Pendaftaran
+        </h1>
+        <p class="mt-1 font-body text-xs text-muted">
+          Pusat kendali konfigurasi pendaftaran dan formulir sekolah.
+        </p>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2 shrink-0">
+        <!-- Tombol Buka Halaman Formulir -->
+        <a
+          href="/pendaftaran"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex h-9 items-center justify-center gap-1.5 rounded-[6px] border border-border bg-surface px-3.5 text-xs font-semibold text-heading transition-colors hover:bg-surface-subtle shadow-xs"
+        >
+          <span>Buka Formulir</span>
+          <svg
+            class="h-3.5 w-3.5 text-muted"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
+            />
+          </svg>
+        </a>
+
+        <!-- Tombol Simpan Pengaturan -->
+        <button
+          type="button"
+          id="btn-save-settings"
+          class="inline-flex h-9 items-center justify-center gap-2 rounded-[6px] bg-primary hover:bg-primary-hover px-5 text-xs font-semibold text-white transition-all shadow-xs cursor-pointer"
+        >
+          <Icon name="save" class="h-3.5 w-3.5 text-white" />
+          <span id="btn-save-label">Simpan Pengaturan</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Alert Feedback Banner -->
+    <div
+      id="status-banner"
+      class="hidden rounded-lg p-3.5 text-xs font-medium"
+    ></div>
+
+    <!-- TAB PANE 1: PUSAT PENGATURAN PPDB (5 MENU)               -->
+
+    <div id="tab-pane-settings" class="space-y-6">
+      <div class="overflow-x-auto no-scrollbar">
+        <div
+          class="inline-flex bg-surface-subtle *:px-2.5 *:py-2 *:text-[11px] *:whitespace-nowrap *:cursor-pointer *:transition-colors *:first:rounded-l-[4px] *:last:rounded-r-[4px]"
+          role="tablist"
+          aria-label="Submenu Pengaturan Pendaftaran"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={
+              activeSubtab === "subtab-identitas" ? "true" : "false"
+            }
+            class:list={[
+              "subtab-btn",
+              activeSubtab === "subtab-identitas"
+                ? "bg-primary font-semibold text-white"
+                : "font-medium text-muted hover:text-heading",
+            ]}
+            data-subtab="subtab-identitas"
+          >
+            1. Identitas &amp; Status
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeSubtab === "subtab-jalur" ? "true" : "false"}
+            class:list={[
+              "subtab-btn",
+              activeSubtab === "subtab-jalur"
+                ? "bg-primary font-semibold text-white"
+                : "font-medium text-muted hover:text-heading",
+            ]}
+            data-subtab="subtab-jalur"
+          >
+            2. Periode &amp; Jalur
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeSubtab === "subtab-builder" ? "true" : "false"}
+            class:list={[
+              "subtab-btn",
+              activeSubtab === "subtab-builder"
+                ? "bg-primary font-semibold text-white"
+                : "font-medium text-muted hover:text-heading",
+            ]}
+            data-subtab="subtab-builder"
+          >
+            3. Builder Formulir (7 Tahap)
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeSubtab === "subtab-layanan" ? "true" : "false"}
+            class:list={[
+              "subtab-btn",
+              activeSubtab === "subtab-layanan"
+                ? "bg-primary font-semibold text-white"
+                : "font-medium text-muted hover:text-heading",
+            ]}
+            data-subtab="subtab-layanan"
+          >
+            4. Layanan &amp; Program
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeSubtab === "subtab-dokumen" ? "true" : "false"}
+            class:list={[
+              "subtab-btn",
+              activeSubtab === "subtab-dokumen"
+                ? "bg-primary font-semibold text-white"
+                : "font-medium text-muted hover:text-heading",
+            ]}
+            data-subtab="subtab-dokumen"
+          >
+            5. Persyaratan Dokumen
+          </button>
+        </div>
+      </div>
+
+      <!-- ---------------------------------------------------- -->
+      <!-- SUBTAB 1: IDENTITAS DAN STATUS PPDB                 -->
+      <!-- ---------------------------------------------------- -->
+      <div
+        id="subtab-identitas"
+        class:list={[
+          "subtab-pane space-y-6",
+          activeSubtab !== "subtab-identitas" && "hidden",
+        ]}
+      >
+        <!-- Card Identitas Otomatis dari Profil Sekolah -->
+        <div class="rounded-lg border border-border bg-surface p-5 space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/70 pb-3">
+            <div>
+              <h2 class="font-display text-base font-bold text-heading">
+                {schoolName}
+              </h2>
+            </div>
+            <a
+              href="/admin/profil"
+              class="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline shrink-0"
+            >
+              <span>Ubah di Profil Sekolah</span>
+              <Icon name="chevron-right" class="h-3.5 w-3.5" />
+            </a>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+            <div class="p-3 rounded-md bg-surface-subtle border border-border space-y-0.5">
+              <span class="text-muted block text-[11px]">
+                Jenjang Pendidikan:
+              </span>
+              <strong class="text-heading font-semibold text-sm">
+                {schoolType}
+              </strong>
+            </div>
+
+            <div class="p-3 rounded-md bg-surface-subtle border border-border space-y-0.5">
+              <span class="text-muted block text-[11px]">Status Sekolah:</span>
+              <strong class="text-heading font-semibold text-sm">
+                {schoolStatus}
+              </strong>
+            </div>
+
+            <div class="p-3 rounded-md bg-surface-subtle border border-border space-y-0.5">
+              <span class="text-muted block text-[11px]">
+                Template Formulir:
+              </span>
+              <strong class="text-primary font-semibold text-sm">
+                Formulir {schoolType}
+              </strong>
+            </div>
+
+            <div class="p-3 rounded-md bg-surface-subtle border border-border space-y-0.5">
+              <span class="text-muted block text-[11px]">
+                Layanan Asrama Lembaga:
+              </span>
+              <strong
+                class={
+                  boardingAvailable
+                    ? "text-success font-semibold text-sm"
+                    : "text-muted font-semibold text-sm"
+                }
+              >
+                {boardingAvailable ? "Tersedia (Aktif)" : "Tidak Tersedia"}
+              </strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- Form Identitas & Judul Resmi Portal Pendaftaran -->
+        <div class="rounded-lg border border-border bg-surface p-5 space-y-4">
+          <div class="border-b border-border/70 pb-2.5">
+            <h3 class="font-display text-sm font-bold text-heading">
+              Identitas &amp; Judul Resmi Portal Pendaftaran
+            </h3>
+            <p class="text-[11px] text-muted">
+              Atur istilah singkatan, nama resmi judul pendaftaran, serta teks
+              ajakan yang tampil di portal publik dan formulir.
+            </p>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="space-y-1.5">
+              <label
+                for="cfg_admissions_label"
+                class="block text-xs font-semibold text-heading"
+              >
+                Istilah / Singkatan <span class="text-error">*</span>
+              </label>
+              <input
+                type="text"
+                id="cfg_admissions_label"
+                value={admissionsLabel}
+                class="h-10 w-full rounded-[6px] border border-border bg-surface px-3.5 text-xs text-heading font-semibold"
+                placeholder="Contoh: PSB, SPMB, PPDB"
+              />
+              <span class="text-[11px] text-muted block">
+                Tampil di tombol navbar publik &amp; tag alur
+              </span>
+            </div>
+
+            <div class="md:col-span-2 space-y-1.5">
+              <label
+                for="cfg_admissions_title"
+                class="block text-xs font-semibold text-heading"
+              >
+                Nama Resmi / Judul Lengkap Pendaftaran{" "}
+                <span class="text-error">*</span>
+              </label>
+              <input
+                type="text"
+                id="cfg_admissions_title"
+                value={admissionsTitle}
+                class="h-10 w-full rounded-[6px] border border-border bg-surface px-3.5 text-xs text-heading font-semibold"
+                placeholder="Contoh: SISTEM PENERIMAAN SISWA BARU / PENERIMAAN SISWA BARU"
+              />
+              <span class="text-[11px] text-muted block">
+                Judul utama yang tampil besar di header /pendaftaran
+              </span>
+            </div>
+
+            <div class="md:col-span-3 space-y-1.5">
+              <label
+                for="cfg_admissions_subtitle"
+                class="block text-xs font-semibold text-heading"
+              >
+                Sub-judul / Ajakan Pendaftaran
+              </label>
+              <input
+                type="text"
+                id="cfg_admissions_subtitle"
+                value={admissionsSubtitle}
+                class="h-10 w-full rounded-[6px] border border-border bg-surface px-3.5 text-xs text-heading"
+                placeholder="Contoh: Wujudkan masa depanmu bersama kami. Daftarkan dirimu secara online untuk tahun ajaran baru."
+              />
+              <span class="text-[11px] text-muted block">
+                Deskripsi singkat tepat di bawah judul halaman
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Form Status & Parameter PPDB -->
+        <div class="rounded-lg border border-border bg-surface p-5 space-y-5">
+          <h3 class="font-display text-sm font-bold text-heading">
+            Status Penerimaan & Kuota Tahun Ajaran
+          </h3>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="space-y-1.5">
+              <label
+                for="cfg_ppdb_year"
+                class="block text-xs font-semibold text-heading"
+              >
+                Tahun Ajaran Penerimaan <span class="text-error">*</span>
+              </label>
+              <input
+                type="text"
+                id="cfg_ppdb_year"
+                value={currentConfig.academicYear}
+                class="h-10 w-full rounded-[6px] border border-border bg-surface px-3.5 text-xs text-heading font-semibold"
+                placeholder="2026/2027"
+              />
+              <span class="text-[11px] text-muted block">
+                Format tahun akademik acuan pendaftaran
+              </span>
+            </div>
+
+            <div class="space-y-1.5">
+              <label
+                for="cfg_ppdb_quota_total"
+                class="block text-xs font-semibold text-heading"
+              >
+                Total Alokasi Kuota Siswa Baru
+              </label>
+              <input
+                type="text"
+                id="cfg_ppdb_quota_total"
+                value={currentConfig.totalQuota}
+                class="h-10 w-full rounded-[6px] border border-border bg-surface px-3.5 text-xs text-heading"
+                placeholder="360 Siswa Baru (10 Rombel)"
+              />
+            </div>
+          </div>
+
+          <!-- Mode Operasional Portal & Pemisahan Status Portal vs Gelombang -->
+          <div class="space-y-4 pt-2 border-t border-border/80">
+            <div class="space-y-1">
+              <label class="block text-xs font-semibold text-heading">
+                Mode Operasional Portal Pendaftaran:
+              </label>
+              <p class="text-[11px] text-muted">
+                Status portal menentukan apakah formulir dibuka untuk publik.
+                Gelombang menentukan periode pendaftaran calon siswa.
+              </p>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label class="mode-radio-card p-3.5 rounded-lg border border-border bg-surface hover:border-primary/50 cursor-pointer flex items-start gap-3 transition-colors">
+                <input
+                  type="radio"
+                  name="cfg_portal_mode"
+                  value="auto"
+                  checked={(currentConfig.portalMode || "auto") === "auto"}
+                  class="text-primary mt-0.5 cursor-pointer"
+                />
+                <div class="space-y-0.5">
+                  <div class="font-semibold text-xs text-heading flex items-center gap-1.5">
+                    <span>Mode Otomatis</span>
+                    <span class="rounded bg-primary-light px-1.5 py-0.2 text-[9px] font-bold text-primary">
+                      Rekomendasi
+                    </span>
+                  </div>
+                  <div class="text-[11px] text-muted leading-relaxed">
+                    Sistem server secara otomatis menghitung status portal
+                    publik dan gelombang aktif berdasarkan tanggal server (WIB,
+                    pukul 23.59.59 batas hari) dan kuota.
+                  </div>
+                </div>
+              </label>
+
+              <label class="mode-radio-card p-3.5 rounded-lg border border-border bg-surface hover:border-primary/50 cursor-pointer flex items-start gap-3 transition-colors">
+                <input
+                  type="radio"
+                  name="cfg_portal_mode"
+                  value="manual"
+                  checked={currentConfig.portalMode === "manual"}
+                  class="text-primary mt-0.5 cursor-pointer"
+                />
+                <div class="space-y-0.5">
+                  <div class="font-semibold text-xs text-heading">
+                    Mode Manual (Override)
+                  </div>
+                  <div class="text-[11px] text-muted leading-relaxed">
+                    Operator dapat membuka atau menutup portal secara manual
+                    untuk kebutuhan khusus atau darurat tanpa mengubah jadwal
+                    gelombang.
+                  </div>
+                </div>
+              </label>
+            </div>
+
+            <!-- Panel Pengaturan Override (Hanya aktif bila mode manual) -->
+            <div
+              id="manual-override-container"
+              class={`p-4 rounded-lg border border-border bg-surface-subtle space-y-2.5 ${(currentConfig.portalMode || "auto") === "auto" ? "opacity-60 pointer-events-none" : ""}`}
+            >
+              <div class="flex items-center justify-between">
+                <label class="block text-xs font-semibold text-heading">
+                  Status Override Portal Manual:
+                </label>
+                <span class="text-[10px] font-mono text-muted">
+                  (Hanya berlaku saat Mode Manual dipilih)
+                </span>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <label class="status-radio-card p-2.5 rounded-md border border-border bg-surface hover:border-primary/50 cursor-pointer flex items-center gap-2.5">
+                  <input
+                    type="radio"
+                    name="cfg_ppdb_status"
+                    value="opened"
+                    checked={currentConfig.status === "opened"}
+                    class="text-primary cursor-pointer"
+                  />
+                  <div>
+                    <div class="font-semibold text-xs text-heading">
+                      Buka Pendaftaran
+                    </div>
+                    <div class="text-[10px] text-muted">
+                      Formulir aktif dibuka
+                    </div>
+                  </div>
+                </label>
+
+                <label class="status-radio-card p-2.5 rounded-md border border-border bg-surface hover:border-primary/50 cursor-pointer flex items-center gap-2.5">
+                  <input
+                    type="radio"
+                    name="cfg_ppdb_status"
+                    value="upcoming"
+                    checked={currentConfig.status === "upcoming"}
+                    class="text-primary cursor-pointer"
+                  />
+                  <div>
+                    <div class="font-semibold text-xs text-heading">
+                      Segera Dibuka
+                    </div>
+                    <div class="text-[10px] text-muted">Countdown publik</div>
+                  </div>
+                </label>
+
+                <label class="status-radio-card p-2.5 rounded-md border border-border bg-surface hover:border-primary/50 cursor-pointer flex items-center gap-2.5">
+                  <input
+                    type="radio"
+                    name="cfg_ppdb_status"
+                    value="closed"
+                    checked={currentConfig.status === "closed"}
+                    class="text-primary cursor-pointer"
+                  />
+                  <div>
+                    <div class="font-semibold text-xs text-heading">
+                      Pendaftaran Ditutup
+                    </div>
+                    <div class="text-[10px] text-muted">
+                      Formulir dinonaktifkan
+                    </div>
+                  </div>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Posko Helpdesk Luring -->
+          <div class="pt-4 border-t border-border space-y-4">
+            <h4 class="font-display text-xs font-bold uppercase tracking-wider text-muted">
+              Posko Helpdesk & Kontak Panitia
+            </h4>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div class="space-y-1">
+                <label
+                  for="cfg_helpdesk_location"
+                  class="block text-xs text-heading font-medium"
+                >
+                  Lokasi Posko Fisik:
+                </label>
+                <input
+                  type="text"
+                  id="cfg_helpdesk_location"
+                  value={
+                    settingMap["ppdb_helpdesk_location"] ||
+                    "Ruang Panitia Pendaftaran, Gedung B"
+                  }
+                  class="h-9 w-full rounded-[6px] border border-border bg-surface px-3 text-xs"
+                />
+              </div>
+              <div class="space-y-1">
+                <label
+                  for="cfg_helpdesk_wa"
+                  class="block text-xs text-heading font-medium"
+                >
+                  No. WhatsApp Panitia:
+                </label>
+                <input
+                  type="text"
+                  id="cfg_helpdesk_wa"
+                  value={settingMap["ppdb_helpdesk_wa"] || "0812-3456-7890"}
+                  class="h-9 w-full rounded-[6px] border border-border bg-surface px-3 text-xs"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---------------------------------------------------- -->
+      <!-- SUBTAB 2: PERIODE DAN JALUR PENDAFTARAN             -->
+      <!-- ---------------------------------------------------- -->
+      <div
+        id="subtab-jalur"
+        class:list={[
+          "subtab-pane space-y-6",
+          activeSubtab !== "subtab-jalur" && "hidden",
+        ]}
+      >
+        <!-- Card 1: Periode & Gelombang Pendaftaran -->
+        <div class="rounded-[12px] border border-border bg-surface p-6 space-y-6 shadow-xs">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-4">
+            <div>
+              <span class="font-body text-[11px] font-semibold uppercase tracking-wider text-muted block">
+                Jadwal Penerimaan Siswa Baru
+              </span>
+              <h3 class="font-display text-lg font-semibold tracking-tight text-heading mt-0.5">
+                Periode & Gelombang Pendaftaran
+              </h3>
+              <p class="font-body text-xs text-muted leading-relaxed mt-1">
+                Kelola gelombang pendaftaran, jadwal tanggal buka dan tutup per
+                gelombang, serta tentukan gelombang yang sedang aktif untuk
+                portal pendaftaran publik.
+              </p>
+            </div>
+            <button
+              type="button"
+              id="btn-add-wave"
+              class="inline-flex h-[38px] items-center justify-center gap-2 rounded-[6px] bg-primary px-4 font-body text-xs font-medium text-white transition-all duration-200 hover:-translate-y-[1px] hover:bg-primary-hover hover:shadow-(--shadow-button-glow) cursor-pointer shrink-0"
+            >
+              <Icon name="plus" class="h-3.5 w-3.5" />
+              <span>Tambah Gelombang</span>
+            </button>
+          </div>
+
+          <!-- Highlight Gelombang Aktif Portal (Editorial Precision) -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-[8px] border border-border bg-surface-subtle p-4">
+            <div class="space-y-1">
+              <span class="font-body text-[11px] font-semibold uppercase tracking-wider text-muted block">
+                Gelombang Aktif Portal
+              </span>
+              <div class="flex items-center gap-2.5">
+                <span
+                  id="active-wave-name-display"
+                  class="font-display text-base font-bold text-heading"
+                >
+                  {currentConfig.activeWave || "Gelombang 1"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tabel Daftar Gelombang (Editorial Precision Table) -->
+          <div class="overflow-x-auto rounded-[8px] border border-border bg-surface">
+            <table class="w-full text-left font-body text-sm">
+              <thead class="border-b border-border bg-surface-subtle text-[11px] font-semibold uppercase tracking-wider text-muted">
+                <tr>
+                  <th class="py-3 px-4 text-center w-28">Status Portal</th>
+                  <th class="py-3 px-4">Gelombang</th>
+                  <th class="py-3 px-4">Buka</th>
+                  <th class="py-3 px-4">Tutup</th>
+                  <th class="py-3 px-4 text-center w-28">Pendaftar</th>
+                  <th class="py-3 px-4 text-right w-28">Aksi</th>
+                </tr>
+              </thead>
+              <tbody
+                id="wave-list-tbody"
+                class="divide-y divide-border text-body"
+              >
+                <!-- Populated dynamically by script -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Jalur Penerimaan Siswa Baru -->
+        <div class="rounded-[12px] border border-border bg-surface p-6 space-y-6 shadow-xs">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-4">
+            <div>
+              <span class="font-body text-[11px] font-semibold uppercase tracking-wider text-muted block">
+                Skema Seleksi & Kuota
+              </span>
+              <h3 class="font-display text-lg font-semibold tracking-tight text-heading mt-0.5">
+                Jalur Penerimaan & Alokasi Kuota
+              </h3>
+              <p class="font-body text-xs text-muted leading-relaxed mt-1">
+                Jalur yang diaktifkan akan tersedia pada dropdown pemilihan
+                jalur di formulir pendaftaran daring.
+              </p>
+            </div>
+            <button
+              type="button"
+              id="btn-add-path"
+              class="inline-flex h-[38px] items-center justify-center gap-2 rounded-[6px] bg-primary px-4 font-body text-xs font-medium text-white transition-all duration-200 hover:-translate-y-[1px] hover:bg-primary-hover hover:shadow-(--shadow-button-glow) cursor-pointer shrink-0"
+            >
+              <Icon name="plus" class="h-3.5 w-3.5" />
+              <span>Tambah Jalur</span>
+            </button>
+          </div>
+
+          <!-- Tabel Jalur -->
+          <div class="overflow-x-auto rounded-[8px] border border-border bg-surface">
+            <table class="w-full text-left font-body text-sm">
+              <thead class="border-b border-border bg-surface-subtle text-[11px] font-semibold uppercase tracking-wider text-muted">
+                <tr>
+                  <th class="py-3 px-4">Nama Jalur</th>
+                  <th class="py-3 px-4">Alokasi Kuota (%)</th>
+                  <th class="py-3 px-4">Keterangan</th>
+                  <th class="py-3 px-4 text-center w-28">Status</th>
+                  <th class="py-3 px-4 text-right w-24">Aksi</th>
+                </tr>
+              </thead>
+              <tbody
+                id="path-list-tbody"
+                class="divide-y divide-border text-body"
+              >
+                <!-- Populated dynamically by script -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---------------------------------------------------- -->
+      <!-- SUBTAB 3: BUILDER FORMULIR (7 TAHAPAN DINAMIS)       -->
+      <!-- ---------------------------------------------------- -->
+      <div
+        id="subtab-builder"
+        class:list={[
+          "subtab-pane space-y-6",
+          activeSubtab !== "subtab-builder" && "hidden",
+        ]}
+      >
+        <div class="rounded-lg border border-border bg-surface p-5 space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/70 pb-3">
+            <div>
+              <h3 class="font-display text-base font-bold text-heading">
+                Builder Formulir 7 Tahap
+              </h3>
+              <p class="text-xs text-muted">
+                Atur kolom isian, status wajib, dropdown pilihan, dan aturan
+                tampil kondisional untuk setiap tahapan.
+              </p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                id="btn-reset-builder"
+                class="inline-flex h-8 items-center justify-center gap-1.5 rounded-[6px] border border-border bg-surface px-3 text-xs font-semibold text-muted hover:text-heading cursor-pointer"
+                title="Kembalikan struktur formulir ke acuan baku jenjang ini"
+              >
+                <span>Reset ke Template {schoolType}</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Step Selector Accordion Tabs -->
+          <div
+            class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2"
+            id="builder-step-nav"
+          >
+            {currentConfig.steps.map((st) => (
+              <button
+                type="button"
+                class={`builder-step-tab p-2.5 rounded-lg border text-left transition-all cursor-pointer ${st.step === 1 ? "border-primary bg-primary text-white shadow-xs" : "border-border bg-surface hover:border-primary/40 text-heading"}`}
+                data-step={st.step}
+              >
+                <div class="text-[10px] font-mono opacity-80">
+                  Tahap 0{st.step}
+                </div>
+                <div class="font-bold text-xs truncate mt-0.5">{st.title}</div>
+                <div class="text-[10px] opacity-75 mt-0.5 truncate">
+                  {st.fields.length} Kolom
+                </div>
+              </button>
+            ))}
+          </div>
+
+          <!-- Active Step Header & Description -->
+          <div class="p-3.5 rounded-lg bg-surface-subtle border border-border flex items-center justify-between">
+            <div>
+              <h4
+                id="builder-active-step-title"
+                class="font-display text-xs font-bold uppercase tracking-wider text-primary"
+              >
+                Tahap 01: Pendaftaran
+              </h4>
+              <p
+                id="builder-active-step-desc"
+                class="text-[11px] text-muted mt-0.5"
+              >
+                Pilihan jenis pendaftaran, jalur masuk, NIK, dan asal sekolah
+              </p>
+            </div>
+            <span class="text-[11px] text-muted font-medium bg-surface px-2.5 py-1 rounded border border-border">
+              Tahap Tetap (Fondasi)
+            </span>
+          </div>
+
+          <!-- Fields Table for Active Step -->
+          <div class="overflow-x-auto rounded-lg border border-border">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-surface-subtle border-b border-border text-muted font-medium">
+                <tr>
+                  <th class="py-2.5 px-3">Urutan</th>
+                  <th class="py-2.5 px-3">Label Kolom Formulir</th>
+                  <th class="py-2.5 px-3">Jenis Input</th>
+                  <th class="py-2.5 px-3">Wajib Diisi</th>
+                  <th class="py-2.5 px-3">Kondisi Tampil</th>
+                  <th class="py-2.5 px-3 text-center">Status</th>
+                  <th class="py-2.5 px-3 text-right">Aksi</th>
+                </tr>
+              </thead>
+              <tbody
+                id="builder-fields-tbody"
+                class="divide-y divide-border/60"
+              >
+                <!-- Fields rendered by JavaScript based on active step -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---------------------------------------------------- -->
+      <!-- SUBTAB 4: LAYANAN DAN PROGRAM                        -->
+      <!-- ---------------------------------------------------- -->
+      <div
+        id="subtab-layanan"
+        class:list={[
+          "subtab-pane space-y-6",
+          activeSubtab !== "subtab-layanan" && "hidden",
+        ]}
+      >
+        <!-- Layanan Asrama / Pesantren -->
+        <div class="rounded-lg border border-border bg-surface p-5 space-y-4">
+          <div class="flex items-center justify-between border-b border-border/70 pb-3">
+            <div>
+              <h3 class="font-display text-sm font-bold text-heading">
+                Layanan Asrama & Pesantren Terpadu
+              </h3>
+              <p class="text-xs text-muted">
+                Pengaturan opsi tinggal asrama pada formulir pendaftaran.
+              </p>
+            </div>
+            <span
+              class={
+                boardingAvailable
+                  ? "px-2 py-0.5 rounded text-[10px] font-semibold bg-success-light text-success-text"
+                  : "px-2 py-0.5 rounded text-[10px] font-semibold bg-surface-subtle text-muted"
+              }
+            >
+              {boardingAvailable
+                ? "Didukung Profil Sekolah"
+                : "Nonaktif di Profil"}
+            </span>
+          </div>
+
+          <div class="p-4 rounded-lg bg-surface-subtle border border-border space-y-3">
+            <label class="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                id="cfg_boarding_enabled"
+                checked={
+                  currentConfig.services.boardingEnabledInPpdb &&
+                  boardingAvailable
+                }
+                disabled={!boardingAvailable}
+                class="mt-0.5 text-primary rounded"
+              />
+              <div>
+                <span class="font-semibold text-xs text-heading block">
+                  Aktifkan Pilihan Asrama / Pesantren pada Formulir Pendaftaran
+                </span>
+                <span class="text-[11px] text-muted block mt-0.5">
+                  {boardingAvailable
+                    ? "Calon siswa dapat mencentang fasilitas asrama pada Step 5 (Kontak & Layanan)."
+                    : "Layanan asrama terkunci karena Profil Sekolah saat ini diatur tanpa fasilitas asrama."}
+                </span>
+              </div>
+            </label>
+
+            <div class="space-y-1 pt-2">
+              <label
+                for="cfg_boarding_desc"
+                class="block text-xs font-medium text-heading"
+              >
+                Deskripsi Layanan Asrama:
+              </label>
+              <textarea
+                id="cfg_boarding_desc"
+                rows="2"
+                class="w-full rounded-[6px] border border-border bg-surface p-2.5 text-xs"
+              >{currentConfig.services.boardingDescription}</textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- Program Keahlian (Vokasi SMK) -->
+        {isVocational && (
+          <div class="rounded-lg border border-border bg-surface p-5 space-y-4">
+            <div class="flex items-center justify-between border-b border-border/70 pb-3">
+              <div>
+                <h3 class="font-display text-sm font-bold text-heading">
+                  Program Keahlian SMK (Pilihan 1 & 2)
+                </h3>
+                <p class="text-xs text-muted">
+                  Daftar konsentrasi kejuruan yang muncul di dropdown pilihan
+                  siswa.
+                </p>
+              </div>
+              <button
+                type="button"
+                id="btn-add-major"
+                class="inline-flex h-8 items-center justify-center gap-1.5 rounded-[6px] bg-primary text-white px-3 text-xs font-semibold hover:bg-primary-hover cursor-pointer"
+              >
+                <span>+ Tambah Jurusan</span>
+              </button>
+            </div>
+
+            <div class="space-y-2" id="majors-list-container">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+        )}
+
+        <!-- Program Unggulan & Peminatan (MA / SMA) -->
+        {!isVocational && (
+          <div class="rounded-lg border border-border bg-surface p-5 space-y-4">
+            <div class="flex items-center justify-between border-b border-border/70 pb-3">
+              <div>
+                <h3 class="font-display text-sm font-bold text-heading">
+                  Program Unggulan & Peminatan Khusus
+                </h3>
+                <p class="text-xs text-muted">
+                  Program khusus seperti Riset, Tahfidz Intensif, MAPK, atau
+                  Bilingual.
+                </p>
+              </div>
+              <button
+                type="button"
+                id="btn-add-program"
+                class="inline-flex h-8 items-center justify-center gap-1.5 rounded-[6px] bg-primary text-white px-3 text-xs font-semibold hover:bg-primary-hover cursor-pointer"
+              >
+                <span>+ Tambah Program</span>
+              </button>
+            </div>
+
+            <div class="space-y-2" id="programs-list-container">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+        )}
+      </div>
+
+      <!-- ---------------------------------------------------- -->
+      <!-- SUBTAB 5: PERSYARATAN DOKUMEN                       -->
+      <!-- ---------------------------------------------------- -->
+      <div
+        id="subtab-dokumen"
+        class:list={[
+          "subtab-pane space-y-6",
+          activeSubtab !== "subtab-dokumen" && "hidden",
+        ]}
+      >
+        <div class="rounded-lg border border-border bg-surface p-5 space-y-4">
+          <div class="flex items-center justify-between border-b border-border/70 pb-3">
+            <div>
+              <h3 class="font-display text-sm font-bold text-heading">
+                Katalog Berkas & Persyaratan Dokumen
+              </h3>
+              <p class="text-xs text-muted">
+                Dokumen pindaian yang wajib atau opsional diunggah pada Step 6.
+              </p>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto rounded-lg border border-border">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-surface-subtle border-b border-border text-muted font-medium">
+                <tr>
+                  <th class="py-2.5 px-3">Nama Dokumen</th>
+                  <th class="py-2.5 px-3">Keterangan / Panduan</th>
+                  <th class="py-2.5 px-3">Format Ekstensi</th>
+                  <th class="py-2.5 px-3">Ukuran Maks</th>
+                  <th class="py-2.5 px-3">Wajib</th>
+                  <th class="py-2.5 px-3">Kondisi Tampil</th>
+                  <th class="py-2.5 px-3 text-right">Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="docs-list-tbody" class="divide-y divide-border/60">
+                <!-- Rendered dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 1: FIELD & DROPDOWN EDITOR MODAL                   -->
+
+  <div
+    id="modal-field-editor"
+    class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60 p-4"
+  >
+    <div class="max-w-xl w-full rounded-xl border border-border bg-surface p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between pb-3 border-b border-border">
+        <div>
+          <h3 class="font-display text-base font-bold text-heading">
+            Pengaturan Kolom Formulir
+          </h3>
+          <p
+            id="modal-field-subtitle"
+            class="text-xs text-muted font-mono mt-0.5"
+          >
+            field_id
+          </p>
+        </div>
+        <button
+          type="button"
+          id="btn-close-field-modal"
+          class="text-muted hover:text-heading p-1 text-lg font-bold cursor-pointer"
+        >
+          &times;
+        </button>
+      </div>
+
+      <form id="form-field-editor" class="space-y-4 text-xs">
+        <input type="hidden" id="edit-field-step" />
+        <input type="hidden" id="edit-field-id" />
+
+        <div class="space-y-1.5">
+          <label
+            for="edit-field-label"
+            class="block font-semibold text-heading"
+          >
+            Label Kolom di Formulir:
+          </label>
+          <input
+            type="text"
+            id="edit-field-label"
+            required
+            class="h-9 w-full rounded-[6px] border border-border bg-surface px-3 text-xs text-heading"
+          />
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="space-y-1.5">
+            <label
+              for="edit-field-type"
+              class="block font-semibold text-heading"
+            >
+              Tipe Input:
+            </label>
+            <select
+              id="edit-field-type"
+              class="h-9 w-full rounded-[6px] border border-border bg-surface px-3 text-xs text-heading"
+            >
+              <option value="text">Teks Bebas (Text)</option>
+              <option value="select">Dropdown Pilihan (Select)</option>
+              <option value="date">Tanggal (Date)</option>
+              <option value="number">Angka (Number)</option>
+              <option value="textarea">Teks Panjang (Textarea)</option>
+              <option value="checkbox">Centang (Checkbox)</option>
+              <option value="file">Unggah Berkas (File)</option>
+            </select>
+          </div>
+
+          <div class="space-y-1.5">
+            <label
+              for="edit-field-rule"
+              class="block font-semibold text-heading"
+            >
+              Aturan Tampil Kondisional:
+            </label>
+            <select
+              id="edit-field-rule"
+              class="h-9 w-full rounded-[6px] border border-border bg-surface px-3 text-xs text-heading"
+            >
+              <option value="always">Selalu Tampil</option>
+              <option value="if_boarding">
+                Tampil jika Layanan Asrama Aktif
+              </option>
+              <option value="if_smk">Khusus Satuan Vokasi (SMK)</option>
+              <option value="if_ma">Khusus Satuan Madrasah (MA)</option>
+              <option value="if_tahfidz">Tampil jika Jalur Tahfidz</option>
+              <option value="if_prestasi">Tampil jika Jalur Prestasi</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="space-y-1.5">
+          <label
+            for="edit-field-placeholder"
+            class="block font-semibold text-heading"
+          >
+            Teks Petunjuk (Placeholder):
+          </label>
+          <input
+            type="text"
+            id="edit-field-placeholder"
+            class="h-9 w-full rounded-[6px] border border-border bg-surface px-3 text-xs text-heading"
+          />
+        </div>
+
+        <div class="flex items-center gap-6 pt-1">
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              id="edit-field-required"
+              class="text-primary rounded"
+            />
+            <span class="font-medium text-heading">
+              Wajib Diisi (Mandatory)
+            </span>
+          </label>
+
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              id="edit-field-active"
+              class="text-primary rounded"
+            />
+            <span class="font-medium text-heading">Aktif di Formulir</span>
+          </label>
+        </div>
+
+        <!-- Dropdown Options Manager Container (Only visible if type === 'select') -->
+        <div
+          id="dropdown-options-container"
+          class="hidden pt-3 border-t border-border space-y-2"
+        >
+          <div class="flex items-center justify-between">
+            <label class="font-semibold text-heading">
+              Daftar Pilihan Dropdown:
+            </label>
+            <button
+              type="button"
+              id="btn-add-dropdown-option"
+              class="text-xs font-semibold text-primary hover:underline cursor-pointer"
+            >
+              + Tambah Opsi
+            </button>
+          </div>
+          <div
+            id="dropdown-options-list"
+            class="space-y-1.5 max-h-40 overflow-y-auto"
+          >
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-3 border-t border-border">
+          <button
+            type="button"
+            id="btn-cancel-field-edit"
+            class="h-8 px-4 rounded-[6px] border border-border bg-surface text-xs font-medium text-muted hover:text-heading cursor-pointer"
+          >
+            Batal
+          </button>
+          <button
+            type="submit"
+            class="h-8 px-4 rounded-[6px] bg-primary text-xs font-semibold text-white hover:bg-primary-hover shadow-xs cursor-pointer"
+          >
+            Simpan Perubahan Field
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL 2: GELOMBANG (WAVE) EDITOR MODAL                   -->
+
+  <div
+    id="modal-wave-editor"
+    class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 backdrop-blur-xs p-4"
+  >
+    <div class="max-w-md w-full rounded-[12px] border border-border bg-surface p-6 space-y-5 shadow-(--shadow-dropdown)">
+      <div class="flex items-center justify-between pb-3 border-b border-border">
+        <div>
+          <h3
+            id="modal-wave-title"
+            class="font-display text-lg font-semibold tracking-tight text-heading"
+          >
+            Tambah Gelombang Pendaftaran
+          </h3>
+          <p class="font-body text-xs text-muted mt-0.5">
+            Atur nama, rentang tanggal buka-tutup, dan benefit gelombang.
+          </p>
+        </div>
+        <button
+          type="button"
+          id="btn-close-wave-modal"
+          class="text-muted hover:text-heading p-1 text-base font-bold cursor-pointer transition-colors"
+        >
+          &times;
+        </button>
+      </div>
+
+      <form id="form-wave-editor" class="space-y-4 font-body text-xs">
+        <input type="hidden" id="edit-wave-id" />
+
+        <div class="space-y-1.5">
+          <label
+            for="edit-wave-name"
+            class="block font-body text-xs font-medium text-heading"
+          >
+            Nama Gelombang:
+          </label>
+          <input
+            type="text"
+            id="edit-wave-name"
+            required
+            placeholder="Contoh: Gelombang 1, Gelombang Prestasi"
+            class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading placeholder:text-muted/60 transition-colors"
+          />
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="space-y-1.5">
+            <label
+              for="edit-wave-start"
+              class="block font-body text-xs font-medium text-heading"
+            >
+              Tanggal Buka:
+            </label>
+            <input
+              type="date"
+              id="edit-wave-start"
+              required
+              class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading transition-colors"
+            />
+          </div>
+
+          <div class="space-y-1.5">
+            <label
+              for="edit-wave-end"
+              class="block font-body text-xs font-medium text-heading"
+            >
+              Tanggal Tutup:
+            </label>
+            <input
+              type="date"
+              id="edit-wave-end"
+              required
+              class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading transition-colors"
+            />
+          </div>
+        </div>
+
+        <div class="space-y-1.5">
+          <label
+            for="edit-wave-desc"
+            class="block font-body text-xs font-medium text-heading"
+          >
+            Informasi Benefit Gelombang:
+          </label>
+          <input
+            type="text"
+            id="edit-wave-desc"
+            placeholder="Contoh: Pendaftaran gelombang awal sesuai ketentuan sekolah (Early Bird / Jalur Prestasi)"
+            class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading placeholder:text-muted/60 transition-colors"
+          />
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="space-y-1.5">
+            <label
+              for="edit-wave-quota"
+              class="block font-body text-xs font-medium text-heading"
+            >
+              Batas Kuota Siswa:
+            </label>
+            <input
+              type="number"
+              id="edit-wave-quota"
+              min="0"
+              placeholder="Contoh: 150 (Kosongkan jika tanpa batas)"
+              class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading placeholder:text-muted/60 transition-colors"
+            />
+          </div>
+
+          <div class="space-y-1.5">
+            <label
+              for="edit-wave-status"
+              class="block font-body text-xs font-medium text-heading"
+            >
+              Status Gelombang:
+            </label>
+            <select
+              id="edit-wave-status"
+              class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading transition-colors cursor-pointer"
+            >
+              <option value="active">Aktif (Menerima Pendaftar)</option>
+              <option value="draft">Draf (Persiapan Masa Depan)</option>
+              <option value="archived">Diarsipkan (Nonaktif Permanen)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="rounded-[6px] bg-surface-subtle border border-border p-2.5 text-[11px] text-muted space-y-0.5">
+          <span class="font-semibold text-heading block">
+            Aturan Jam Server:
+          </span>
+          <span>
+            Batas penutupan gelombang dihitung hingga pukul{" "}
+            <strong>23.59.59 WIB</strong> pada tanggal tutup. Gelombang
+            berikutnya dimulai pukul 00.00.00 WIB.
+          </span>
+        </div>
+
+        <div class="pt-1">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              id="edit-wave-is-active"
+              class="text-primary rounded-[4px] cursor-pointer"
+            />
+            <span class="font-body text-xs font-medium text-heading">
+              Tetapkan sebagai Gelombang Aktif saat ini
+            </span>
+          </label>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-3 border-t border-border">
+          <button
+            type="button"
+            id="btn-cancel-wave-edit"
+            class="inline-flex h-[36px] items-center justify-center rounded-[6px] border border-border bg-surface px-4 font-body text-xs font-medium text-heading transition-all duration-200 hover:-translate-y-[1px] hover:border-heading hover:bg-surface-subtle cursor-pointer"
+          >
+            Batal
+          </button>
+          <button
+            type="submit"
+            class="inline-flex h-[36px] items-center justify-center rounded-[6px] bg-primary px-4 font-body text-xs font-medium text-white transition-all duration-200 hover:-translate-y-[1px] hover:bg-primary-hover hover:shadow-(--shadow-button-glow) cursor-pointer"
+          >
+            Simpan Gelombang
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Client State Initialization -->
+  <script
+    is:inline
+    define:vars={{
+      initialConfig: currentConfig,
+      schoolType,
+      schoolName,
+      boardingAvailable,
+    }}
+  >
+    window.__PPDB_CONFIG__ = initialConfig;
+    window.__SCHOOL_META__ = { schoolType, schoolName, boardingAvailable };
+  </script>
+
+  <script is:inline>
+    function initPendaftaran() {
+      let config = window.__PPDB_CONFIG__ || {};
+      let activeStepNum = 1;
+
+      const banner = document.getElementById("status-banner");
+
+      // ==========================================
+      // 1. SUBMENU NAVIGATION (5 Subtabs - Zero Load Segmented Control)
+      // ==========================================
+      const subtabButtons = document.querySelectorAll(".subtab-btn");
+      const subtabPanes = document.querySelectorAll(".subtab-pane");
+
+      function switchSubtab(targetId, updateHistory = true) {
+        subtabButtons.forEach((btn) => {
+          const isActive = btn.getAttribute("data-subtab") === targetId;
+          btn.setAttribute("aria-selected", isActive ? "true" : "false");
+          btn.className = isActive
+            ? "subtab-btn bg-primary font-semibold text-white"
+            : "subtab-btn font-medium text-muted hover:text-heading";
+        });
+
+        subtabPanes.forEach((p) => {
+          if (p.id === targetId) {
+            p.classList.remove("hidden");
+          } else {
+            p.classList.add("hidden");
+          }
+        });
+
+        if (updateHistory) {
+          const cleanName = targetId.replace("subtab-", "");
+          const url = new URL(window.location.href);
+          url.searchParams.set("tab", cleanName);
+          window.history.replaceState(null, "", url.toString());
+        }
+      }
+
+      subtabButtons.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const targetId = btn.getAttribute("data-subtab");
+          if (targetId) switchSubtab(targetId);
+        });
+      });
+
+      window.addEventListener("popstate", () => {
+        const params = new URLSearchParams(window.location.search);
+        const tab = params.get("tab");
+        if (tab) {
+          const id = tab.startsWith("subtab-") ? tab : `subtab-${tab}`;
+          if (document.getElementById(id)) switchSubtab(id, false);
+        }
+      });
+
+      // ==========================================
+      // 2A. SUBTAB 2: GELOMBANG PENDAFTARAN CONTROLLER
+      // ==========================================
+      const waveListTbody = document.getElementById("wave-list-tbody");
+      const btnAddWave = document.getElementById("btn-add-wave");
+      const modalWaveEditor = document.getElementById("modal-wave-editor");
+      const modalWaveTitle = document.getElementById("modal-wave-title");
+      const formWaveEditor = document.getElementById("form-wave-editor");
+      const btnCloseWaveModal = document.getElementById("btn-close-wave-modal");
+      const btnCancelWaveEdit = document.getElementById("btn-cancel-wave-edit");
+
+      const editWaveId = document.getElementById("edit-wave-id");
+      const editWaveName = document.getElementById("edit-wave-name");
+      const editWaveStart = document.getElementById("edit-wave-start");
+      const editWaveEnd = document.getElementById("edit-wave-end");
+      const editWaveDesc = document.getElementById("edit-wave-desc");
+      const editWaveQuota = document.getElementById("edit-wave-quota");
+      const editWaveStatus = document.getElementById("edit-wave-status");
+      const editWaveIsActive = document.getElementById("edit-wave-is-active");
+      const activeWaveNameDisplay = document.getElementById(
+        "active-wave-name-display",
+      );
+
+      // Mode Operasional Portal Switcher (Auto vs Manual)
+      const portalModeRadios = document.querySelectorAll(
+        'input[name="cfg_portal_mode"]',
+      );
+      const manualOverrideContainer = document.getElementById(
+        "manual-override-container",
+      );
+
+      portalModeRadios.forEach((r) => {
+        r.addEventListener("change", () => {
+          const isManual = r.value === "manual";
+          if (manualOverrideContainer) {
+            if (isManual) {
+              manualOverrideContainer.classList.remove(
+                "opacity-60",
+                "pointer-events-none",
+              );
+            } else {
+              manualOverrideContainer.classList.add(
+                "opacity-60",
+                "pointer-events-none",
+              );
+            }
+          }
+        });
+      });
+
+      // Peta jumlah pendaftar per gelombang untuk proteksi integritas data
+      let wavesUsageMap = {};
+      async function loadWavesUsage() {
+        try {
+          const res = await fetch("/api/admin/ppdb/waves/usage");
+          const json = await res.json();
+          if (json.success && json.data) {
+            wavesUsageMap = json.data;
+            renderWavesTable();
+          }
+        } catch {}
+      }
+      loadWavesUsage();
+
+      function renderWavesTable() {
+        if (!waveListTbody) return;
+        if (!config.waves) config.waves = [];
+        if (!config.activeWave && config.waves.length > 0) {
+          config.activeWave = config.waves[0].name;
+        }
+
+        if (activeWaveNameDisplay) {
+          activeWaveNameDisplay.textContent =
+            config.activeWave || "Gelombang 1";
+        }
+
+        if (config.waves.length === 0) {
+          waveListTbody.innerHTML = `<tr><td colspan="7" class="py-6 text-center font-body text-xs text-muted">Belum ada gelombang pendaftaran yang dikonfigurasi.</td></tr>`;
+          return;
+        }
+
+        waveListTbody.innerHTML = config.waves
+          .map((w, idx) => {
+            const isCurrentActive = config.activeWave === w.name;
+            const startFormatted = w.startDate
+              ? new Date(w.startDate + "T00:00:00").toLocaleDateString(
+                  "id-ID",
+                  { day: "numeric", month: "short", year: "numeric" },
+                )
+              : "—";
+            const endFormatted = w.endDate
+              ? new Date(w.endDate + "T00:00:00").toLocaleDateString("id-ID", {
+                  day: "numeric",
+                  month: "short",
+                  year: "numeric",
+                })
+              : "—";
+            const applicantCount = wavesUsageMap[w.name] || 0;
+            const statusVal = w.status || "active";
+
+            let statusBadge = `<span class="rounded bg-success-light px-2 py-0.5 font-body text-[10px] font-semibold text-success-text border border-success">Aktif</span>`;
+            if (statusVal === "draft") {
+              statusBadge = `<span class="rounded bg-warning-light px-2 py-0.5 font-body text-[10px] font-semibold text-warning-text border border-warning">Draf</span>`;
+            } else if (statusVal === "archived") {
+              statusBadge = `<span class="rounded bg-surface-subtle px-2 py-0.5 font-body text-[10px] font-semibold text-muted border border-border">Diarsipkan</span>`;
+            }
+
+            return `
+            <tr class="transition-colors hover:bg-surface-subtle ${isCurrentActive ? "bg-primary-light" : ""}">
+              <td class="py-3 px-4 text-center">
+                <label class="inline-flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="radio-active-wave"
+                    class="radio-set-active-wave text-primary cursor-pointer"
+                    data-idx="${idx}"
+                    ${isCurrentActive ? "checked" : ""}
+                  />
+                  ${isCurrentActive ? '<span class="rounded-[4px] bg-primary-light px-2 py-0.5 font-body text-[10px] font-bold text-primary">Portal</span>' : '<span class="font-body text-[11px] text-muted">Pilih</span>'}
+                </label>
+              </td>
+              <td class="py-3 px-4">
+                <div class="font-body text-xs font-semibold text-heading flex items-center gap-2">
+                  <span>${w.name}</span>
+                  ${statusBadge}
+                </div>
+                ${w.quota ? `<div class="text-[10px] text-muted font-mono mt-0.5">Batas Kuota: ${w.quota} Siswa</div>` : ""}
+              </td>
+              <td class="py-3 px-4 font-mono text-xs text-body">${startFormatted}</td>
+              <td class="py-3 px-4 font-mono text-xs text-body">${endFormatted}</td>
+              <td class="py-3 px-4 text-center">
+                <span class="inline-flex items-center font-mono text-xs font-bold ${applicantCount > 0 ? "text-primary " : "text-muted "}">
+                  ${applicantCount} Siswa
+                </span>
+              </td>
+              <td class="py-3 px-4 text-right whitespace-nowrap">
+                <div class="inline-flex items-center gap-1.5 justify-end">
+                  <button
+                    type="button"
+                    class="btn-edit-wave inline-flex h-7 w-7 items-center justify-center rounded-[6px] border border-border bg-surface text-muted hover:text-heading hover:bg-surface-subtle transition-colors shadow-2xs cursor-pointer"
+                    data-idx="${idx}"
+                    title="Ubah Gelombang"
+                  >
+                    <svg class="h-3.5 w-3.5 pointer-events-none" aria-hidden="true"><use href="#icon-edit"></use></svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-delete-wave inline-flex h-7 w-7 items-center justify-center rounded-[6px] border border-border bg-surface text-error hover:bg-error hover:text-white hover:border-error transition-colors shadow-2xs cursor-pointer"
+                    data-idx="${idx}"
+                    data-count="${applicantCount}"
+                    title="Hapus Gelombang"
+                  >
+                    <svg class="h-3.5 w-3.5 pointer-events-none" aria-hidden="true"><use href="#icon-trash"></use></svg>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          `;
+          })
+          .join("");
+
+        // Radio active wave change handler
+        waveListTbody
+          .querySelectorAll(".radio-set-active-wave")
+          .forEach((radio) => {
+            radio.addEventListener("change", () => {
+              const idx = parseInt(radio.getAttribute("data-idx") || "0", 10);
+              const chosenWave = config.waves[idx];
+              if (chosenWave) {
+                config.activeWave = chosenWave.name;
+                config.startDate = chosenWave.startDate;
+                config.endDate = chosenWave.endDate;
+                config.waves.forEach((w, i) => {
+                  w.isActive = i === idx;
+                });
+                renderWavesTable();
+              }
+            });
+          });
+
+        // Edit wave button handler
+        waveListTbody.querySelectorAll(".btn-edit-wave").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const idx = parseInt(btn.getAttribute("data-idx") || "0", 10);
+            openWaveModal(idx);
+          });
+        });
+
+        // Delete wave button handler dengan proteksi data pendaftar
+        waveListTbody.querySelectorAll(".btn-delete-wave").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const idx = parseInt(btn.getAttribute("data-idx") || "0", 10);
+            const target = config.waves[idx];
+            if (!target) return;
+
+            const count = parseInt(btn.getAttribute("data-count") || "0", 10);
+            if (count > 0) {
+              alert(
+                `PROTEKSI DATA PENDAFTAR:\n\nGelombang "${target.name}" TIDAK DAPAT DIHAPUS karena telah memiliki ${count} pendaftar yang tersimpan di basis data.\n\nUntuk menjaga integritas data calon siswa, silakan ubah status gelombang ini menjadi "Diarsipkan" melalui menu Edit.`,
+              );
+              return;
+            }
+
+            if (config.waves.length <= 1) {
+              alert("Harus ada minimal 1 gelombang pendaftaran.");
+              return;
+            }
+
+            const confirmed = await window.confirmDialog({
+              title: "Hapus Gelombang Pendaftaran",
+              message: `Hapus gelombang "${target.name}"? Data gelombang ini akan dihapus permanen karena belum memiliki pendaftar.`,
+              confirmText: "Hapus Gelombang",
+              cancelText: "Batal",
+              type: "danger",
+            });
+            if (!confirmed) return;
+
+            const wasActive = config.activeWave === target.name;
+            config.waves.splice(idx, 1);
+            if (wasActive && config.waves.length > 0) {
+              config.activeWave = config.waves[0].name;
+              config.waves[0].isActive = true;
+              config.startDate = config.waves[0].startDate;
+              config.endDate = config.waves[0].endDate;
+            }
+            renderWavesTable();
+          });
+        });
+      }
+
+      function openWaveModal(idx = null) {
+        if (!modalWaveEditor) return;
+        modalWaveEditor.classList.remove("hidden");
+        modalWaveEditor.classList.add("flex");
+
+        if (idx !== null && config.waves[idx]) {
+          const w = config.waves[idx];
+          if (modalWaveTitle)
+            modalWaveTitle.textContent = `Ubah Gelombang: ${w.name}`;
+          if (editWaveId) editWaveId.value = String(idx);
+          if (editWaveName) editWaveName.value = w.name;
+          if (editWaveStart) editWaveStart.value = w.startDate;
+          if (editWaveEnd) editWaveEnd.value = w.endDate;
+          if (editWaveDesc)
+            editWaveDesc.value = w.benefit || w.description || "";
+          if (editWaveQuota)
+            editWaveQuota.value = w.quota ? String(w.quota) : "";
+          if (editWaveStatus) editWaveStatus.value = w.status || "active";
+          if (editWaveIsActive)
+            editWaveIsActive.checked = config.activeWave === w.name;
+        } else {
+          const nextNum = (config.waves?.length || 0) + 1;
+          if (modalWaveTitle)
+            modalWaveTitle.textContent = "Tambah Gelombang Baru";
+          if (editWaveId) editWaveId.value = "new";
+          if (editWaveName) editWaveName.value = `Gelombang ${nextNum}`;
+          const lastWave = config.waves?.[config.waves.length - 1];
+          if (editWaveStart)
+            editWaveStart.value = lastWave?.endDate || "2026-11-27";
+          if (editWaveEnd) editWaveEnd.value = "2026-12-26";
+          if (editWaveDesc) editWaveDesc.value = "";
+          if (editWaveQuota) editWaveQuota.value = "150";
+          if (editWaveStatus) editWaveStatus.value = "active";
+          if (editWaveIsActive) editWaveIsActive.checked = false;
+        }
+      }
+
+      function closeWaveModal() {
+        if (modalWaveEditor) {
+          modalWaveEditor.classList.add("hidden");
+          modalWaveEditor.classList.remove("flex");
+        }
+      }
+
+      btnAddWave?.addEventListener("click", () => openWaveModal(null));
+      btnCloseWaveModal?.addEventListener("click", closeWaveModal);
+      btnCancelWaveEdit?.addEventListener("click", closeWaveModal);
+
+      formWaveEditor?.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const waveIdVal = editWaveId?.value;
+        const name = editWaveName?.value.trim();
+        const startDate = editWaveStart?.value;
+        const endDate = editWaveEnd?.value;
+        const benefit = editWaveDesc?.value.trim() || "";
+        const quotaVal = editWaveQuota?.value.trim();
+        const quota =
+          quotaVal && !isNaN(parseInt(quotaVal, 10))
+            ? parseInt(quotaVal, 10)
+            : undefined;
+        const status = editWaveStatus?.value || "active";
+        const makeActive = editWaveIsActive?.checked;
+
+        if (!name || !startDate || !endDate) return;
+
+        if (waveIdVal === "new") {
+          const newWave = {
+            id: `wave_${Date.now()}`,
+            name,
+            startDate,
+            endDate,
+            description: benefit,
+            benefit,
+            quota,
+            status,
+            isActive: makeActive || config.waves.length === 0,
+          };
+          config.waves.push(newWave);
+          if (newWave.isActive) {
+            config.activeWave = name;
+            config.startDate = startDate;
+            config.endDate = endDate;
+            config.waves.forEach((w) => {
+              if (w !== newWave) w.isActive = false;
+            });
+          }
+        } else {
+          const idx = parseInt(waveIdVal, 10);
+          if (config.waves[idx]) {
+            config.waves[idx].name = name;
+            config.waves[idx].startDate = startDate;
+            config.waves[idx].endDate = endDate;
+            config.waves[idx].description = benefit;
+            config.waves[idx].benefit = benefit;
+            config.waves[idx].quota = quota;
+            config.waves[idx].status = status;
+
+            if (makeActive) {
+              config.activeWave = name;
+              config.startDate = startDate;
+              config.endDate = endDate;
+              config.waves.forEach((w, i) => {
+                w.isActive = i === idx;
+              });
+            } else if (config.activeWave === config.waves[idx].name) {
+              config.activeWave = name;
+              config.startDate = startDate;
+              config.endDate = endDate;
+            }
+          }
+        }
+
+        closeWaveModal();
+        renderWavesTable();
+      });
+
+      // ==========================================
+      // 2B. SUBTAB 2: JALUR PENDAFTARAN CONTROLLER
+      // ==========================================
+      const pathListTbody = document.getElementById("path-list-tbody");
+      const btnAddPath = document.getElementById("btn-add-path");
+
+      function renderPathsTable() {
+        if (!pathListTbody) return;
+        const paths = config.paths || [];
+
+        if (paths.length === 0) {
+          pathListTbody.innerHTML = `<tr><td colspan="5" class="py-4 text-center text-muted">Belum ada jalur pendaftaran yang dikonfigurasi.</td></tr>`;
+          return;
+        }
+
+        pathListTbody.innerHTML = paths
+          .map((p, idx) => {
+            return `
+            <tr class="transition-colors hover:bg-surface-subtle">
+              <td class="py-3 px-4 font-body text-xs font-semibold text-heading">${p.name}</td>
+              <td class="py-3 px-4 font-mono text-xs font-bold text-primary">${p.quotaPercent}%</td>
+              <td class="py-3 px-4 font-body text-xs text-muted max-w-xs truncate">${p.description || "—"}</td>
+              <td class="py-3 px-4 text-center">
+                <input
+                  type="checkbox"
+                  class="toggle-path-active text-primary rounded-[4px] cursor-pointer"
+                  data-idx="${idx}"
+                  ${p.isActive ? "checked" : ""}
+                />
+              </td>
+              <td class="py-3 px-4 text-right whitespace-nowrap">
+                <div class="inline-flex items-center gap-1.5 justify-end">
+                  <button
+                    type="button"
+                    class="btn-delete-path inline-flex h-7 w-7 items-center justify-center rounded-[6px] border border-border bg-surface text-error hover:bg-error hover:text-white hover:border-error transition-colors shadow-2xs cursor-pointer"
+                    data-idx="${idx}"
+                    title="Hapus Jalur"
+                  >
+                    <svg class="h-3.5 w-3.5 pointer-events-none" aria-hidden="true"><use href="#icon-trash"></use></svg>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          `;
+          })
+          .join("");
+
+        // Attach event listeners
+        pathListTbody.querySelectorAll(".toggle-path-active").forEach((cb) => {
+          cb.addEventListener("change", (e) => {
+            const idx = parseInt(cb.getAttribute("data-idx") || "0", 10);
+            if (config.paths[idx]) {
+              config.paths[idx].isActive = cb.checked;
+            }
+          });
+        });
+
+        pathListTbody.querySelectorAll(".btn-delete-path").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const idx = parseInt(btn.getAttribute("data-idx") || "0", 10);
+            const confirmed = await window.confirmDialog({
+              title: "Hapus Jalur Pendaftaran",
+              message: `Hapus jalur "${config.paths[idx]?.name}"?`,
+              confirmText: "Hapus Jalur",
+              cancelText: "Batal",
+              type: "danger",
+            });
+            if (!confirmed) return;
+            config.paths.splice(idx, 1);
+            renderPathsTable();
+          });
+        });
+      }
+
+      btnAddPath?.addEventListener("click", () => {
+        const name = prompt(
+          "Masukkan Nama Jalur Baru (Contoh: Prestasi Olahraga, Tahfidz Al-Qur'an):",
+        );
+        if (!name || !name.trim()) return;
+        const quotaStr = prompt("Alokasi Kuota Persen (%) (Contoh: 15):", "10");
+        const quotaPercent = parseInt(quotaStr || "10", 10) || 10;
+
+        config.paths.push({
+          key: name.toLowerCase().replace(/[^a-z0-9]+/g, "_"),
+          name: name.trim(),
+          quotaPercent,
+          description: `Jalur penerimaan khusus ${name.trim()}`,
+          isActive: true,
+        });
+
+        renderPathsTable();
+      });
+
+      // ==========================================
+      // 3. SUBTAB 3: BUILDER FORMULIR (7 TAHAP)
+      // ==========================================
+      const builderStepNav = document.getElementById("builder-step-nav");
+      const builderActiveStepTitle = document.getElementById(
+        "builder-active-step-title",
+      );
+      const builderActiveStepDesc = document.getElementById(
+        "builder-active-step-desc",
+      );
+      const builderFieldsTbody = document.getElementById(
+        "builder-fields-tbody",
+      );
+      const btnResetBuilder = document.getElementById("btn-reset-builder");
+
+      function renderActiveStepFields(stepNum) {
+        activeStepNum = stepNum;
+        const stepObj = config.steps?.find((s) => s.step === stepNum);
+        if (!stepObj || !builderFieldsTbody) return;
+
+        if (builderActiveStepTitle)
+          builderActiveStepTitle.textContent = `Tahap 0${stepObj.step}: ${stepObj.title}`;
+        if (builderActiveStepDesc)
+          builderActiveStepDesc.textContent = stepObj.description;
+
+        const fields = stepObj.fields || [];
+        if (fields.length === 0) {
+          builderFieldsTbody.innerHTML = `<tr><td colspan="7" class="py-6 text-center text-muted">Belum ada kolom isian pada tahapan ini.</td></tr>`;
+          return;
+        }
+
+        const conditionBadges = {
+          always: `<span class="px-2 py-0.5 rounded text-[10px] font-medium bg-surface-subtle text-muted">Selalu Tampil</span>`,
+          if_boarding: `<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-accent-light text-accent-text">Kondisi: Asrama Aktif</span>`,
+          if_smk: `<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-primary-light text-primary">Kondisi: Vokasi SMK</span>`,
+          if_ma: `<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-success-light text-success-text">Kondisi: Madrasah MA</span>`,
+          if_tahfidz: `<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-success-light text-success-text">Kondisi: Jalur Tahfidz</span>`,
+          if_prestasi: `<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-primary-light text-primary">Kondisi: Jalur Prestasi</span>`,
+        };
+
+        builderFieldsTbody.innerHTML = fields
+          .map((f, fIdx) => {
+            const badge =
+              conditionBadges[f.conditionalRule] ||
+              `<span class="text-muted">${f.conditionalRule}</span>`;
+            return `
+            <tr class="hover:bg-surface-subtle">
+              <td class="py-2.5 px-3 font-mono font-medium text-muted">${f.order}</td>
+              <td class="py-2.5 px-3 font-semibold text-heading">
+                <div>${f.label}</div>
+                <div class="text-[10px] font-mono text-muted">${f.id} ${f.isSystem ? '&bull; <span class="text-accent font-semibold">Terkunci Sistem</span>' : ""}</div>
+              </td>
+              <td class="py-2.5 px-3 font-mono text-xs text-primary">${f.type}</td>
+              <td class="py-2.5 px-3">
+                <input
+                  type="checkbox"
+                  class="toggle-field-required text-primary rounded cursor-pointer"
+                  data-fidx="${fIdx}"
+                  ${f.required ? "checked" : ""}
+                  ${f.isSystem && f.id === "agreement" ? "disabled" : ""}
+                />
+              </td>
+              <td class="py-2.5 px-3">${badge}</td>
+              <td class="py-2.5 px-3 text-center">
+                <input
+                  type="checkbox"
+                  class="toggle-field-active text-primary rounded cursor-pointer"
+                  data-fidx="${fIdx}"
+                  ${f.isActive ? "checked" : ""}
+                  ${f.isSystem && ["full_name", "nik", "phone_student", "agreement"].includes(f.id) ? "disabled" : ""}
+                />
+              </td>
+              <td class="py-2.5 px-3 text-right">
+                <div class="inline-flex items-center gap-1.5 justify-end">
+                  <button
+                    type="button"
+                    class="btn-edit-field inline-flex h-7 w-7 items-center justify-center rounded-[6px] border border-border bg-surface text-muted hover:text-heading hover:bg-surface-subtle transition-colors shadow-2xs cursor-pointer"
+                    data-fidx="${fIdx}"
+                    title="Ubah Kolom Isian"
+                  >
+                    <svg class="h-3.5 w-3.5 pointer-events-none" aria-hidden="true"><use href="#icon-edit"></use></svg>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          `;
+          })
+          .join("");
+
+        // Attach Toggle Handlers
+        builderFieldsTbody
+          .querySelectorAll(".toggle-field-required")
+          .forEach((cb) => {
+            cb.addEventListener("change", () => {
+              const fIdx = parseInt(cb.getAttribute("data-fidx") || "0", 10);
+              if (stepObj.fields[fIdx]) {
+                stepObj.fields[fIdx].required = cb.checked;
+              }
+            });
+          });
+
+        builderFieldsTbody
+          .querySelectorAll(".toggle-field-active")
+          .forEach((cb) => {
+            cb.addEventListener("change", () => {
+              const fIdx = parseInt(cb.getAttribute("data-fidx") || "0", 10);
+              if (stepObj.fields[fIdx]) {
+                stepObj.fields[fIdx].isActive = cb.checked;
+              }
+            });
+          });
+
+        builderFieldsTbody
+          .querySelectorAll(".btn-edit-field")
+          .forEach((btn) => {
+            btn.addEventListener("click", () => {
+              const fIdx = parseInt(btn.getAttribute("data-fidx") || "0", 10);
+              openFieldEditorModal(stepNum, fIdx);
+            });
+          });
+      }
+
+      // Step Accordion Header Tabs Click
+      builderStepNav?.querySelectorAll(".builder-step-tab").forEach((tab) => {
+        tab.addEventListener("click", () => {
+          const s = parseInt(tab.getAttribute("data-step") || "1", 10);
+          builderStepNav.querySelectorAll(".builder-step-tab").forEach((t) => {
+            t.className =
+              "builder-step-tab p-2.5 rounded-lg border text-left transition-all cursor-pointer border-border bg-surface hover:border-primary/40 text-heading";
+          });
+          tab.className =
+            "builder-step-tab p-2.5 rounded-lg border text-left transition-all cursor-pointer border-primary bg-primary text-white shadow-xs";
+          renderActiveStepFields(s);
+        });
+      });
+
+      btnResetBuilder?.addEventListener("click", async () => {
+        const confirmed = await window.confirmDialog({
+          title: "Atur Ulang Formulir PPDB",
+          message: `Kembalikan susunan formulir 7 tahap ke acuan baku jenjang ${window.__SCHOOL_META__?.schoolType}? Perubahan draf yang belum disimpan akan diatur ulang.`,
+          confirmText: "Atur Ulang Acuan Baku",
+          cancelText: "Batal",
+          type: "danger",
+        });
+        if (!confirmed) return;
+
+        try {
+          const res = await fetch("/api/admin/ppdb/config/reset-defaults", {
+            method: "POST",
+          });
+          const json = await res.json();
+          if (json.success && json.data) {
+            config = json.data;
+            window.__PPDB_CONFIG__ = json.data;
+            renderPathsTable();
+            renderActiveStepFields(activeStepNum);
+            renderDocsTable();
+            showBanner(
+              "Formulir berhasil diatur ulang ke acuan baku institusi.",
+              "success",
+            );
+          }
+        } catch {
+          alert("Gagal mengatur ulang template formulir.");
+        }
+      });
+
+      // ==========================================
+      // 4. FIELD & DROPDOWN EDITOR MODAL
+      // ==========================================
+      const modalFieldEditor = document.getElementById("modal-field-editor");
+      const btnCloseFieldModal = document.getElementById(
+        "btn-close-field-modal",
+      );
+      const btnCancelFieldEdit = document.getElementById(
+        "btn-cancel-field-edit",
+      );
+      const formFieldEditor = document.getElementById("form-field-editor");
+
+      const editFieldStep = document.getElementById("edit-field-step");
+      const editFieldId = document.getElementById("edit-field-id");
+      const editFieldLabel = document.getElementById("edit-field-label");
+      const editFieldType = document.getElementById("edit-field-type");
+      const editFieldRule = document.getElementById("edit-field-rule");
+      const editFieldPlaceholder = document.getElementById(
+        "edit-field-placeholder",
+      );
+      const editFieldRequired = document.getElementById("edit-field-required");
+      const editFieldActive = document.getElementById("edit-field-active");
+      const modalFieldSubtitle = document.getElementById(
+        "modal-field-subtitle",
+      );
+
+      const dropdownOptionsContainer = document.getElementById(
+        "dropdown-options-container",
+      );
+      const dropdownOptionsList = document.getElementById(
+        "dropdown-options-list",
+      );
+      const btnAddDropdownOption = document.getElementById(
+        "btn-add-dropdown-option",
+      );
+
+      let currentEditingOptions = [];
+
+      function closeFieldModal() {
+        if (modalFieldEditor) {
+          modalFieldEditor.classList.add("hidden");
+          modalFieldEditor.classList.remove("flex");
+        }
+      }
+
+      btnCloseFieldModal?.addEventListener("click", closeFieldModal);
+      btnCancelFieldEdit?.addEventListener("click", closeFieldModal);
+
+      function openFieldEditorModal(stepNum, fieldIdx) {
+        const stepObj = config.steps?.find((s) => s.step === stepNum);
+        const field = stepObj?.fields?.[fieldIdx];
+        if (!field || !modalFieldEditor) return;
+
+        editFieldStep.value = String(stepNum);
+        editFieldId.value = String(fieldIdx);
+        editFieldLabel.value = field.label || "";
+        editFieldType.value = field.type || "text";
+        editFieldRule.value = field.conditionalRule || "always";
+        editFieldPlaceholder.value = field.placeholder || "";
+        editFieldRequired.checked = Boolean(field.required);
+        editFieldActive.checked = Boolean(field.isActive);
+        modalFieldSubtitle.textContent = `ID: ${field.id} ${field.isSystem ? "• Terkunci Sistem" : ""}`;
+
+        currentEditingOptions = [...(field.options || [])];
+        renderDropdownOptionsList();
+
+        // Toggle dropdown options container visibility
+        if (field.type === "select") {
+          dropdownOptionsContainer?.classList.remove("hidden");
+        } else {
+          dropdownOptionsContainer?.classList.add("hidden");
+        }
+
+        modalFieldEditor.classList.remove("hidden");
+        modalFieldEditor.classList.add("flex");
+      }
+
+      editFieldType?.addEventListener("change", () => {
+        if (editFieldType.value === "select") {
+          dropdownOptionsContainer?.classList.remove("hidden");
+        } else {
+          dropdownOptionsContainer?.classList.add("hidden");
+        }
+      });
+
+      function renderDropdownOptionsList() {
+        if (!dropdownOptionsList) return;
+        dropdownOptionsList.innerHTML = currentEditingOptions
+          .map(
+            (opt, i) => `
+          <div class="flex items-center gap-2">
+            <input type="text" class="opt-input h-7 flex-1 rounded border border-border bg-surface px-2 text-xs" value="${opt}" data-idx="${i}" />
+            <button type="button" class="btn-remove-opt text-error hover:underline text-xs p-1" data-idx="${i}">&times;</button>
+          </div>
+        `,
+          )
+          .join("");
+
+        dropdownOptionsList.querySelectorAll(".opt-input").forEach((inp) => {
+          inp.addEventListener("input", (e) => {
+            const idx = parseInt(inp.getAttribute("data-idx") || "0", 10);
+            currentEditingOptions[idx] = inp.value;
+          });
+        });
+
+        dropdownOptionsList
+          .querySelectorAll(".btn-remove-opt")
+          .forEach((btn) => {
+            btn.addEventListener("click", () => {
+              const idx = parseInt(btn.getAttribute("data-idx") || "0", 10);
+              currentEditingOptions.splice(idx, 1);
+              renderDropdownOptionsList();
+            });
+          });
+      }
+
+      btnAddDropdownOption?.addEventListener("click", () => {
+        currentEditingOptions.push(
+          `Pilihan Baru ${currentEditingOptions.length + 1}`,
+        );
+        renderDropdownOptionsList();
+      });
+
+      formFieldEditor?.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const stepNum = parseInt(editFieldStep.value, 10);
+        const fieldIdx = parseInt(editFieldId.value, 10);
+        const stepObj = config.steps?.find((s) => s.step === stepNum);
+        const field = stepObj?.fields?.[fieldIdx];
+        if (!field) return;
+
+        field.label = editFieldLabel.value.trim();
+        field.type = editFieldType.value;
+        field.conditionalRule = editFieldRule.value;
+        field.placeholder = editFieldPlaceholder.value.trim();
+        field.required = editFieldRequired.checked;
+        field.isActive = editFieldActive.checked;
+
+        if (field.type === "select") {
+          field.options = currentEditingOptions.filter((o) => o && o.trim());
+        }
+
+        closeFieldModal();
+        renderActiveStepFields(stepNum);
+        showBanner(`Kolom "${field.label}" berhasil diperbarui.`, "success");
+      });
+
+      // ==========================================
+      // 5. SUBTAB 5: PERSYARATAN DOKUMEN CONTROLLER
+      // ==========================================
+      const docsListTbody = document.getElementById("docs-list-tbody");
+
+      function renderDocsTable() {
+        if (!docsListTbody) return;
+        const docs = config.documents || [];
+
+        docsListTbody.innerHTML = docs
+          .map(
+            (d, idx) => `
+          <tr class="hover:bg-surface-subtle">
+            <td class="py-2.5 px-3 font-semibold text-heading">${d.name}</td>
+            <td class="py-2.5 px-3 text-muted">${d.description}</td>
+            <td class="py-2.5 px-3 font-mono text-[11px]">${d.acceptedFormats?.join(", ") || ".pdf, .jpg"}</td>
+            <td class="py-2.5 px-3 font-mono text-primary font-bold">${d.maxSizeMb} MB</td>
+            <td class="py-2.5 px-3">
+              <input type="checkbox" class="toggle-doc-required text-primary rounded cursor-pointer" data-didx="${idx}" ${d.required ? "checked" : ""} />
+            </td>
+            <td class="py-2.5 px-3 text-muted text-[11px]">${d.conditionalRule}</td>
+            <td class="py-2.5 px-3 text-right">
+              <div class="inline-flex items-center gap-1.5 justify-end">
+                <button
+                  type="button"
+                  class="btn-edit-doc-size inline-flex h-7 w-7 items-center justify-center rounded-[6px] border border-border bg-surface text-muted hover:text-heading hover:bg-surface-subtle transition-colors shadow-2xs cursor-pointer"
+                  data-didx="${idx}"
+                  title="Ubah Batas Ukuran Berkas"
+                >
+                  <svg class="h-3.5 w-3.5 pointer-events-none" aria-hidden="true"><use href="#icon-edit"></use></svg>
+                </button>
+              </div>
+            </td>
+          </tr>
+        `,
+          )
+          .join("");
+
+        docsListTbody.querySelectorAll(".toggle-doc-required").forEach((cb) => {
+          cb.addEventListener("change", () => {
+            const idx = parseInt(cb.getAttribute("data-didx") || "0", 10);
+            if (config.documents[idx]) {
+              config.documents[idx].required = cb.checked;
+            }
+          });
+        });
+
+        docsListTbody.querySelectorAll(".btn-edit-doc-size").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const idx = parseInt(btn.getAttribute("data-didx") || "0", 10);
+            const currentSize = config.documents[idx]?.maxSizeMb || 2;
+            const newSize = prompt(
+              `Ubah batas ukuran file maksimum untuk ${config.documents[idx]?.name} (dalam MB):`,
+              String(currentSize),
+            );
+            if (newSize && !isNaN(Number(newSize))) {
+              config.documents[idx].maxSizeMb = Number(newSize);
+              renderDocsTable();
+            }
+          });
+        });
+      }
+
+      // ==========================================
+      // 6. SIMPAN PENGATURAN FORMULIR PPDB
+      // ==========================================
+      function syncValuesFromInputs() {
+        const yearInp = document.getElementById("cfg_ppdb_year");
+        const quotaInp = document.getElementById("cfg_ppdb_quota_total");
+        const portalModeRadio = document.querySelector(
+          'input[name="cfg_portal_mode"]:checked',
+        );
+        const statusRadio = document.querySelector(
+          'input[name="cfg_ppdb_status"]:checked',
+        );
+        const boardingCb = document.getElementById("cfg_boarding_enabled");
+        const boardingDesc = document.getElementById("cfg_boarding_desc");
+        const admLabelInp = document.getElementById("cfg_admissions_label");
+        const admTitleInp = document.getElementById("cfg_admissions_title");
+        const admSubtitleInp = document.getElementById(
+          "cfg_admissions_subtitle",
+        );
+
+        if (yearInp) config.academicYear = yearInp.value.trim();
+        if (quotaInp) config.totalQuota = quotaInp.value.trim();
+        if (portalModeRadio) config.portalMode = portalModeRadio.value;
+        if (statusRadio) config.status = statusRadio.value;
+        if (admLabelInp) config.admissionsLabel = admLabelInp.value.trim();
+        if (admTitleInp) config.admissionsTitle = admTitleInp.value.trim();
+        if (admSubtitleInp)
+          config.admissionsSubtitle = admSubtitleInp.value.trim();
+
+        // Sinkronkan startDate dan endDate otomatis dari gelombang yang sedang aktif
+        const curWave =
+          config.waves?.find((w) => w.name === config.activeWave) ||
+          config.waves?.[0];
+        if (curWave) {
+          config.startDate = curWave.startDate;
+          config.endDate = curWave.endDate;
+        }
+
+        if (!config.services) config.services = {};
+        if (boardingCb)
+          config.services.boardingEnabledInPpdb = boardingCb.checked;
+        if (boardingDesc)
+          config.services.boardingDescription = boardingDesc.value.trim();
+      }
+
+      const btnSaveSettings = document.getElementById("btn-save-settings");
+      const btnSaveLabel = document.getElementById("btn-save-label");
+
+      btnSaveSettings?.addEventListener("click", async () => {
+        syncValuesFromInputs();
+        if (btnSaveLabel) btnSaveLabel.textContent = "Menyimpan...";
+        btnSaveSettings.disabled = true;
+
+        try {
+          const res = await fetch("/api/admin/ppdb/config/save", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(config),
+          });
+
+          const data = await res.json();
+          btnSaveSettings.disabled = false;
+          if (btnSaveLabel) btnSaveLabel.textContent = "Simpan Pengaturan";
+
+          if (data.success) {
+            showBanner(
+              data.message ||
+                "Pengaturan formulir pendaftaran berhasil disimpan!",
+              "success",
+            );
+          } else {
+            showBanner(data.error || "Gagal menyimpan pengaturan.", "error");
+          }
+        } catch {
+          btnSaveSettings.disabled = false;
+          if (btnSaveLabel) btnSaveLabel.textContent = "Simpan Pengaturan";
+          showBanner(
+            "Gangguan koneksi saat menyimpan pengaturan formulir.",
+            "error",
+          );
+        }
+      });
+
+      let bannerTimer = null;
+      function showBanner(msg, type) {
+        if (!banner) return;
+        if (bannerTimer) clearTimeout(bannerTimer);
+
+        banner.innerText = msg;
+        banner.className =
+          type === "success"
+            ? "rounded-md border border-secondary/30 bg-secondary-light p-3 text-xs font-semibold text-secondary block transition-opacity duration-300"
+            : "rounded-md border border-error/30 bg-error-light p-3 text-xs font-semibold text-error-text block transition-opacity duration-300";
+        banner.style.opacity = "1";
+        banner.classList.remove("hidden");
+        banner.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+        bannerTimer = setTimeout(() => {
+          banner.style.opacity = "0";
+          setTimeout(() => {
+            banner.className = "hidden rounded-lg p-3.5 text-xs font-medium";
+          }, 300);
+        }, 2000);
+      }
+
+      // Initial table renders
+      renderWavesTable();
+      renderPathsTable();
+      renderActiveStepFields(1);
+      renderDocsTable();
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", initPendaftaran);
+    } else {
+      initPendaftaran();
+    }
+  </script>
+</AdminLayout>

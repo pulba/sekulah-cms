@@ -1,0 +1,461 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import Icon from '../../../components/Icon.astro';
+import { db, documents } from '../../../db';
+import { desc } from 'drizzle-orm';
+
+export const prerender = false;
+
+const documentList = await db.select().from(documents).orderBy(desc(documents.createdAt));
+---
+
+<AdminLayout title="Manajemen Repositori Dokumen" activeNav="dokumen">
+  <div class="space-y-8 max-w-6xl">
+    <div class="border-b border-border pb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <h1 class="font-display text-2xl font-bold tracking-tight text-heading">
+          Repositori Dokumen & Unduhan Publik
+        </h1>
+        <p class="mt-1 font-body text-xs text-muted">
+          Kelola arsip formulir, kalender akademik, silabus, dan surat keputusan resmi sekolah untuk diunduh masyarakat.
+        </p>
+      </div>
+      <button
+        id="open-modal-btn"
+        class="inline-flex h-[36px] items-center justify-center gap-1.5 rounded-[6px] bg-primary px-4 text-xs font-semibold text-white transition-all hover:bg-primary-hover shadow-xs shrink-0 cursor-pointer"
+      >
+        <Icon name="plus" class="h-4 w-4" />
+        <span>Tambah Dokumen Baru</span>
+      </button>
+    </div>
+
+    <!-- Tabel Dokumen -->
+    <div class="rounded-[8px] border border-border bg-surface overflow-hidden shadow-xs">
+      <div class="p-4 border-b border-border flex items-center justify-between">
+        <h2 class="font-display text-sm font-bold text-heading">
+          Daftar Arsip Dokumen ({documentList.length})
+        </h2>
+        <span class="text-[11px] text-muted font-mono">Batas ukuran berkas: 10 MB</span>
+      </div>
+
+      {documentList.length === 0 ? (
+        <div class="p-12 text-center text-xs text-muted">
+          Belum ada dokumen yang diunggah. Klik "Tambah Dokumen Baru" untuk memulai.
+        </div>
+      ) : (
+        <div class="overflow-x-auto">
+          <table class="w-full text-left font-body text-xs">
+            <thead class="border-b border-border bg-surface-subtle text-[11px] font-semibold text-muted uppercase">
+              <tr>
+                <th class="py-3 px-4">Nama Dokumen</th>
+                <th class="py-3 px-4">Kategori</th>
+                <th class="py-3 px-4">Format / Ukuran</th>
+                <th class="py-3 px-4 text-center">Diunduh</th>
+                <th class="py-3 px-4 text-center">Status</th>
+                <th class="py-3 px-4 text-right">Tindakan</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-border">
+              {documentList.map((item) => (
+                <tr class="hover:bg-surface-subtle transition-colors" id={`row-${item.id}`}>
+                  <td class="py-3 px-4 max-w-sm">
+                    <p class="font-bold text-heading">{item.title}</p>
+                    <a
+                      href={item.fileUrl}
+                      target="_blank"
+                      class="text-[11px] font-mono text-primary hover:underline truncate block max-w-xs"
+                    >
+                      {item.fileUrl}
+                    </a>
+                  </td>
+                  <td class="py-3 px-4">
+                    <span class="rounded-full bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                      {item.category || 'Umum'}
+                    </span>
+                  </td>
+                  <td class="py-3 px-4 font-mono text-[11px] text-muted">
+                    <span class="font-semibold text-heading">{item.fileType || 'PDF'}</span> &bull; {item.fileSize || 'N/A'}
+                  </td>
+                  <td class="py-3 px-4 text-center font-mono font-bold text-heading">
+                    {item.downloadCount}x
+                  </td>
+                  <td class="py-3 px-4 text-center whitespace-nowrap">
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={item.isActive ? "true" : "false"}
+                      class:list={[
+                        "toggle-visibility-btn relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden",
+                        item.isActive ? "bg-primary" : "bg-border"
+                      ]}
+                      data-id={item.id}
+                      data-title={item.title}
+                      data-active={item.isActive ? "true" : "false"}
+                      title={item.isActive ? 'Aktif (Klik untuk sembunyikan)' : 'Disembunyikan (Klik untuk tampilkan)'}
+                      aria-label={`Status publikasi ${item.title}`}
+                    >
+                      <span class="sr-only">{item.isActive ? 'Aktif' : 'Disembunyikan'}</span>
+                      <span
+                        aria-hidden="true"
+                        class:list={[
+                          "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out",
+                          item.isActive ? "translate-x-4" : "translate-x-0"
+                        ]}
+                      />
+                    </button>
+                  </td>
+                  <td class="py-3 px-4 text-right">
+                    <div class="flex items-center justify-end gap-1.5 *:inline-flex *:h-7 *:w-7 *:items-center *:justify-center *:rounded-[6px] *:border *:border-border *:bg-surface *:transition-colors *:cursor-pointer">
+                      <button
+                        type="button"
+                        class="edit-btn text-muted hover:text-primary hover:border-primary/40 hover:bg-surface-subtle"
+                        data-item={JSON.stringify(item)}
+                        title="Edit Dokumen"
+                        aria-label="Edit Dokumen"
+                      >
+                        <Icon name="edit" class="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        class="delete-btn text-muted hover:text-error hover:border-error/40 hover:bg-error-light"
+                        data-id={item.id}
+                        data-title={item.title}
+                        title="Hapus Dokumen"
+                        aria-label="Hapus Dokumen"
+                      >
+                        <Icon name="trash" class="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+
+    <!-- Modal Form (Create / Edit) -->
+    <div id="modal-backdrop" class="fixed inset-0 bg-heading/40 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4">
+      <div class="rounded-[8px] border border-border bg-surface p-6 shadow-xl max-w-lg w-full space-y-4">
+        <div class="flex items-center justify-between border-b border-border pb-3">
+          <h3 id="modal-title" class="font-display text-sm font-bold text-heading">
+            Tambah Dokumen Resmi
+          </h3>
+          <button id="close-modal-btn" class="text-muted hover:text-heading cursor-pointer" type="button" aria-label="Tutup modal">
+            <Icon name="close" class="h-5 w-5" />
+          </button>
+        </div>
+
+        <form id="doc-form" class="space-y-4">
+          <input type="hidden" id="edit-id" name="id" value="" />
+
+          <div class="space-y-1">
+            <label for="title" class="block font-body text-xs font-semibold text-heading">
+              Nama Dokumen Resmi <span class="text-error">*</span>
+            </label>
+            <input
+              id="title"
+              name="title"
+              type="text"
+              required
+              placeholder="Contoh: Kalender Akademik Semester Ganjil 2026/2027"
+              class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading transition-colors"
+            />
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div class="space-y-1">
+              <label for="category" class="block font-body text-xs font-semibold text-heading">
+                Kategori Berkas
+              </label>
+              <select
+                id="category"
+                name="category"
+                class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading transition-colors"
+              >
+                <option value="Kalender Akademik">Kalender Akademik</option>
+                <option value="Formulir Pendaftaran">Formulir Pendaftaran</option>
+                <option value="Kurikulum & Silabus">Kurikulum & Silabus</option>
+                <option value="SK & Kebijakan">SK & Kebijakan</option>
+                <option value="Umum">Umum</option>
+              </select>
+            </div>
+
+            <div class="space-y-1">
+              <label for="fileType" class="block font-body text-xs font-semibold text-heading">
+                Tipe Format Berkas
+              </label>
+              <input
+                id="fileType"
+                name="fileType"
+                type="text"
+                placeholder="PDF / DOCX / XLSX"
+                value="PDF"
+                class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading font-mono transition-colors"
+              />
+            </div>
+          </div>
+
+          <!-- Uploader Berkas Dokumen -->
+          <div class="rounded-[6px] border border-border/80 bg-surface-subtle p-3 space-y-2">
+            <label class="block font-body text-[11px] font-semibold text-heading">
+              Unggah Berkas Baru (Maks 10 MB):
+            </label>
+            <div class="flex items-center gap-2">
+              <input
+                type="file"
+                id="doc-file-input"
+                accept=".pdf,.docx,.xlsx,.doc"
+                class="text-[11px] font-body text-muted file:mr-2 file:py-1 file:px-2.5 file:rounded-[4px] file:border-0 file:text-[10px] file:font-semibold file:bg-surface file:text-heading cursor-pointer"
+              />
+              <button
+                type="button"
+                id="upload-doc-btn"
+                class="inline-flex h-[28px] items-center justify-center rounded-[4px] border border-border bg-surface px-2.5 text-[11px] font-medium text-heading hover:bg-border shrink-0"
+              >
+                Unggah
+              </button>
+            </div>
+            <p id="doc-upload-status" class="text-[10px] text-muted font-mono"></p>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div class="space-y-1">
+              <label for="fileUrl" class="block font-body text-xs font-semibold text-heading">
+                URL Unduhan Berkas <span class="text-error">*</span>
+              </label>
+              <input
+                id="fileUrl"
+                name="fileUrl"
+                type="url"
+                required
+                placeholder="https://... atau terisi otomatis setelah unggah"
+                class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading font-mono transition-colors"
+              />
+            </div>
+
+            <div class="space-y-1">
+              <label for="fileSize" class="block font-body text-xs font-semibold text-heading">
+                Ukuran Berkas
+              </label>
+              <input
+                id="fileSize"
+                name="fileSize"
+                type="text"
+                placeholder="Contoh: 1.8 MB"
+                class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading font-mono transition-colors"
+              />
+            </div>
+          </div>
+
+          <div class="flex items-center justify-end gap-2 pt-2 border-t border-border">
+            <button
+              type="button"
+              id="cancel-btn"
+              class="h-[34px] rounded-[6px] border border-border bg-surface px-4 text-xs font-medium text-muted hover:bg-surface-subtle"
+            >
+              Batal
+            </button>
+            <button
+              type="submit"
+              id="save-btn"
+              class="h-[34px] rounded-[6px] bg-primary px-4 text-xs font-semibold text-white transition-all hover:bg-primary-hover shadow-xs"
+            >
+              Simpan Dokumen
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const modal = document.getElementById('modal-backdrop') as HTMLDivElement;
+    const openBtn = document.getElementById('open-modal-btn') as HTMLButtonElement;
+    const closeBtn = document.getElementById('close-modal-btn') as HTMLButtonElement;
+    const cancelBtn = document.getElementById('cancel-btn') as HTMLButtonElement;
+    const form = document.getElementById('doc-form') as HTMLFormElement;
+    const modalTitle = document.getElementById('modal-title') as HTMLHeadingElement;
+
+    const editIdInput = document.getElementById('edit-id') as HTMLInputElement;
+    const titleInput = document.getElementById('title') as HTMLInputElement;
+    const categorySelect = document.getElementById('category') as HTMLSelectElement;
+    const fileTypeInput = document.getElementById('fileType') as HTMLInputElement;
+    const fileUrlInput = document.getElementById('fileUrl') as HTMLInputElement;
+    const fileSizeInput = document.getElementById('fileSize') as HTMLInputElement;
+
+    const docFileInput = document.getElementById('doc-file-input') as HTMLInputElement;
+    const uploadDocBtn = document.getElementById('upload-doc-btn') as HTMLButtonElement;
+    const docUploadStatus = document.getElementById('doc-upload-status') as HTMLParagraphElement;
+
+    // Upload Helper
+    uploadDocBtn?.addEventListener('click', async () => {
+      const file = docFileInput.files?.[0];
+      if (!file) {
+        alert('Pilih berkas dokumen terlebih dahulu.');
+        return;
+      }
+
+      docUploadStatus.innerText = 'Mengunggah berkas...';
+      const fd = new FormData();
+      fd.append('file', file);
+
+      try {
+        const res = await fetch('/api/admin/upload', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (data.success) {
+          fileUrlInput.value = data.url;
+          const mb = (file.size / (1024 * 1024)).toFixed(1);
+          fileSizeInput.value = `${mb} MB`;
+          const ext = file.name.split('.').pop()?.toUpperCase() || 'PDF';
+          fileTypeInput.value = ext;
+          docUploadStatus.innerText = `Berhasil diunggah: ${data.url}`;
+        } else {
+          docUploadStatus.innerText = `Gagal: ${data.error || 'Terjadi kesalahan'}`;
+        }
+      } catch {
+        docUploadStatus.innerText = 'Gagal mengunggah berkas.';
+      }
+    });
+
+    function resetForm() {
+      editIdInput.value = '';
+      form.reset();
+      fileTypeInput.value = 'PDF';
+      modalTitle.innerText = 'Tambah Dokumen Resmi';
+      docUploadStatus.innerText = '';
+    }
+
+    openBtn?.addEventListener('click', () => {
+      resetForm();
+      modal.classList.remove('hidden');
+    });
+
+    closeBtn?.addEventListener('click', () => modal.classList.add('hidden'));
+    cancelBtn?.addEventListener('click', () => modal.classList.add('hidden'));
+
+    // Handle Edit
+    document.querySelectorAll('.edit-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const itemStr = (btn as HTMLElement).dataset.item;
+        if (!itemStr) return;
+        const item = JSON.parse(itemStr);
+
+        editIdInput.value = item.id;
+        titleInput.value = item.title || '';
+        categorySelect.value = item.category || 'Umum';
+        fileTypeInput.value = item.fileType || 'PDF';
+        fileUrlInput.value = item.fileUrl || '';
+        fileSizeInput.value = item.fileSize || '';
+
+        modalTitle.innerText = `Edit Dokumen #${item.id}`;
+        modal.classList.remove('hidden');
+      });
+    });
+
+    // Handle Delete
+    document.querySelectorAll('.delete-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = (btn as HTMLElement).dataset.id;
+        const confirmed = await (window as any).confirmDialog({
+          title: 'Hapus Dokumen',
+          message: 'Hapus dokumen ini dari repositori?\nTindakan ini tidak dapat dibatalkan.',
+          confirmText: 'Ya, Hapus',
+          cancelText: 'Batal',
+          type: 'danger',
+        });
+        if (!confirmed) return;
+
+        try {
+          const res = await fetch(`/api/admin/documents/${id}`, { method: 'DELETE' });
+          const result = await res.json();
+          if (result.success) {
+            document.getElementById(`row-${id}`)?.remove();
+            (window as any).showToast('Dokumen berhasil dihapus.', 'success');
+          } else {
+            (window as any).showToast(result.error || 'Gagal menghapus dokumen', 'error');
+          }
+        } catch {
+          (window as any).showToast('Gagal menghubungi server.', 'error');
+        }
+      });
+    });
+
+    // Handle Toggle Status Aktif/Nonaktif Dokumen
+    document.querySelectorAll('.toggle-visibility-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        const title = btn.getAttribute('data-title') || 'Dokumen';
+        const isCurrentlyActive = btn.getAttribute('data-active') === 'true';
+        if (!id) return;
+
+        (btn as HTMLButtonElement).disabled = true;
+        try {
+          const res = await fetch(`/api/admin/documents/${id}/toggle`, { method: 'PUT' });
+          const json = await res.json();
+          if (json.success) {
+            const nextActive = !isCurrentlyActive;
+            btn.setAttribute('data-active', String(nextActive));
+            btn.setAttribute('aria-checked', String(nextActive));
+            btn.className = `toggle-visibility-btn relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${nextActive ? 'bg-primary' : 'bg-border'}`;
+            btn.setAttribute('title', nextActive ? 'Aktif (Klik untuk sembunyikan)' : 'Disembunyikan (Klik untuk tampilkan)');
+            const thumb = btn.querySelector('span[aria-hidden="true"]');
+            if (thumb) {
+              thumb.className = `pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out ${nextActive ? 'translate-x-4' : 'translate-x-0'}`;
+            }
+            if (typeof (window as any).showToast === 'function') {
+              (window as any).showToast(`Status "${title}" berhasil diubah menjadi ${nextActive ? 'Aktif' : 'Disembunyikan'}.`, 'success');
+            }
+          } else {
+            if (typeof (window as any).showToast === 'function') {
+              (window as any).showToast(json.error || 'Gagal mengubah status', 'error');
+            }
+          }
+        } catch {
+          if (typeof (window as any).showToast === 'function') {
+            (window as any).showToast('Gangguan jaringan saat mengubah status', 'error');
+          }
+        } finally {
+          (btn as HTMLButtonElement).disabled = false;
+        }
+      });
+    });
+
+    // Handle Form Submit
+    form?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const id = editIdInput.value;
+      const isEdit = Boolean(id);
+      const url = isEdit ? `/api/admin/documents/${id}` : '/api/admin/documents';
+      const method = isEdit ? 'PUT' : 'POST';
+
+      const payload = {
+        title: titleInput.value,
+        category: categorySelect.value || 'Umum',
+        fileType: fileTypeInput.value || 'PDF',
+        fileUrl: fileUrlInput.value,
+        fileSize: fileSizeInput.value || null,
+      };
+
+      try {
+        const res = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          modal.classList.add('hidden');
+          window.location.reload();
+        } else {
+          alert(data.error || 'Gagal menyimpan dokumen.');
+        }
+      } catch {
+        alert('Terjadi kesalahan jaringan.');
+      }
+    });
+  </script>
+</AdminLayout>

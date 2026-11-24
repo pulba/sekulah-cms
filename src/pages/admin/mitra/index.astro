@@ -1,0 +1,851 @@
+---
+import AdminLayout from "../../../layouts/AdminLayout.astro";
+import MediaPickerModal from "../../../components/MediaPickerModal.astro";
+import Pagination from "../../../components/Pagination.astro";
+import Icon from "../../../components/Icon.astro";
+import { db, partners } from "../../../db";
+import { asc, desc, eq, and, or, like, sql } from "drizzle-orm";
+
+export const prerender = false;
+
+// Query parameter filter & pagination
+const currentCategory = Astro.url.searchParams.get("kategori") || "all";
+const searchQuery = Astro.url.searchParams.get("q") || "";
+const currentPage = Math.max(
+  1,
+  parseInt(Astro.url.searchParams.get("page") || "1", 10) || 1,
+);
+const pageSize = 10;
+
+// Daftar kategori default mitra kerja sama
+const defaultCategories = [
+  "Perguruan Tinggi",
+  "Industri & BUMN",
+  "Instansi Pemerintah",
+  "Organisasi & Komunitas",
+];
+
+// Hitung total keseluruhan
+const totalCount = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(partners)
+  .then((r) => Number(r[0]?.count || 0));
+
+// Hitung jumlah per kategori aktual
+const categoryCountsRaw = await db
+  .select({
+    category: partners.category,
+    count: sql<number>`count(*)`,
+  })
+  .from(partners)
+  .groupBy(partners.category)
+  .catch(() => []);
+
+const categoryCounts = (categoryCountsRaw || []).reduce(
+  (acc: Record<string, number>, row: any) => {
+    if (row.category) {
+      acc[row.category] = Number(row.count) || 0;
+    }
+    return acc;
+  },
+  {} as Record<string, number>,
+);
+
+// Kategori mengikuti data aktual digabung default
+const usedCategories = Object.keys(categoryCounts).filter(Boolean);
+const categories =
+  usedCategories.length > 0
+    ? Array.from(new Set([...usedCategories, ...defaultCategories]))
+    : defaultCategories;
+
+// Build filter query
+const conditions: any[] = [];
+if (currentCategory && currentCategory !== "all") {
+  conditions.push(eq(partners.category, currentCategory));
+}
+
+if (searchQuery) {
+  const queryPattern = `%${searchQuery.trim()}%`;
+  conditions.push(
+    or(
+      like(partners.name, queryPattern),
+      like(partners.category, queryPattern),
+      like(partners.description, queryPattern),
+      like(partners.websiteUrl, queryPattern),
+    ),
+  );
+}
+
+const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+const totalFiltered = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(partners)
+  .where(whereClause)
+  .then((r) => Number(r[0]?.count || 0));
+
+const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
+const validPage = Math.min(currentPage, totalPages);
+const offset = (validPage - 1) * pageSize;
+
+const partnerList = await db
+  .select()
+  .from(partners)
+  .where(whereClause)
+  .orderBy(asc(partners.orderNumber), desc(partners.id))
+  .limit(pageSize)
+  .offset(offset)
+  .catch(() => []);
+
+function getPageUrl(p: number) {
+  const params = new URLSearchParams();
+  if (currentCategory && currentCategory !== "all")
+    params.set("kategori", currentCategory);
+  if (searchQuery) params.set("q", searchQuery);
+  if (p > 1) params.set("page", String(p));
+  const qs = params.toString();
+  return `/admin/mitra${qs ? `?${qs}` : ""}`;
+}
+---
+
+<AdminLayout title="Manajemen Mitra & Kerja Sama" activeNav="mitra">
+  <div class="space-y-6 max-w-6xl">
+    <!-- Header Page -->
+    <div class="pb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <h1 class="font-display text-2xl font-bold tracking-tight text-heading">
+          Katalog Mitra & Kerja Sama
+        </h1>
+        <p class="mt-1 font-body text-xs text-muted">
+          Kelola kemitraan perguruan tinggi, industri, instansi pemerintah, dan rekanan institusi.
+        </p>
+      </div>
+      <button
+        type="button"
+        id="open-partner-modal-btn"
+        class="inline-flex h-[36px] items-center justify-center gap-1.5 rounded-[6px] bg-primary px-4 text-xs font-semibold text-white transition-all hover:bg-primary-hover shadow-xs shrink-0 cursor-pointer"
+      >
+        <Icon name="plus" class="h-4 w-4" />
+        <span>Tambah Mitra</span>
+      </button>
+    </div>
+
+    <!-- Alert / Toast Banner -->
+    <div
+      id="status-banner"
+      class="hidden rounded-[6px] p-3 text-xs font-medium transition-all"
+    ></div>
+
+    <!-- Tab Filter & Pencarian -->
+    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-4">
+      <!-- Category Tabs (Zero-Load Segmented Control) -->
+      <div
+        class="flex flex-wrap items-center gap-1.5 overflow-x-auto no-scrollbar"
+        role="tablist"
+        aria-label="Filter kategori mitra"
+      >
+        <a
+          href={`/admin/mitra${searchQuery ? `?q=${encodeURIComponent(searchQuery)}` : ""}`}
+          class:list={[
+            "inline-flex h-[32px] items-center gap-1.5 rounded-[6px] px-3 text-xs transition-colors",
+            currentCategory === "all"
+              ? "bg-primary font-semibold text-white"
+              : "border border-border bg-surface font-medium text-muted hover:border-heading hover:text-heading",
+          ]}
+        >
+          <span>Semua</span>
+          <span class="font-mono text-[10px] opacity-80">({totalCount})</span>
+        </a>
+        {categories.map((cat) => {
+          const count = categoryCounts[cat] || 0;
+          const isActive = currentCategory === cat;
+          const targetUrl = `/admin/mitra?kategori=${encodeURIComponent(cat)}${searchQuery ? `&q=${encodeURIComponent(searchQuery)}` : ""}`;
+          return (
+            <a
+              href={targetUrl}
+              class:list={[
+                "inline-flex h-[32px] items-center gap-1.5 rounded-[6px] px-3 text-xs transition-colors",
+                isActive
+                  ? "bg-primary font-semibold text-white"
+                  : "border border-border bg-surface font-medium text-muted hover:border-heading hover:text-heading",
+              ]}
+            >
+              <span>{cat}</span>
+              {count > 0 && (
+                <span class="font-mono text-[10px] opacity-80">({count})</span>
+              )}
+            </a>
+          );
+        })}
+      </div>
+
+      <!-- Search Input -->
+      <form
+        method="GET"
+        action="/admin/mitra"
+        class="flex items-center gap-2 shrink-0 w-full lg:w-auto"
+      >
+        {currentCategory !== "all" && (
+          <input type="hidden" name="kategori" value={currentCategory} />
+        )}
+        <div class="relative flex-1 lg:w-72">
+          <input
+            type="search"
+            name="q"
+            value={searchQuery}
+            placeholder="Cari nama mitra, kategori, website..."
+            class="h-[36px] w-full rounded-[6px] border border-border bg-surface pl-9 pr-3 text-xs text-heading placeholder:text-muted/60 transition-colors"
+          />
+          <Icon
+            name="search"
+            class="h-4 w-4 absolute left-2.5 top-2.5 text-muted pointer-events-none"
+          />
+        </div>
+        {searchQuery && (
+          <a
+            href={`/admin/mitra${currentCategory !== "all" ? `?kategori=${encodeURIComponent(currentCategory)}` : ""}`}
+            class="h-[36px] inline-flex items-center justify-center rounded-[6px] border border-border bg-surface px-3 text-xs text-muted hover:text-heading hover:bg-surface-subtle transition-colors shrink-0"
+            title="Reset Pencarian"
+            aria-label="Reset pencarian"
+          >
+            ✕
+          </a>
+        )}
+      </form>
+    </div>
+
+    <!-- Tabel Data Mitra -->
+    <div class="overflow-x-auto rounded-[8px] border border-border bg-surface shadow-xs">
+      <table class="w-full min-w-[800px] text-left font-body text-xs">
+        <thead class="bg-surface-subtle text-[11px] font-semibold uppercase tracking-wider text-muted">
+          <tr>
+            <th class="px-4 py-3 w-14 text-center">No.</th>
+            <th class="px-4 py-3 w-24">Logo</th>
+            <th class="px-4 py-3 min-w-[240px]">Nama Mitra & Tautan</th>
+            <th class="px-4 py-3 w-40 whitespace-nowrap">Kategori</th>
+            <th class="px-4 py-3 min-w-[200px]">Catatan Kerja Sama</th>
+            <th class="px-4 py-3 w-28 whitespace-nowrap">Status</th>
+            <th class="px-4 py-3 w-24 text-right whitespace-nowrap">Aksi</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-border">
+          {partnerList.length === 0 ? (
+            <tr>
+              <td colspan="7" class="px-5 py-14 text-center">
+                <div class="mx-auto max-w-sm flex flex-col items-center justify-center text-center">
+                  <div class="h-10 w-10 rounded-full bg-surface-subtle border border-border flex items-center justify-center text-muted mb-3">
+                    <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                    </svg>
+                  </div>
+                  <p class="font-semibold text-heading text-sm">
+                    {searchQuery || currentCategory !== "all"
+                      ? "Tidak ada hasil yang sesuai"
+                      : "Belum ada mitra kerja sama"}
+                  </p>
+                  <p class="text-xs text-muted mt-1 leading-relaxed">
+                    {searchQuery || currentCategory !== "all"
+                      ? "Tidak ditemukan mitra yang cocok dengan filter saat ini."
+                      : "Daftar mitra kerja sama masih kosong. Silakan tambahkan mitra pertama."}
+                  </p>
+                  {searchQuery || currentCategory !== "all" ? (
+                    <a
+                      href="/admin/mitra"
+                      class="mt-3.5 inline-flex h-[32px] items-center justify-center rounded-[6px] border border-border bg-surface px-3 text-xs font-medium text-heading hover:bg-surface-subtle transition-colors"
+                    >
+                      Reset Semua Filter
+                    </a>
+                  ) : (
+                    <button
+                      type="button"
+                      onclick="document.getElementById('open-partner-modal-btn')?.click()"
+                      class="mt-3.5 inline-flex h-[32px] items-center justify-center rounded-[6px] bg-primary px-3 text-xs font-semibold text-white hover:bg-primary-hover transition-colors cursor-pointer"
+                    >
+                      Tambah Mitra Pertama
+                    </button>
+                  )}
+                </div>
+              </td>
+            </tr>
+          ) : (
+            partnerList.map((item, index) => (
+              <tr class="transition-colors hover:bg-surface-subtle" id={`row-${item.id}`}>
+                <!-- No. -->
+                <td class="px-4 py-3.5 text-center font-mono text-xs text-muted font-medium">
+                  {(validPage - 1) * pageSize + index + 1}
+                </td>
+
+                <!-- Logo (Thumbnail 64x36 px) -->
+                <td class="px-4 py-3.5 whitespace-nowrap">
+                  <div class="h-9 w-16 rounded-[6px] overflow-hidden bg-surface-subtle border border-border p-1 shrink-0 flex items-center justify-center">
+                    {item.logoUrl ? (
+                      <img
+                        src={item.logoUrl}
+                        alt={item.name}
+                        class="h-full w-full object-contain"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <span class="text-[9px] text-muted font-mono uppercase">No Logo</span>
+                    )}
+                  </div>
+                </td>
+
+                <!-- Nama & Website -->
+                <td class="px-4 py-3.5">
+                  <div class="max-w-xs">
+                    <button
+                      type="button"
+                      class="edit-btn font-bold text-heading text-xs hover:text-primary hover:underline text-left truncate block cursor-pointer transition-colors"
+                      data-item={JSON.stringify(item)}
+                      title={`Edit mitra: ${item.name}`}
+                    >
+                      {item.name}
+                    </button>
+                    {item.websiteUrl ? (
+                      <a
+                        href={item.websiteUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="text-[11px] text-primary hover:underline truncate block mt-0.5"
+                      >
+                        {item.websiteUrl.replace(/^https?:\/\//, '')}
+                      </a>
+                    ) : (
+                      <span class="text-[11px] text-muted">-</span>
+                    )}
+                  </div>
+                </td>
+
+                <!-- Kategori -->
+                <td class="px-4 py-3.5 whitespace-nowrap">
+                  <span class="inline-flex items-center rounded-[4px] border border-border bg-surface-subtle px-2 py-0.5 text-[11px] font-medium text-muted">
+                    {item.category}
+                  </span>
+                </td>
+
+                <!-- Catatan Kerja Sama -->
+                <td class="px-4 py-3.5">
+                  <p class="text-xs text-body line-clamp-2 max-w-sm">
+                    {item.description || "-"}
+                  </p>
+                </td>
+
+                <!-- Status Switch Toggle (Rule 11) -->
+                <td class="px-4 py-3.5 whitespace-nowrap">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={item.isActive ? "true" : "false"}
+                    class:list={[
+                      "toggle-status-btn relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                      item.isActive ? "bg-primary" : "bg-border",
+                    ]}
+                    data-id={item.id}
+                    title={item.isActive ? "Klik untuk menonaktifkan" : "Klik untuk mengaktifkan"}
+                  >
+                    <span
+                      class:list={[
+                        "pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-xs transition duration-200 ease-in-out",
+                        item.isActive ? "translate-x-4" : "translate-x-0",
+                      ]}
+                    />
+                  </button>
+                </td>
+
+                <!-- Aksi Icon-Only (Rule 12) -->
+                <td class="px-4 py-3.5 text-right whitespace-nowrap">
+                  <div class="inline-flex items-center gap-1 *:inline-flex *:h-7 *:w-7 *:items-center *:justify-center *:rounded-[6px] *:border *:transition-colors *:cursor-pointer">
+                    <button
+                      type="button"
+                      class="edit-btn border-border bg-surface text-muted hover:text-primary hover:border-primary/40 hover:bg-surface-subtle"
+                      data-item={JSON.stringify(item)}
+                      title="Edit mitra"
+                      aria-label="Edit mitra"
+                    >
+                      <Icon name="edit" class="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      class="delete-btn border-border bg-surface text-muted hover:text-error hover:border-error/40 hover:bg-error-light"
+                      data-id={item.id}
+                      data-name={item.name}
+                      title="Hapus mitra"
+                      aria-label="Hapus mitra"
+                    >
+                      <Icon name="trash" class="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+
+      <!-- Pagination Komponen Terpusat -->
+      <Pagination
+        validPage={validPage}
+        totalPages={totalPages}
+        totalItems={totalFiltered}
+        pageSize={pageSize}
+        itemLabel="mitra"
+        getPageUrl={getPageUrl}
+      />
+    </div>
+  </div>
+
+  <!-- Modal Form Tambah / Edit Mitra -->
+  <div
+    id="partner-modal"
+    class="fixed inset-0 z-50 hidden bg-heading/40 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto"
+  >
+    <div
+      class="relative w-full max-w-lg rounded-[12px] border border-border bg-surface shadow-2xl p-6 transition-all"
+    >
+      <div class="flex items-center justify-between pb-4">
+        <div>
+          <h2 id="modal-title" class="font-display text-lg font-bold text-heading">
+            Tambah Mitra Kerja Sama
+          </h2>
+          <p class="text-xs text-muted mt-0.5">
+            Lengkapi profil mitra, logo institusi, dan tautan kerja sama resmi.
+          </p>
+        </div>
+        <button
+          type="button"
+          id="close-modal-btn"
+          class="h-8 w-8 inline-flex items-center justify-center rounded-[6px] text-muted hover:text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+        >
+          <Icon name="close" class="h-4 w-4" />
+        </button>
+      </div>
+
+      <form id="partner-form" class="space-y-4">
+        <input type="hidden" id="partner-id" name="id" value="" />
+
+        <!-- Nama Mitra -->
+        <div class="space-y-1.5">
+          <label for="partner-name" class="block font-body text-xs font-semibold text-heading">
+            Nama Mitra / Perusahaan / Kampus <span class="text-error">*</span>
+          </label>
+          <input
+            type="text"
+            id="partner-name"
+            required
+            placeholder="Contoh: Institut Teknologi Bandung / PT Telkom"
+            class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 text-xs text-heading placeholder:text-muted/60 transition-colors"
+          />
+        </div>
+
+        <!-- Kategori & Urutan -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="space-y-1.5">
+            <label for="partner-category" class="block font-body text-xs font-semibold text-heading">
+              Kategori Kemitraan <span class="text-error">*</span>
+            </label>
+            <select
+              id="partner-category"
+              required
+              class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 text-xs text-heading transition-colors"
+            >
+              {defaultCategories.map((c) => (
+                <option value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+
+          <div class="space-y-1.5">
+            <label for="partner-order" class="block font-body text-xs font-semibold text-heading">
+              Urutan Prioritas
+            </label>
+            <input
+              type="number"
+              id="partner-order"
+              min="0"
+              value="0"
+              class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 text-xs text-heading transition-colors"
+            />
+          </div>
+        </div>
+
+        <!-- Website URL -->
+        <div class="space-y-1.5">
+          <label for="partner-website" class="block font-body text-xs font-semibold text-heading">
+            Tautan / Website Resmi
+          </label>
+          <input
+            type="url"
+            id="partner-website"
+            placeholder="https://..."
+            class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 text-xs text-heading placeholder:text-muted/60 transition-colors"
+          />
+        </div>
+
+        <!-- Logo Mitra (Media Picker Integration) -->
+        <div class="space-y-1.5">
+          <label class="block font-body text-xs font-semibold text-heading">
+            Logo Mitra <span class="text-error">*</span>
+          </label>
+          <div class="flex items-center gap-3">
+            <div
+              id="logo-preview-box"
+              class="h-14 w-24 rounded-[6px] border border-border bg-surface-subtle p-1 flex items-center justify-center shrink-0 overflow-hidden"
+            >
+              <img
+                id="partner-logo-preview"
+                src=""
+                alt="Preview Logo"
+                class="hidden h-full w-full object-contain"
+              />
+              <span id="logo-preview-placeholder" class="text-[10px] text-muted font-mono">No Logo</span>
+            </div>
+            <div class="space-y-1 flex-1">
+              <input type="hidden" id="partner-logo-url" required />
+              <button
+                type="button"
+                id="choose-logo-btn"
+                class="h-[34px] inline-flex items-center justify-center gap-1.5 rounded-[6px] border border-border bg-surface px-3 text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+              >
+                <Icon name="search" class="h-3.5 w-3.5 text-muted" />
+                <span>Pilih dari Pustaka Media</span>
+              </button>
+              <p class="text-[11px] text-muted">Format PNG transparan atau SVG resolusi tajam disarankan.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Deskripsi / Catatan Kerja Sama -->
+        <div class="space-y-1.5">
+          <label for="partner-desc" class="block font-body text-xs font-semibold text-heading">
+            Catatan Kerja Sama / MoU (Opsional)
+          </label>
+          <textarea
+            id="partner-desc"
+            rows="3"
+            placeholder="Ruang lingkup kerja sama, program beasiswa, magang siswa, atau rekrutmen lulusan..."
+            class="w-full rounded-[6px] border border-border bg-surface p-3 text-xs text-heading placeholder:text-muted/60 transition-colors"
+          ></textarea>
+        </div>
+
+        <!-- Status Aktif Switch -->
+        <div class="flex items-center justify-between pt-1">
+          <span class="text-xs font-medium text-heading">Tampilkan di Publik</span>
+          <button
+            type="button"
+            id="partner-is-active-btn"
+            role="switch"
+            aria-checked="true"
+            class="relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent bg-primary transition-colors duration-200 ease-in-out focus:outline-none"
+          >
+            <span
+              id="partner-is-active-thumb"
+              class="pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-xs transition duration-200 ease-in-out translate-x-4"
+            ></span>
+          </button>
+        </div>
+
+        <!-- Action Buttons (Rule 14: 3-State Save Button) -->
+        <div class="flex items-center justify-end gap-2 pt-4">
+          <button
+            type="button"
+            id="cancel-modal-btn"
+            class="h-[36px] px-4 rounded-[6px] border border-border text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+          >
+            Batal
+          </button>
+          <button
+            type="submit"
+            id="save-partner-btn"
+            class="inline-flex h-[36px] items-center justify-center gap-2 rounded-[6px] bg-primary px-4 text-xs font-semibold text-white hover:bg-primary-hover shadow-xs transition-colors cursor-pointer disabled:pointer-events-none disabled:opacity-50"
+          >
+            <Icon name="check" id="save-icon" class="h-4 w-4" />
+            <span id="save-spinner" class="hidden animate-spin">↻</span>
+            <span id="save-text">Simpan Mitra</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal Konfirmasi Hapus -->
+  <div
+    id="delete-modal"
+    class="fixed inset-0 z-50 hidden bg-heading/40 backdrop-blur-xs flex items-center justify-center p-4"
+  >
+    <div
+      class="w-full max-w-sm rounded-[12px] border border-border bg-surface shadow-2xl p-6 text-center space-y-4"
+    >
+      <div
+        class="h-10 w-10 rounded-full bg-error-light text-error flex items-center justify-center mx-auto"
+      >
+        <Icon name="trash" class="h-5 w-5" />
+      </div>
+      <div>
+        <h3 class="font-display text-base font-bold text-heading">Hapus Mitra Kerja Sama?</h3>
+        <p class="text-xs text-muted mt-1 leading-relaxed">
+          Mitra <strong id="delete-partner-name" class="text-heading"></strong> akan dihapus permanen dari sistem.
+        </p>
+      </div>
+      <div class="flex items-center justify-center gap-2 pt-2">
+        <button
+          type="button"
+          id="cancel-delete-btn"
+          class="h-[36px] px-4 rounded-[6px] border border-border text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+        >
+          Batal
+        </button>
+        <button
+          type="button"
+          id="confirm-delete-btn"
+          class="h-[36px] px-4 rounded-[6px] bg-error text-xs font-semibold text-white hover:opacity-90 transition-colors cursor-pointer"
+        >
+          Ya, Hapus
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Media Picker Modal Component -->
+  <MediaPickerModal id="logo-media-picker" accept="image" />
+
+  <script is:inline>
+    const modal = document.getElementById("partner-modal");
+    const openModalBtn = document.getElementById("open-partner-modal-btn");
+    const closeModalBtn = document.getElementById("close-modal-btn");
+    const cancelModalBtn = document.getElementById("cancel-modal-btn");
+    const form = document.getElementById("partner-form");
+    const modalTitle = document.getElementById("modal-title");
+
+    const idInput = document.getElementById("partner-id");
+    const nameInput = document.getElementById("partner-name");
+    const categoryInput = document.getElementById("partner-category");
+    const orderInput = document.getElementById("partner-order");
+    const websiteInput = document.getElementById("partner-website");
+    const descInput = document.getElementById("partner-desc");
+    const logoInput = document.getElementById("partner-logo-url");
+    const logoPreview = document.getElementById("partner-logo-preview");
+    const logoPlaceholder = document.getElementById("logo-preview-placeholder");
+    const chooseLogoBtn = document.getElementById("choose-logo-btn");
+
+    const isActiveBtn = document.getElementById("partner-is-active-btn");
+    const isActiveThumb = document.getElementById("partner-is-active-thumb");
+    let currentIsActive = true;
+
+    const saveBtn = document.getElementById("save-partner-btn");
+    const saveIcon = document.getElementById("save-icon");
+    const saveSpinner = document.getElementById("save-spinner");
+    const saveText = document.getElementById("save-text");
+    const statusBanner = document.getElementById("status-banner");
+
+    const deleteModal = document.getElementById("delete-modal");
+    const deletePartnerName = document.getElementById("delete-partner-name");
+    const cancelDeleteBtn = document.getElementById("cancel-delete-btn");
+    const confirmDeleteBtn = document.getElementById("confirm-delete-btn");
+    let pendingDeleteId = null;
+
+    function showStatus(msg, type = "success") {
+      if (!statusBanner) return;
+      statusBanner.textContent = msg;
+      statusBanner.className =
+        type === "success"
+          ? "rounded-[6px] p-3 text-xs font-medium bg-success-light text-success border border-success/30 transition-all"
+          : "rounded-[6px] p-3 text-xs font-medium bg-error-light text-error border border-error/30 transition-all";
+      statusBanner.classList.remove("hidden");
+      setTimeout(() => statusBanner.classList.add("hidden"), 3000);
+    }
+
+    function setIsActive(val) {
+      currentIsActive = !!val;
+      if (isActiveBtn && isActiveThumb) {
+        isActiveBtn.setAttribute("aria-checked", currentIsActive ? "true" : "false");
+        if (currentIsActive) {
+          isActiveBtn.classList.remove("bg-border");
+          isActiveBtn.classList.add("bg-primary");
+          isActiveThumb.classList.remove("translate-x-0");
+          isActiveThumb.classList.add("translate-x-4");
+        } else {
+          isActiveBtn.classList.remove("bg-primary");
+          isActiveBtn.classList.add("bg-border");
+          isActiveThumb.classList.remove("translate-x-4");
+          isActiveThumb.classList.add("translate-x-0");
+        }
+      }
+    }
+
+    isActiveBtn?.addEventListener("click", () => {
+      setIsActive(!currentIsActive);
+    });
+
+    function setLogo(url) {
+      if (!logoInput) return;
+      logoInput.value = url || "";
+      if (url) {
+        if (logoPreview) {
+          logoPreview.src = url;
+          logoPreview.classList.remove("hidden");
+        }
+        logoPlaceholder?.classList.add("hidden");
+      } else {
+        logoPreview?.classList.add("hidden");
+        logoPlaceholder?.classList.remove("hidden");
+      }
+    }
+
+    chooseLogoBtn?.addEventListener("click", () => {
+      if (window.openMediaPicker) {
+        window.openMediaPicker((media) => {
+          const picked = media?.fileUrl || media?.url || media?.mediumUrl || "";
+          if (picked) setLogo(picked);
+        });
+      }
+    });
+
+    function openModal(item = null) {
+      if (!modal) return;
+      if (item && item.id) {
+        if (modalTitle) modalTitle.textContent = "Edit Mitra Kerja Sama";
+        idInput.value = item.id;
+        nameInput.value = item.name || "";
+        categoryInput.value = item.category || "Perguruan Tinggi";
+        orderInput.value = item.orderNumber || 0;
+        websiteInput.value = item.websiteUrl || "";
+        descInput.value = item.description || "";
+        setLogo(item.logoUrl || "");
+        setIsActive(item.isActive !== false);
+      } else {
+        if (modalTitle) modalTitle.textContent = "Tambah Mitra Kerja Sama";
+        form?.reset();
+        idInput.value = "";
+        orderInput.value = 0;
+        setLogo("");
+        setIsActive(true);
+      }
+      modal.classList.remove("hidden");
+      nameInput?.focus();
+    }
+
+    openModalBtn?.addEventListener("click", () => openModal());
+    closeModalBtn?.addEventListener("click", () => modal?.classList.add("hidden"));
+    cancelModalBtn?.addEventListener("click", () => modal?.classList.add("hidden"));
+
+    document.querySelectorAll(".edit-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        try {
+          const item = JSON.parse(btn.getAttribute("data-item") || "{}");
+          openModal(item);
+        } catch {}
+      });
+    });
+
+    // Form Submit
+    form?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const id = idInput.value;
+      const payload = {
+        name: nameInput.value.trim(),
+        category: categoryInput.value,
+        orderNumber: Number(orderInput.value) || 0,
+        websiteUrl: websiteInput.value.trim() || null,
+        description: descInput.value.trim() || null,
+        logoUrl: logoInput.value.trim(),
+        isActive: currentIsActive,
+      };
+
+      if (!payload.logoUrl) {
+        alert("Pilih logo mitra terlebih dahulu");
+        return;
+      }
+
+      saveBtn.disabled = true;
+      saveIcon?.classList.add("hidden");
+      saveSpinner?.classList.remove("hidden");
+      if (saveText) saveText.textContent = "Menyimpan...";
+
+      try {
+        const url = id ? `/api/admin/partners/${id}` : "/api/admin/partners";
+        const method = id ? "PUT" : "POST";
+        const res = await fetch(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const json = await res.json();
+        if (json.success) {
+          if (saveText) saveText.textContent = "✓ Tersimpan";
+          setTimeout(() => {
+            window.location.reload();
+          }, 400);
+        } else {
+          showStatus(json.error || "Gagal menyimpan data mitra", "error");
+          saveBtn.disabled = false;
+          saveIcon?.classList.remove("hidden");
+          saveSpinner?.classList.add("hidden");
+          if (saveText) saveText.textContent = "Simpan Mitra";
+        }
+      } catch {
+        showStatus("Koneksi server gagal", "error");
+        saveBtn.disabled = false;
+        saveIcon?.classList.remove("hidden");
+        saveSpinner?.classList.add("hidden");
+        if (saveText) saveText.textContent = "Simpan Mitra";
+      }
+    });
+
+    // Toggle Status
+    document.querySelectorAll(".toggle-status-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.getAttribute("data-id");
+        if (!id) return;
+        try {
+          const res = await fetch(`/api/admin/partners/${id}/toggle`, { method: "PUT" });
+          const json = await res.json();
+          if (json.success) {
+            window.location.reload();
+          } else {
+            showStatus(json.error || "Gagal mengubah status", "error");
+          }
+        } catch {
+          showStatus("Koneksi server gagal", "error");
+        }
+      });
+    });
+
+    // Delete Modal
+    document.querySelectorAll(".delete-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.getAttribute("data-id");
+        const name = btn.getAttribute("data-name");
+        if (!id) return;
+        pendingDeleteId = id;
+        if (deletePartnerName) deletePartnerName.textContent = `"${name || "ini"}"`;
+        deleteModal?.classList.remove("hidden");
+      });
+    });
+
+    cancelDeleteBtn?.addEventListener("click", () => {
+      deleteModal?.classList.add("hidden");
+      pendingDeleteId = null;
+    });
+
+    confirmDeleteBtn?.addEventListener("click", async () => {
+      if (!pendingDeleteId) return;
+      confirmDeleteBtn.disabled = true;
+      try {
+        const res = await fetch(`/api/admin/partners/${pendingDeleteId}`, { method: "DELETE" });
+        const json = await res.json();
+        if (json.success) {
+          window.location.reload();
+        } else {
+          deleteModal?.classList.add("hidden");
+          showStatus(json.error || "Gagal menghapus mitra", "error");
+        }
+      } catch {
+        deleteModal?.classList.add("hidden");
+        showStatus("Koneksi server gagal", "error");
+      } finally {
+        confirmDeleteBtn.disabled = false;
+      }
+    });
+  </script>
+</AdminLayout>

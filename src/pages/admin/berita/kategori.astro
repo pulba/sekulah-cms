@@ -1,0 +1,219 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import Breadcrumb from '../../../components/Breadcrumb.astro';
+import { db, categories, articles } from '../../../db';
+import { sql, isNull } from 'drizzle-orm';
+
+export const prerender = false;
+
+const categoryList = await db
+  .select({
+    id: categories.id,
+    name: categories.name,
+    slug: categories.slug,
+    createdAt: categories.createdAt,
+    articleCount: sql<number>`(SELECT count(*) FROM ${articles} WHERE ${articles.categoryId} = ${categories.id} AND ${articles.deletedAt} IS NULL)`,
+  })
+  .from(categories)
+  .orderBy(categories.name);
+---
+
+<AdminLayout title="Kelola Kategori Berita" activeNav="berita">
+  <div class="space-y-6 max-w-5xl">
+    <!-- Header Page -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-6">
+      <div>
+        <Breadcrumb
+          class="mb-2"
+          items={[
+            { label: 'Manajemen Berita', href: '/admin/berita' },
+            { label: 'Kategori' },
+          ]}
+        />
+        <h1 class="font-display text-2xl font-bold tracking-tight text-heading">
+          Kategori Berita & Artikel
+        </h1>
+        <p class="mt-1 font-body text-xs text-muted">
+          Kelola taksonomi kategori untuk mempermudah pencarian dan pengelompokan publikasi sekolah.
+        </p>
+      </div>
+
+      <a
+        href="/admin/berita"
+        class="inline-flex h-[36px] items-center justify-center rounded-[6px] border border-border bg-surface px-4 font-body text-xs font-medium text-heading hover:bg-surface-subtle"
+      >
+        &larr; Kembali ke Daftar Berita
+      </a>
+    </div>
+
+    <!-- Layout 2 Kolom: Form Tambah Kategori (4 Kolom) & Daftar Kategori (8 Kolom) -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+      <!-- Form Tambah (5 Kolom) -->
+      <div class="lg:col-span-5 rounded-[8px] border border-border bg-surface p-6 space-y-4 shadow-xs">
+        <h2 class="font-display text-sm font-bold text-heading border-b border-border pb-3">
+          Tambah Kategori Baru
+        </h2>
+
+        <div id="form-error" class="hidden rounded-[6px] border border-error/20 bg-error-light p-3 text-xs text-error-text font-medium"></div>
+
+        <form id="category-form" class="space-y-4">
+          <div class="space-y-1.5 *:block *:text-xs">
+            <label for="cat-name" class="font-body font-semibold text-heading">
+              Nama Kategori <span class="text-error">*</span>
+            </label>
+            <input
+              id="cat-name"
+              name="name"
+              type="text"
+              required
+              placeholder="Contoh: Ekstrakurikuler"
+              class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-heading placeholder:text-muted/60 transition-colors"
+            />
+          </div>
+
+          <div class="space-y-1.5 *:block *:text-xs">
+            <label for="cat-slug" class="font-body font-semibold text-heading">
+              Slug Kategori <span class="text-muted font-normal">(Otomatis/Opsional)</span>
+            </label>
+            <input
+              id="cat-slug"
+              name="slug"
+              type="text"
+              placeholder="ekstrakurikuler"
+              class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 font-mono text-heading placeholder:text-muted/60 transition-colors"
+            />
+          </div>
+
+          <button
+            type="submit"
+            id="cat-submit-btn"
+            class="inline-flex h-[38px] w-full items-center justify-center rounded-[6px] bg-primary font-body text-xs font-semibold text-white transition-all hover:bg-primary-hover shadow-xs"
+          >
+            Simpan Kategori
+          </button>
+        </form>
+      </div>
+
+      <!-- Tabel Kategori (7 Kolom) -->
+      <div class="lg:col-span-7 rounded-[8px] border border-border bg-surface overflow-hidden shadow-xs">
+        <div class="p-4 border-b border-border bg-surface-subtle flex items-center justify-between">
+          <h2 class="font-display text-xs font-semibold uppercase tracking-wider text-muted">
+            Daftar Kategori Aktif ({categoryList.length})
+          </h2>
+        </div>
+
+        <table class="w-full text-left font-body text-xs">
+          <thead class="border-b border-border bg-surface-subtle text-[11px] font-semibold uppercase tracking-wider text-muted">
+            <tr class="*:px-5 *:py-3 *:last:text-right">
+              <th>Nama</th>
+              <th>Slug</th>
+              <th>Artikel</th>
+              <th>Aksi</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-border">
+            {categoryList.length === 0 ? (
+              <tr>
+                <td colspan="4" class="px-5 py-8 text-center text-muted">Belum ada kategori yang dibuat.</td>
+              </tr>
+            ) : (
+              categoryList.map((c) => (
+                <tr class="transition-colors hover:bg-surface-subtle *:px-5 *:py-3.5 *:last:text-right" id={`cat-row-${c.id}`}>
+                  <td class="font-medium text-heading">{c.name}</td>
+                  <td class="font-mono text-muted text-[11px]">/{c.slug}</td>
+                  <td class="font-mono">
+                    <span class="rounded-full bg-surface-subtle border border-border px-2 py-0.5 text-[10px] text-muted">
+                      {c.articleCount} artikel
+                    </span>
+                  </td>
+                  <td>
+                    <button
+                      data-id={c.id}
+                      data-count={c.articleCount}
+                      class="delete-cat-btn text-xs font-medium text-error hover:underline disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                      title={c.articleCount > 0 ? "Kategori tidak dapat dihapus selama masih memiliki artikel" : "Hapus kategori"}
+                    >
+                      Hapus
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('category-form') as HTMLFormElement;
+    const formError = document.getElementById('form-error') as HTMLDivElement;
+    const catName = document.getElementById('cat-name') as HTMLInputElement;
+    const catSlug = document.getElementById('cat-slug') as HTMLInputElement;
+
+    catName?.addEventListener('input', () => {
+      catSlug.value = catName.value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    });
+
+    form?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      formError.classList.add('hidden');
+      formError.innerText = '';
+
+      const name = catName.value.trim();
+      const slug = catSlug.value.trim();
+
+      try {
+        const res = await fetch('/api/admin/categories', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, slug }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          window.location.reload();
+        } else {
+          formError.innerText = data.error || 'Gagal menyimpan kategori';
+          formError.classList.remove('hidden');
+        }
+      } catch {
+        formError.innerText = 'Terjadi kesalahan jaringan';
+        formError.classList.remove('hidden');
+      }
+    });
+
+    document.querySelectorAll('.delete-cat-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = (btn as HTMLElement).dataset.id;
+        const count = Number((btn as HTMLElement).dataset.count || 0);
+
+        if (count > 0) {
+          (window as any).showToast(`Kategori ini tidak dapat dihapus karena masih digunakan oleh ${count} artikel aktif.`, 'warning');
+          return;
+        }
+
+        const confirmed = await (window as any).confirmDialog({
+          title: 'Hapus Kategori',
+          message: 'Apakah Anda yakin ingin menghapus kategori berita ini?\nTindakan ini tidak dapat dibatalkan.',
+          confirmText: 'Ya, Hapus',
+          cancelText: 'Batal',
+          type: 'danger',
+        });
+        if (!confirmed) return;
+
+        try {
+          const res = await fetch(`/api/admin/categories/${id}`, { method: 'DELETE' });
+          const data = await res.json();
+          if (data.success) {
+            document.getElementById(`cat-row-${id}`)?.remove();
+            (window as any).showToast('Kategori berhasil dihapus.', 'success');
+          } else {
+            (window as any).showToast(data.error || 'Gagal menghapus kategori', 'error');
+          }
+        } catch {
+          (window as any).showToast('Terjadi kesalahan jaringan', 'error');
+        }
+      });
+    });
+  </script>
+</AdminLayout>

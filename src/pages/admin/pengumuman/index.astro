@@ -1,0 +1,713 @@
+---
+import AdminLayout from "../../../layouts/AdminLayout.astro";
+import Icon from "../../../components/Icon.astro";
+import Pagination from "../../../components/Pagination.astro";
+import { db, announcements } from "../../../db";
+import { desc, like, or, sql } from "drizzle-orm";
+
+export const prerender = false;
+
+const searchQuery = Astro.url.searchParams.get("q") || "";
+const currentPage = Math.max(
+  1,
+  Number(Astro.url.searchParams.get("page") || 1),
+);
+const pageSize = 10;
+const offset = (currentPage - 1) * pageSize;
+
+const conditions = [];
+if (searchQuery) {
+  const queryPattern = `%${searchQuery.trim()}%`;
+  conditions.push(
+    or(
+      like(announcements.text, queryPattern),
+      like(announcements.linkText, queryPattern),
+      like(announcements.linkUrl, queryPattern),
+    ),
+  );
+}
+
+const totalCountResult = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(announcements)
+  .where(conditions.length > 0 ? conditions[0] : undefined);
+const totalItems = Number(totalCountResult[0]?.count || 0);
+const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+
+const announcementList = await db
+  .select()
+  .from(announcements)
+  .where(conditions.length > 0 ? conditions[0] : undefined)
+  .orderBy(desc(announcements.createdAt), desc(announcements.id))
+  .limit(pageSize)
+  .offset(offset);
+
+function formatExpiryDate(dateStr: string | null) {
+  if (!dateStr) return "Tanpa batas waktu";
+  try {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString("id-ID", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return dateStr;
+  }
+}
+
+function formatCreatedAt(dateStr: string | null) {
+  if (!dateStr) return null;
+  try {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString("id-ID", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  } catch {
+    return null;
+  }
+}
+---
+
+<AdminLayout title="Manajemen Banner Pengumuman" activeNav="pengumuman">
+  <div class="space-y-6 max-w-6xl">
+    <!-- Header Page -->
+    <div class="pb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <h1 class="font-display text-2xl font-bold tracking-tight text-heading">
+          Banner Pengumuman Cepat
+        </h1>
+        <p class="mt-1 font-body text-xs text-muted">
+          Kelola pesan kilat dan pengumuman instan yang berjalan di bagian atas
+          portal publik sekolah.
+        </p>
+      </div>
+      <button
+        type="button"
+        id="open-modal-btn"
+        class="inline-flex h-[36px] items-center justify-center gap-1.5 rounded-[6px] bg-primary px-4 text-xs font-semibold text-white transition-all hover:bg-primary-hover shadow-xs shrink-0 cursor-pointer"
+      >
+        <Icon name="plus" class="h-4 w-4" />
+        <span>Buat Pengumuman</span>
+      </button>
+    </div>
+
+    <!-- Alert Banner -->
+    <div
+      id="status-banner"
+      class="hidden rounded-[6px] p-3 text-xs font-semibold transition-all"
+    ></div>
+    <!-- Tabel Pengumuman -->
+    <div class="rounded-[8px] border border-border bg-surface overflow-hidden shadow-xs">
+      <div class="p-4 flex items-center justify-between bg-surface">
+        <h2 class="font-display text-sm font-bold text-heading">
+          Daftar Pengumuman ({totalItems})
+        </h2>
+      </div>
+
+      {announcementList.length === 0 ? (
+        <div class="p-12 text-center text-xs text-muted">
+          {searchQuery
+            ? "Tidak ditemukan pengumuman yang sesuai dengan kata kunci pencarian."
+            : 'Belum ada pengumuman dibuat. Klik tombol "Buat Pengumuman Baru" untuk memulai.'}
+        </div>
+      ) : (
+        <div class="overflow-x-auto">
+          <table class="w-full text-left font-body text-xs">
+            <thead class="bg-surface-subtle text-[11px] font-semibold text-muted uppercase">
+              <tr>
+                <th class="py-3 px-4">Judul</th>
+                <th class="py-3 px-4">Tautan</th>
+                <th class="py-3 px-4">Prioritas</th>
+                <th class="py-3 px-4">Status</th>
+                <th class="py-3 px-4">Kedaluwarsa</th>
+                <th class="py-3 px-4 text-right">Tindakan</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-border">
+              {announcementList.map((item) => {
+                const today = new Date().toISOString().slice(0, 10);
+                const isExpired = Boolean(
+                  item.expiresAt && item.expiresAt < today,
+                );
+                const createdAtFormatted = formatCreatedAt(item.createdAt);
+
+                return (
+                  <tr
+                    class="hover:bg-surface-subtle transition-colors"
+                    id={`row-${item.id}`}
+                  >
+                    <!-- Teks Pesan (Max 2 baris, clickable to edit) -->
+                    <td class="py-3 px-4 max-w-sm">
+                      <button
+                        type="button"
+                        class="edit-btn font-semibold text-heading text-xs hover:text-primary hover:underline line-clamp-2 text-left cursor-pointer transition-colors"
+                        data-item={JSON.stringify(item)}
+                        title="Klik untuk edit pengumuman"
+                      >
+                        {item.text}
+                      </button>
+                      {createdAtFormatted && (
+                        <span class="text-[10px] text-muted block mt-1">
+                          Dibuat: {createdAtFormatted}
+                        </span>
+                      )}
+                    </td>
+
+                    <!-- Tautan Aksi -->
+                    <td class="py-3 px-4 whitespace-nowrap">
+                      {item.linkUrl ? (
+                        <a
+                          href={item.linkUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+                          title={item.linkUrl}
+                        >
+                          <span class="truncate max-w-[120px]">
+                            {item.linkText || "Buka Tautan"}
+                          </span>
+                          <span
+                            class="text-xs font-mono select-none"
+                            aria-hidden="true"
+                          >
+                            ↗
+                          </span>
+                        </a>
+                      ) : (
+                        <span class="text-muted/50 font-mono">-</span>
+                      )}
+                    </td>
+
+                    <!-- Prioritas -->
+                    <td class="py-3 px-4 whitespace-nowrap">
+                      {item.isUrgent ? (
+                        <span class="inline-flex items-center rounded-full border border-warning bg-warning px-2.5 py-0.5 text-[10px] font-semibold text-white">
+                          Penting
+                        </span>
+                      ) : (
+                        <span class="inline-flex items-center rounded-full border border-border bg-surface-subtle px-2.5 py-0.5 text-[10px] font-medium text-muted">
+                          Biasa
+                        </span>
+                      )}
+                    </td>
+
+                    <!-- Status Publikasi -->
+                    <td class="py-3 px-4 whitespace-nowrap">
+                      {isExpired ? (
+                        <span
+                          class="inline-flex items-center rounded-full border border-border bg-surface-subtle px-2.5 py-0.5 text-[10px] font-medium text-muted"
+                          title="Pengumuman sudah melewati batas waktu"
+                        >
+                          Kedaluwarsa
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={item.isActive ? "true" : "false"}
+                          class:list={[
+                            "toggle-status-btn relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out",
+                            item.isActive ? "bg-primary" : "bg-border",
+                          ]}
+                          data-id={item.id}
+                          title={
+                            item.isActive
+                              ? "Aktif (Klik untuk nonaktifkan)"
+                              : "Nonaktif (Klik untuk aktifkan)"
+                          }
+                          aria-label={
+                            item.isActive
+                              ? "Nonaktifkan pengumuman"
+                              : "Aktifkan pengumuman"
+                          }
+                        >
+                          <span class="sr-only">
+                            {item.isActive ? "Aktif" : "Nonaktif"}
+                          </span>
+                          <span
+                            aria-hidden="true"
+                            class:list={[
+                              "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out",
+                              item.isActive ? "translate-x-4" : "translate-x-0",
+                            ]}
+                          />
+                        </button>
+                      )}
+                    </td>
+
+                    <!-- Kedaluwarsa -->
+                    <td class="py-3 px-4 whitespace-nowrap">
+                      {item.expiresAt ? (
+                        <span class="font-mono text-[11px] text-heading font-medium">
+                          {formatExpiryDate(item.expiresAt)}
+                        </span>
+                      ) : (
+                        <span class="text-[11px] text-muted/70 italic">
+                          Tanpa batas waktu
+                        </span>
+                      )}
+                    </td>
+
+                    <!-- Tindakan -->
+                    <td class="py-3 px-4 text-right whitespace-nowrap">
+                      <div class="inline-flex items-center gap-1.5 *:inline-flex *:h-7 *:w-7 *:items-center *:justify-center *:rounded-[6px] *:border *:transition-colors *:cursor-pointer">
+                        <button
+                          type="button"
+                          class="edit-btn border-border bg-surface text-muted hover:text-primary hover:border-primary/40 hover:bg-surface-subtle shadow-2xs"
+                          data-item={JSON.stringify(item)}
+                          title="Edit Pengumuman"
+                          aria-label="Edit Pengumuman"
+                        >
+                          <Icon
+                            name="edit"
+                            class="h-3.5 w-3.5 pointer-events-none"
+                          />
+                        </button>
+                        <button
+                          type="button"
+                          class="delete-btn border-border bg-surface text-muted hover:text-error hover:border-error/40 hover:bg-error-light shadow-2xs"
+                          data-id={item.id}
+                          data-text={item.text}
+                          title="Hapus Pengumuman"
+                          aria-label="Hapus Pengumuman"
+                        >
+                          <Icon
+                            name="trash"
+                            class="h-3.5 w-3.5 pointer-events-none"
+                          />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {totalPages > 1 && (
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={totalItems}
+          pageSize={pageSize}
+          itemLabel="pengumuman"
+          getPageUrl={(p) =>
+            `?page=${p}${searchQuery ? `&q=${encodeURIComponent(searchQuery)}` : ""}`
+          }
+          class="border-t-0"
+        />
+      )}
+    </div>
+
+    <!-- Modal Form (Create / Edit) -->
+    <div
+      id="modal-backdrop"
+      class="fixed inset-0 bg-heading/40 backdrop-blur-xs z-50 hidden flex items-center justify-center p-3 sm:p-4"
+    >
+      <div class="rounded-[10px] border border-border bg-surface shadow-2xl max-w-lg w-full max-h-[calc(100dvh-32px)] flex flex-col overflow-hidden">
+        <!-- Modal Header (Fixed) -->
+        <div class="flex items-center justify-between px-6 pt-2 bg-surface shrink-0">
+          <div>
+            <h3
+              id="modal-title"
+              class="font-display text-sm font-bold text-heading"
+            >
+              Buat Pengumuman Baru
+            </h3>
+          </div>
+          <button
+            type="button"
+            id="close-modal-btn"
+            class="p-1 rounded-[6px] text-muted hover:text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+            aria-label="Tutup modal"
+          >
+            <Icon name="close" class="h-5 w-5" />
+          </button>
+        </div>
+
+        <!-- Form with scrollable body and fixed footer -->
+        <form
+          id="announcement-form"
+          class="flex-1 flex flex-col min-h-0 overflow-hidden"
+        >
+          <input type="hidden" id="edit-id" name="id" value="" />
+
+          <!-- Scrollable Body (Single vertical scroll) -->
+          <div class="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+            <div class="space-y-1">
+              <label
+                for="text"
+                class="block font-body text-xs font-semibold text-heading"
+              >
+                Teks Pengumuman <span class="text-error">*</span>
+              </label>
+              <textarea
+                id="text"
+                name="text"
+                required
+                rows="3"
+                placeholder="Contoh: Pendaftaran Peserta Didik Baru Jalur Afirmasi dan Zonasi dibuka mulai 10 November 2026."
+                class="w-full rounded-[6px] border border-border bg-surface p-2.5 font-body text-xs text-heading transition-colors"
+              ></textarea>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div class="space-y-1">
+                <label
+                  for="linkUrl"
+                  class="block font-body text-xs font-semibold text-heading"
+                >
+                  URL Rujukan (Opsional)
+                </label>
+                <input
+                  id="linkUrl"
+                  name="linkUrl"
+                  type="url"
+                  placeholder="https://..."
+                  class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading font-mono transition-colors"
+                />
+              </div>
+
+              <div class="space-y-1">
+                <label
+                  for="linkText"
+                  class="block font-body text-xs font-semibold text-heading"
+                >
+                  Teks Tombol Tautan
+                </label>
+                <input
+                  id="linkText"
+                  name="linkText"
+                  type="text"
+                  placeholder="Contoh: Lihat Selengkapnya"
+                  class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading transition-colors"
+                />
+              </div>
+            </div>
+
+            <div class="space-y-1">
+              <label
+                for="expiresAt"
+                class="block font-body text-xs font-semibold text-heading"
+              >
+                Otomatis Kedaluwarsa Pada (Tanggal)
+              </label>
+              <input
+                id="expiresAt"
+                name="expiresAt"
+                type="date"
+                class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading font-mono transition-colors"
+              />
+              <p class="text-[11px] text-muted">
+                Kosongkan jika pengumuman berlaku tanpa batas waktu.
+              </p>
+            </div>
+
+            <!-- Status Toggle Switches -->
+            <div class="space-y-2 pt-1">
+              <div class="flex items-center justify-between p-2.5 rounded-[6px] border border-border bg-surface-subtle">
+                <div>
+                  <span class="block text-xs font-medium text-heading">
+                    Prioritas Tinggi / Darurat
+                  </span>
+                  <span class="block text-[11px] text-muted">
+                    Tandai pengumuman sebagai pesan penting.
+                  </span>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    id="isUrgent"
+                    name="isUrgent"
+                    class="sr-only peer"
+                  />
+                  <div class="w-9 h-5 bg-border rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-warning"></div>
+                </label>
+              </div>
+
+              <div class="flex items-center justify-between p-2.5 rounded-[6px] border border-border bg-surface-subtle">
+                <div>
+                  <span class="block text-xs font-medium text-heading">
+                    Status Tampil
+                  </span>
+                  <span class="block text-[11px] text-muted">
+                    Tampilkan di website publik.
+                  </span>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    id="isActive"
+                    name="isActive"
+                    checked
+                    class="sr-only peer"
+                  />
+                  <div class="w-9 h-5 bg-border rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Fixed Modal Footer -->
+          <div class="flex items-center justify-end gap-2.5 px-6 py-3.5 bg-surface-subtle shrink-0">
+            <button
+              type="button"
+              id="cancel-btn"
+              class="h-[36px] rounded-[6px] border border-border bg-surface px-4 font-body text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+            >
+              Batal
+            </button>
+            <button
+              type="submit"
+              id="save-btn"
+              class="inline-flex h-[36px] items-center justify-center gap-2 rounded-[6px] bg-primary px-4 font-body text-xs font-semibold text-white transition-all hover:bg-primary-hover shadow-xs cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              <svg
+                id="save-spinner"
+                class="hidden h-3.5 w-3.5 animate-spin text-white"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  class="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  stroke-width="4"
+                ></circle>
+                <path
+                  class="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
+              </svg>
+              <span id="save-btn-text">Simpan Pengumuman</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const modal = document.getElementById("modal-backdrop") as HTMLDivElement;
+    const openBtn = document.getElementById(
+      "open-modal-btn",
+    ) as HTMLButtonElement;
+    const closeBtn = document.getElementById(
+      "close-modal-btn",
+    ) as HTMLButtonElement;
+    const cancelBtn = document.getElementById(
+      "cancel-btn",
+    ) as HTMLButtonElement;
+    const form = document.getElementById(
+      "announcement-form",
+    ) as HTMLFormElement;
+    const modalTitle = document.getElementById(
+      "modal-title",
+    ) as HTMLHeadingElement;
+    const modalSubtitle = document.getElementById(
+      "modal-subtitle",
+    ) as HTMLElement;
+    const banner = document.getElementById("status-banner") as HTMLDivElement;
+    const saveBtn = document.getElementById("save-btn") as HTMLButtonElement;
+    const saveSpinner = document.getElementById("save-spinner") as HTMLElement;
+    const saveBtnText = document.getElementById("save-btn-text") as HTMLElement;
+
+    const editIdInput = document.getElementById("edit-id") as HTMLInputElement;
+    const textInput = document.getElementById("text") as HTMLTextAreaElement;
+    const linkUrlInput = document.getElementById("linkUrl") as HTMLInputElement;
+    const linkTextInput = document.getElementById(
+      "linkText",
+    ) as HTMLInputElement;
+    const expiresAtInput = document.getElementById(
+      "expiresAt",
+    ) as HTMLInputElement;
+    const isUrgentInput = document.getElementById(
+      "isUrgent",
+    ) as HTMLInputElement;
+    const isActiveInput = document.getElementById(
+      "isActive",
+    ) as HTMLInputElement;
+
+    function showStatus(message: string, type: "success" | "error") {
+      if (!banner) return;
+      banner.innerText = message;
+      banner.className = `rounded-[6px] p-3 text-xs font-semibold block transition-all ${
+        type === "success"
+          ? "bg-success-light border border-success/30 text-success-text"
+          : "bg-error-light border border-error/30 text-error-text"
+      }`;
+      setTimeout(() => {
+        banner.className = "hidden";
+      }, 5000);
+    }
+
+    function resetForm() {
+      editIdInput.value = "";
+      form.reset();
+      isActiveInput.checked = true;
+      modalTitle.innerText = "Buat Pengumuman Baru";
+      if (modalSubtitle)
+        modalSubtitle.innerText =
+          "Kelola pesan kilat berjalan di bagian atas portal publik.";
+      if (saveBtnText) saveBtnText.innerText = "Simpan Pengumuman";
+    }
+
+    openBtn?.addEventListener("click", () => {
+      resetForm();
+      modal.classList.remove("hidden");
+    });
+
+    closeBtn?.addEventListener("click", () => modal.classList.add("hidden"));
+    cancelBtn?.addEventListener("click", () => modal.classList.add("hidden"));
+    modal?.addEventListener("click", (e) => {
+      if (e.target === modal) modal.classList.add("hidden");
+    });
+
+    // Handle Edit
+    document.querySelectorAll(".edit-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const itemStr = (btn as HTMLElement).dataset.item;
+        if (!itemStr) return;
+        const item = JSON.parse(itemStr);
+
+        editIdInput.value = item.id;
+        textInput.value = item.text || "";
+        linkUrlInput.value = item.linkUrl || "";
+        linkTextInput.value = item.linkText || "";
+        expiresAtInput.value = item.expiresAt || "";
+        isUrgentInput.checked = Boolean(item.isUrgent);
+        isActiveInput.checked = Boolean(item.isActive);
+
+        modalTitle.innerText = "Edit Pengumuman";
+        if (modalSubtitle)
+          modalSubtitle.innerText =
+            "Perbarui teks pesan atau waktu kedaluwarsa.";
+        if (saveBtnText) saveBtnText.innerText = "Simpan Perubahan";
+        modal.classList.remove("hidden");
+      });
+    });
+
+    // Handle Quick Toggle Visibility
+    document.querySelectorAll(".toggle-status-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = (btn as HTMLElement).dataset.id;
+        if (!id) return;
+        (btn as HTMLButtonElement).disabled = true;
+        (btn as HTMLElement).classList.add("opacity-50");
+
+        try {
+          const res = await fetch(`/api/admin/announcements/${id}/toggle`, {
+            method: "PUT",
+          });
+          const result = await res.json();
+          if (result.success) {
+            window.location.reload();
+          } else {
+            showStatus(result.error || "Gagal mengubah status", "error");
+            (btn as HTMLButtonElement).disabled = false;
+            (btn as HTMLElement).classList.remove("opacity-50");
+          }
+        } catch {
+          showStatus("Koneksi server gagal", "error");
+          (btn as HTMLButtonElement).disabled = false;
+          (btn as HTMLElement).classList.remove("opacity-50");
+        }
+      });
+    });
+
+    // Handle Delete
+    document.querySelectorAll(".delete-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = (btn as HTMLElement).dataset.id;
+        const text = (btn as HTMLElement).dataset.text || "";
+        const shortText = text.length > 40 ? text.slice(0, 40) + "..." : text;
+        const confirmed = await (window as any).confirmDialog({
+          title: "Hapus Pengumuman",
+          message: `Hapus pengumuman ini secara permanen?\n\n"${shortText}"`,
+          confirmText: "Ya, Hapus",
+          cancelText: "Batal",
+          type: "danger",
+        });
+        if (!confirmed) return;
+
+        try {
+          const res = await fetch(`/api/admin/announcements/${id}`, {
+            method: "DELETE",
+          });
+          const result = await res.json();
+          if (result.success) {
+            document.getElementById(`row-${id}`)?.remove();
+            (window as any).showToast(
+              "Pengumuman berhasil dihapus.",
+              "success",
+            );
+          } else {
+            (window as any).showToast(
+              result.error || "Gagal menghapus",
+              "error",
+            );
+          }
+        } catch {
+          (window as any).showToast("Gagal menghubungi server.", "error");
+        }
+      });
+    });
+
+    // Handle Form Submit
+    form?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      saveBtn.disabled = true;
+      saveSpinner?.classList.remove("hidden");
+      const originalText = saveBtnText?.innerText || "Simpan Pengumuman";
+      if (saveBtnText) saveBtnText.innerText = "Menyimpan...";
+
+      const id = editIdInput.value;
+      const isEdit = Boolean(id);
+      const url = isEdit
+        ? `/api/admin/announcements/${id}`
+        : "/api/admin/announcements";
+      const method = isEdit ? "PUT" : "POST";
+
+      const payload = {
+        text: textInput.value.trim(),
+        linkUrl: linkUrlInput.value.trim() || null,
+        linkText: linkTextInput.value.trim() || null,
+        expiresAt: expiresAtInput.value || null,
+        isUrgent: isUrgentInput.checked,
+        isActive: isActiveInput.checked,
+      };
+
+      try {
+        const res = await fetch(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          modal.classList.add("hidden");
+          window.location.reload();
+        } else {
+          showStatus(data.error || "Gagal menyimpan pengumuman.", "error");
+          saveBtn.disabled = false;
+          saveSpinner?.classList.add("hidden");
+          if (saveBtnText) saveBtnText.innerText = originalText;
+        }
+      } catch {
+        showStatus("Terjadi kesalahan jaringan.", "error");
+        saveBtn.disabled = false;
+        saveSpinner?.classList.add("hidden");
+        if (saveBtnText) saveBtnText.innerText = originalText;
+      }
+    });
+  </script>
+</AdminLayout>

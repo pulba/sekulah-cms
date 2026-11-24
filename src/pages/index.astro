@@ -1,0 +1,3303 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Header from "../components/Header.astro";
+import AnnouncementBar from "../components/AnnouncementBar.astro";
+import Footer from "../components/Footer.astro";
+import Icon from "../components/Icon.astro";
+import {
+  db,
+  announcements,
+  agendas,
+  heroSlides,
+  settings,
+  articles,
+  categories,
+  users,
+  extracurriculars,
+  facilities,
+  studentsAlumni,
+  teachers,
+  galleries,
+  studentEnrollmentStats,
+  graduationTracerStats,
+  bkkOpportunities,
+  partners,
+} from "../db";
+import {
+  getDefaultPpdbConfig,
+  resolvePpdbPortal,
+  type PpdbFullConfig,
+} from "../utils/ppdbConfigDefaults";
+import { fallbackAchievements } from "../utils/fallbackAchievements";
+import { eq, and, or, isNull, sql, asc, desc, inArray } from "drizzle-orm";
+
+export const prerender = false;
+
+// Ambil pengumuman aktif dari database (dengan filter auto-expiry TC-12)
+const today = new Date().toISOString().slice(0, 10);
+const activeAnnouncement = await db
+  .select()
+  .from(announcements)
+  .where(
+    and(
+      eq(announcements.isActive, true),
+      or(
+        isNull(announcements.expiresAt),
+        sql`${announcements.expiresAt} >= ${today}`,
+      ),
+    ),
+  )
+  .orderBy(desc(announcements.isUrgent), desc(announcements.id))
+  .limit(1)
+  .then((res) => res[0])
+  .catch(() => null);
+
+// Ambil konfigurasi sekolah & label pendaftaran
+const allSettings = await db
+  .select()
+  .from(settings)
+  .catch(() => []);
+const schoolInfo = allSettings.reduce(
+  (acc, curr) => {
+    acc[curr.key] = curr.value;
+    return acc;
+  },
+  {} as Record<string, string>,
+);
+const schoolName = schoolInfo["school_name"] || "SMAN 1 Unggulan";
+const schoolAccreditation = schoolInfo["accreditation"] || "A (Unggul)";
+const admissionsLabel =
+  schoolInfo["admissions_label"] || schoolInfo["ppdb_label"] || "PPDB";
+const schoolPhone = schoolInfo["phone"] || "(021) 555-0199";
+const schoolEmail = schoolInfo["email"] || "info@sman1unggulan.sch.id";
+
+// Deteksi Jenis Lembaga & Jenjang Pendidikan (SD / SMP / SMA / SMK)
+const schoolType = (
+  schoolInfo["school_type"] ||
+  schoolInfo["school_level"] ||
+  "SMA"
+).toUpperCase();
+const isSD = ["SD", "MI"].includes(schoolType);
+const isSMP = ["SMP", "MTS"].includes(schoolType);
+const isSMK = schoolType === "SMK";
+
+// SINGLE SOURCE OF TRUTH (SSOT): STATISTIK BERANDA RESMI
+
+// 1. Siswa Aktif (Rekap Kesiswaan Dapodik/EMIS Periode Aktif)
+const activeEnrollment = await db
+  .select()
+  .from(studentEnrollmentStats)
+  .where(eq(studentEnrollmentStats.isActive, true))
+  .orderBy(desc(studentEnrollmentStats.academicYear))
+  .limit(1)
+  .then((r) => r[0])
+  .catch(() => null);
+
+const enrollmentValue = activeEnrollment
+  ? `${Number(activeEnrollment.totalStudents).toLocaleString("id-ID")}+`
+  : schoolInfo["stat_1_value"] || "1.250+";
+const enrollmentLabel = schoolInfo["stat_1_label"] || "Siswa Aktif";
+const enrollmentDesc = activeEnrollment
+  ? `Tersebar di seluruh rombel (TA ${activeEnrollment.academicYear})`
+  : schoolInfo["stat_1_desc"] || "Tersebar di seluruh rombel kelas binaan";
+
+// 2. Kelanjutan Lulusan / Tracer Study (Adaptif Jenjang Pendidikan)
+const activeTracer = await db
+  .select()
+  .from(graduationTracerStats)
+  .where(eq(graduationTracerStats.isActive, true))
+  .orderBy(desc(graduationTracerStats.graduationYear))
+  .limit(1)
+  .then((r) => r[0])
+  .catch(() => null);
+
+// Nilai default dan terminologi berbasis jenjang (SD / SMP / SMA / SMK)
+const defaultTracerLabel = isSD
+  ? "Lolos SMP Negeri Favorit"
+  : isSMP
+    ? "Lolos SMA/SMK Negeri"
+    : isSMK
+      ? "Terserap Kerja & Kuliah"
+      : "Diterima PTN Favorit";
+
+const defaultTracerDesc = isSD
+  ? "Jalur Prestasi, Zonasi, dan Afirmasi SMP Negeri"
+  : isSMP
+    ? "Jalur Prestasi & Domisili SMA/SMK Negeri Favorit"
+    : isSMK
+      ? "Keterserapan Industri Mitra BKK dan Perguruan Tinggi"
+      : "Jalur SNBP, SNBT, dan Talenta Mandiri";
+
+const defaultTracerNotesSuffix = isSD
+  ? "Jalur Prestasi & Zonasi SMP Negeri"
+  : isSMP
+    ? "Jalur Prestasi & Domisili SMA/SMK Negeri"
+    : isSMK
+      ? "Terserap Industri Mitra & PTN/PTS"
+      : "Jalur SNBP, SNBT, dan Mandiri";
+
+let tracerRateStr =
+  schoolInfo["stat_2_value"] || (isSD ? "95%" : isSMP ? "92%" : "88%");
+let tracerDesc = schoolInfo["stat_2_desc"] || defaultTracerDesc;
+
+if (activeTracer && activeTracer.totalGraduates > 0) {
+  // Untuk SMK: persentase serapan mencakup industri, kuliah, dan wirausaha
+  // Untuk SD/SMP/SMA: ptnAcceptedUnique adalah keberhasilan masuk sekolah/kampus negeri favorit
+  const successfulCount = isSMK
+    ? (Number(activeTracer.ptnAcceptedUnique) || 0) +
+      (Number(activeTracer.workingCount) || 0) +
+      (Number(activeTracer.entrepreneurCount) || 0)
+    : Number(activeTracer.ptnAcceptedUnique) || 0;
+
+  const rate = Math.round(
+    (successfulCount / activeTracer.totalGraduates) * 100,
+  );
+  tracerRateStr = `${rate}%`;
+  tracerDesc = activeTracer.notes
+    ? `${activeTracer.notes} (Lulusan ${activeTracer.graduationYear})`
+    : `${defaultTracerNotesSuffix} (Lulusan ${activeTracer.graduationYear})`;
+}
+
+// Gunakan custom stat_2_label jika ada & bukan default stat SMA lama ketika jenjangnya bukan SMA
+const customLabel = schoolInfo["stat_2_label"];
+const isDefaultSmaOldLabel = customLabel === "Diterima PTN Favorit";
+const tracerLabel =
+  customLabel && (!isDefaultSmaOldLabel || (!isSD && !isSMP && !isSMK))
+    ? customLabel
+    : defaultTracerLabel;
+
+// 3. Tenaga Pendidik (Hitung Pendidik: Guru & Pimpinan Aktif, Bukan Staf TU/Tendik)
+const educatorCountDb = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(teachers)
+  .where(
+    and(
+      eq(teachers.isActive, true),
+      inArray(teachers.category, ["guru", "pimpinan"]),
+    ),
+  )
+  .then((r) => Number(r[0]?.count || 0))
+  .catch(() => 0);
+
+const educatorValue =
+  educatorCountDb > 0
+    ? String(educatorCountDb)
+    : schoolInfo["stat_3_value"] || "76";
+const educatorLabel = schoolInfo["stat_3_label"] || "Tenaga Pendidik";
+const educatorDesc =
+  educatorCountDb > 0
+    ? "Guru & pimpinan akademik terverifikasi"
+    : schoolInfo["stat_3_desc"] || "Guru tersertifikasi kompetensi resmi";
+
+// 4. Piala Prestasi (Hitung Arsip Kejuaraan Terverifikasi Berdasarkan Tahun Aktif)
+const activeAchievementYear = schoolInfo["stat_4_year"] || "2025";
+const achievementCountYear = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(studentsAlumni)
+  .where(
+    and(
+      eq(studentsAlumni.type, "achievement"),
+      eq(studentsAlumni.isPublicConsent, true),
+      eq(studentsAlumni.year, activeAchievementYear),
+    ),
+  )
+  .then((r) => Number(r[0]?.count || 0))
+  .catch(() => 0);
+
+const totalVerifiedAchievements = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(studentsAlumni)
+  .where(
+    and(
+      eq(studentsAlumni.type, "achievement"),
+      eq(studentsAlumni.isPublicConsent, true),
+    ),
+  )
+  .then((r) => Number(r[0]?.count || 0))
+  .catch(() => 0);
+
+let achievementValue = schoolInfo["stat_4_value"] || "54";
+let achievementLabel =
+  schoolInfo["stat_4_label"] || `Piala Prestasi ${activeAchievementYear}`;
+let achievementDesc =
+  schoolInfo["stat_4_desc"] || "Capaian riset, olimpiade, dan seni budaya";
+
+if (achievementCountYear > 0) {
+  achievementValue = String(achievementCountYear);
+  achievementLabel = `Piala Prestasi ${activeAchievementYear}`;
+  achievementDesc = "Capaian riset, olimpiade, dan seni budaya";
+} else if (totalVerifiedAchievements > 0) {
+  achievementValue = `${totalVerifiedAchievements}+`;
+  achievementLabel = "Piala Prestasi";
+  achievementDesc = "Total kejuaraan & penghargaan resmi terdata";
+}
+
+const stats = [
+  {
+    value: enrollmentValue,
+    label: enrollmentLabel,
+    desc: enrollmentDesc,
+  },
+  {
+    value: tracerRateStr,
+    label: tracerLabel,
+    desc: tracerDesc,
+  },
+  {
+    value: educatorValue,
+    label: educatorLabel,
+    desc: educatorDesc,
+  },
+  {
+    value: achievementValue,
+    label: achievementLabel,
+    desc: achievementDesc,
+  },
+];
+
+// Ambil konfigurasi sambutan kepala sekolah dari settings
+const welcomeActive = schoolInfo["principal_welcome_active"] !== "false";
+const principalName = schoolInfo["principal_name"] || "Dr. H. Sulaiman, M.Pd.";
+const principalTitle =
+  schoolInfo["principal_title"] || "Kepala Sekolah SMAN 1 Unggulan";
+const principalPhoto =
+  schoolInfo["principal_photo"] ||
+  "https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=600&q=80";
+const rawPrincipalQuote =
+  schoolInfo["principal_welcome_quote"] ||
+  "Selamat datang di portal resmi institusi kami. Kami berkomitmen menyelenggarakan ekosistem pendidikan berstandar tinggi yang mengintegrasikan kecakapan teknologi, kedalaman riset, dan budi pekerti luhur.";
+
+// Helper membuat excerpt cuplikan untuk Beranda
+function getExcerpt(text: string, maxLength: number = 240): string {
+  if (!text) return "";
+  const cleaned = text
+    .replace(/^(Assalamu['’]alaikum[^\n]*\n+|Salam[^\n]*\n+)/i, "")
+    .trim();
+  const firstPara =
+    cleaned.split("\n").filter((p) => p.trim().length > 0)[0] || cleaned;
+  if (firstPara.length <= maxLength) return firstPara;
+  return (
+    firstPara
+      .slice(0, maxLength)
+      .trim()
+      .replace(/[,\.\s]+$/, "") + "..."
+  );
+}
+
+const principalExcerpt = getExcerpt(rawPrincipalQuote, 240);
+
+// Ambil konfigurasi sekilas profil, visi misi & video profil dari settings
+const profileActive = schoolInfo["school_profile_active"] !== "false";
+const profileTitle =
+  schoolInfo["school_profile_title"] ||
+  "Membina Generasi Unggul, Berkarakter & Berdaya Saing Global";
+const profileDesc =
+  schoolInfo["school_profile_desc"] ||
+  "SMAN 1 Unggulan mengintegrasikan kurikulum riset mutakhir, penguasaan sains dan teknologi kecerdasan buatan, serta pembinaan akhlak mulia dalam ekosistem kampus modern berstandar nasional.";
+const profileVision =
+  schoolInfo["school_vision"] ||
+  "Menjadi pusat keunggulan pendidikan yang melahirkan cendekiawan berakhlak mulia, berjiwa riset, dan kompetitif di kancah internasional.";
+
+// Ambil slide banner hero aktif (maksimal 3 slide relevan)
+const activeSlides = await db
+  .select()
+  .from(heroSlides)
+  .where(eq(heroSlides.isActive, true))
+  .orderBy(asc(heroSlides.orderNumber), asc(heroSlides.id))
+  .limit(10)
+  .catch(() => []);
+
+// Ambil agenda terdekat dari database (maksimal 4 agenda)
+const rawAgendas = await db
+  .select()
+  .from(agendas)
+  .where(eq(agendas.isCompleted, false))
+  .orderBy(asc(agendas.eventDate))
+  .limit(4)
+  .catch(() => []);
+
+const monthNames = [
+  "JAN",
+  "FEB",
+  "MAR",
+  "APR",
+  "MEI",
+  "JUN",
+  "JUL",
+  "AGU",
+  "SEP",
+  "OKT",
+  "NOV",
+  "DES",
+];
+
+const formatTitleCase = (str?: string | null): string => {
+  if (!str) return "";
+  return str
+    .toLowerCase()
+    .split(" ")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+};
+
+const upcomingAgendas =
+  rawAgendas.length > 0
+    ? rawAgendas.map((item) => {
+        const parts = item.eventDate.split("-");
+        const day = parts[2] || "01";
+        const monthIdx = parseInt(parts[1] || "1", 10) - 1;
+        return {
+          id: item.id,
+          day,
+          month: monthNames[monthIdx] || "OKT",
+          title: item.title,
+          time: item.startTime
+            ? `${item.startTime} - ${item.endTime || "Selesai"} WIB`
+            : "08.00 WIB",
+          location: item.location ? formatTitleCase(item.location) : undefined,
+          description: item.description || undefined,
+        };
+      })
+    : [
+        {
+          id: 1,
+          day: "28",
+          month: "OKT",
+          title: "Peringatan Hari Sumpah Pemuda & Gelar Karya P5",
+          time: "07.30 - 13.00 WIB",
+          location: "Auditorium Graha Widya",
+          description:
+            "Rangkaian upacara bendera dan pameran projek penguatan profil pelajar Pancasila.",
+        },
+        {
+          id: 2,
+          day: "04",
+          month: "NOV",
+          title: "Rapat Pleno Orang Tua/Wali Murid Evaluasi Tengah Semester",
+          time: "08.30 - 11.30 WIB",
+          location: "Aula Pertemuan Gedung B",
+          description:
+            "Penyampaian progres belajar siswa dan koordinasi program semester aktif.",
+        },
+        {
+          id: 3,
+          day: "18",
+          month: "NOV",
+          title: "Simulasi Ujian Berbasis Komputer & Asesmen Bakat Minat",
+          time: "07.30 - 14.00 WIB",
+          location: "Laboratorium Komputer 1 & 2",
+          description:
+            "Uji kesiapan teknis asesmen dan pemetaan potensi minat bakat siswa.",
+        },
+        {
+          id: 4,
+          day: "01",
+          month: "DES",
+          title: "Penilaian Akhir Semester (PAS) Ganjil Tahun Ajaran Aktif",
+          time: "07.30 - 12.00 WIB",
+          location: "Ruang Kelas X, XI, XII",
+          description:
+            "Evaluasi capaian pembelajaran terpadu untuk seluruh tingkat kelas.",
+        },
+      ];
+
+// Ambil 5 berita sekolah terbaru dari database (1 utama + 4 pendukung sejajar)
+const rawArticles = await db
+  .select({
+    id: articles.id,
+    slug: articles.slug,
+    title: articles.title,
+    summary: articles.summary,
+    coverImage: articles.coverImage,
+    publishedAt: articles.publishedAt,
+    viewCount: articles.viewCount,
+    categoryName: categories.name,
+    categorySlug: categories.slug,
+    authorId: articles.authorId,
+    authorName: users.name,
+  })
+  .from(articles)
+  .leftJoin(categories, eq(articles.categoryId, categories.id))
+  .leftJoin(users, eq(articles.authorId, users.id))
+  .where(
+    and(
+      eq(articles.status, "published"),
+      isNull(articles.deletedAt),
+      sql`${articles.publishedAt} <= ${new Date().toISOString()}`,
+    ),
+  )
+  .orderBy(desc(articles.publishedAt))
+  .limit(5)
+  .catch(() => []);
+
+const defaultArticles = [
+  {
+    id: 101,
+    slug: "delegasi-siswa-medali-emas-osn-nasional",
+    title: "Delegasi Siswa Raih Medali Emas Olimpiade Sains Nasional (OSN)",
+    summary:
+      "Raihan gemilang siswa binaan tim olimpiade sains menorehkan prestasi membanggakan pada ajang bergengsi tingkat nasional.",
+    coverImage:
+      "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80",
+    publishedAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 3).toISOString(),
+    viewCount: 342,
+    categoryName: "Prestasi",
+    categorySlug: "prestasi",
+    authorName: "Humas Sekolah",
+  },
+  {
+    id: 102,
+    slug: "sosialisasi-alur-seleksi-snbt-snbp",
+    title:
+      "Sosialisasi Alur Pendaftaran Seleksi Masuk PTN Melalui Jalur Prestasi",
+    summary:
+      "Bimbingan konseling menyelenggarakan pendampingan komprehensif bagi seluruh siswa kelas XII untuk persiapan pemilihan program studi PTN.",
+    coverImage:
+      "https://images.unsplash.com/photo-1521587760476-6c12a4b040da?auto=format&fit=crop&w=800&q=80",
+    publishedAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString(),
+    viewCount: 512,
+    categoryName: "Akademik",
+    categorySlug: "akademik",
+    authorName: "Guru BK",
+  },
+  {
+    id: 103,
+    slug: "revitalisasi-laboratorium-komputasi-dan-ai",
+    title:
+      "Revitalisasi Laboratorium Komputasi dan AI untuk Pembelajaran Berbasis Riset",
+    summary:
+      "Sekolah meresmikan ruang laboratorium terpadu berdaya komputasi tinggi demi mendukung riset sains data dan kecerdasan buatan.",
+    coverImage:
+      "https://images.unsplash.com/photo-1562774053-701939374585?auto=format&fit=crop&w=800&q=80",
+    publishedAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 10).toISOString(),
+    viewCount: 280,
+    categoryName: "Fasilitas",
+    categorySlug: "fasilitas",
+    authorName: "Tim IT Sekolah",
+  },
+  {
+    id: 104,
+    slug: "peringatan-hari-sumpah-pemuda-karakter-kebinekaan",
+    title:
+      "Peringatan Hari Sumpah Pemuda: Kobarkan Semangat Persatuan dan Kebinekaan",
+    summary:
+      "Sivitas akademika melaksanakan upacara khidmat berbalut busana adat nusantara untuk mengukuhkan karakter patriotisme generasi muda.",
+    coverImage:
+      "https://images.unsplash.com/photo-1577896851231-70ef18881754?auto=format&fit=crop&w=800&q=80",
+    publishedAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 14).toISOString(),
+    viewCount: 195,
+    categoryName: "Kesiswaan",
+    categorySlug: "kesiswaan",
+    authorName: "Kesiswaan & OSIS",
+  },
+  {
+    id: 105,
+    slug: "workshop-metodologi-riset-peneliti-muda",
+    title:
+      "Workshop Metodologi Riset Ilmiah dan Penulisan Jurnal bagi Peneliti Muda",
+    summary:
+      "Mempersiapkan peneliti belia berkompetisi pada Lomba Karya Ilmiah Remaja (LKIR) nasional melalui pembimbingan intensif dewan guru.",
+    coverImage:
+      "https://images.unsplash.com/photo-1509062522246-3755977927d7?auto=format&fit=crop&w=800&q=80",
+    publishedAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 20).toISOString(),
+    viewCount: 167,
+    categoryName: "Kurikulum",
+    categorySlug: "kurikulum",
+    authorName: "Tim Riset Sekolah",
+  },
+];
+
+// Pastikan selalu lengkap 5 artikel (1 utama + 4 pendukung sejajar)
+const existingSlugs = new Set(rawArticles.map((a) => a.slug));
+const latestArticles = [
+  ...rawArticles,
+  ...defaultArticles.filter((d) => !existingSlugs.has(d.slug)),
+].slice(0, 5);
+
+const featuredArticle = latestArticles[0] || null;
+const secondaryArticles = latestArticles.slice(1, 5);
+
+// Ambil Program Unggulan & Ekstrakurikuler Aktif (maksimal 4 untuk Home)
+const rawEkskul = await db
+  .select()
+  .from(extracurriculars)
+  .where(eq(extracurriculars.isActive, true))
+  .orderBy(asc(extracurriculars.orderNumber), desc(extracurriculars.id))
+  .limit(4)
+  .catch(() => []);
+
+const fallbackEkskul = [
+  {
+    id: 1,
+    name: "Robotika & Rekayasa Kecerdasan Buatan",
+    category: "Sains & Robotik",
+    schedule: "Jumat & Sabtu, 15.30 WIB",
+    coach: "Ir. Hendra Wijaya, M.T.",
+    imageUrl:
+      "https://images.unsplash.com/photo-1581092921461-eab62e97a780?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    id: 2,
+    name: "Karya Ilmiah Remaja (KIR) & Riset",
+    category: "Sains & Robotik",
+    schedule: "Rabu & Kamis, 15.30 WIB",
+    coach: "Dr. Siti Aminah, M.Si.",
+    imageUrl:
+      "https://images.unsplash.com/photo-1532094349884-543bc11b234d?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    id: 3,
+    name: "Pasukan Pengibar Bendera (Paskibra)",
+    category: "Kepemimpinan",
+    schedule: "Selasa & Sabtu, 15.00 WIB",
+    coach: "Bambang Sudarsono, S.Pd.",
+    imageUrl:
+      "https://images.unsplash.com/photo-1541829070764-84a7d30dd3f3?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    id: 4,
+    name: "Seni Musik Tradisional & Modern",
+    category: "Kesenian",
+    schedule: "Senin & Kamis, 15.30 WIB",
+    coach: "Dewi Lestari, S.Sn.",
+    imageUrl:
+      "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=80",
+  },
+];
+
+const activeEkskul =
+  rawEkskul.length > 0 ? rawEkskul.slice(0, 4) : fallbackEkskul;
+
+// Ambil Fasilitas Sekolah Unggulan (4 Fasilitas Kecil Sejajar untuk Home)
+const rawFacilities = await db
+  .select()
+  .from(facilities)
+  .where(eq(facilities.isActive, true))
+  .orderBy(asc(facilities.orderNumber), desc(facilities.id))
+  .limit(4)
+  .catch(() => []);
+
+const fallbackFacilities = [
+  {
+    id: 1,
+    name: "Laboratorium Komputer & TI",
+    category: "Laboratorium",
+    location: "Gedung B Lantai 2",
+    capacity: "40 Komputer",
+    imageUrl:
+      "https://images.unsplash.com/photo-1562774053-701939374585?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    id: 2,
+    name: "Perpustakaan Graha Pustaka",
+    category: "Penunjang",
+    location: "Gedung Utama Lantai 1",
+    capacity: "100 Siswa",
+    imageUrl:
+      "https://images.unsplash.com/photo-1521587760476-6c12a4b040da?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    id: 3,
+    name: "Ruang Kelas Digital Smart Classroom",
+    category: "Ruang Belajar",
+    location: "Gedung B & C",
+    capacity: "36 Siswa / Kelas",
+    imageUrl:
+      "https://images.unsplash.com/photo-1580582932707-520aed937b7b?auto=format&fit=crop&w=800&q=80",
+  },
+  {
+    id: 4,
+    name: "Gelanggang Olahraga Multifungsi",
+    category: "Olahraga",
+    location: "Area Barat Sekolah",
+    capacity: "400 Penonton",
+    imageUrl:
+      "https://images.unsplash.com/photo-1546519638-68e109498ffc?auto=format&fit=crop&w=800&q=80",
+  },
+];
+
+const homeFacilities =
+  rawFacilities.length > 0 ? rawFacilities.slice(0, 4) : fallbackFacilities;
+
+// Ambil capaian prestasi siswa unggulan untuk Home (Maksimal 10 Prestasi)
+const rawAchievements = await db
+  .select()
+  .from(studentsAlumni)
+  .where(
+    and(
+      eq(studentsAlumni.type, "achievement"),
+      eq(studentsAlumni.isPublicConsent, true),
+    ),
+  )
+  .orderBy(desc(studentsAlumni.year), desc(studentsAlumni.id))
+  .limit(10)
+  .catch(() => []);
+
+const achievementList = [
+  ...rawAchievements,
+  ...fallbackAchievements.filter(
+    (f) => !rawAchievements.some((r) => r.id === f.id),
+  ),
+].slice(0, 10);
+
+const featuredAchievement = achievementList[0] || null;
+const supportingAchievements = achievementList.slice(1, 5);
+
+// Ambil 5 foto galeri kegiatan terbaru (1 Utama Besar + 4 Pendukung)
+const rawGalleries = await db
+  .select()
+  .from(galleries)
+  .where(eq(galleries.type, "image"))
+  .orderBy(desc(galleries.createdAt), desc(galleries.id))
+  .limit(5)
+  .catch(() => []);
+
+const fallbackGalleries = [
+  {
+    id: 1,
+    title: "Upacara Bendera Hari Senin & Apel Kedisiplinan Siswa",
+    caption:
+      "Wujud pengabdian dan penanaman nilai nasionalisme seluruh sivitas akademika.",
+    mediaUrl:
+      "https://images.unsplash.com/photo-1541829070764-84a7d30dd3f3?auto=format&fit=crop&w=1200&q=80",
+    albumName: "Upacara & Apel",
+  },
+  {
+    id: 2,
+    title: "Praktikum Sains & Riset Laboratorium Terpadu",
+    caption: "Eksplorasi penelitian biologi dan kimia oleh siswa kelas riset.",
+    mediaUrl:
+      "https://images.unsplash.com/photo-1581092921461-eab62e97a780?auto=format&fit=crop&w=800&q=80",
+    albumName: "Akademik & Sains",
+  },
+  {
+    id: 3,
+    title: "Gelar Karya Proyek Penguatan Profil Pelajar Pancasila (P5)",
+    caption: "Pameran inovasi kewirausahaan dan kebudayaan daerah.",
+    mediaUrl:
+      "https://images.unsplash.com/photo-1524178232363-1fb2b075b655?auto=format&fit=crop&w=800&q=80",
+    albumName: "P5 & Budaya",
+  },
+  {
+    id: 4,
+    title: "Sosialisasi Budaya Kampus Ramah & Aman Lingkungan",
+    caption: "Edukasi penguatan karakter dan anti-perundungan.",
+    mediaUrl:
+      "https://images.unsplash.com/photo-1577896851231-70ef18881754?auto=format&fit=crop&w=800&q=80",
+    albumName: "Kesiswaan",
+  },
+  {
+    id: 5,
+    title: "Kompetisi Olahraga & Pentas Bakat Antar Kelas",
+    caption: "Ajang sportivitas dan kreativitas seni peserta didik.",
+    mediaUrl:
+      "https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=800&q=80",
+    albumName: "Olahraga & Seni",
+  },
+];
+
+const homeGalleries =
+  rawGalleries.length >= 5
+    ? rawGalleries.slice(0, 5)
+    : [...rawGalleries, ...fallbackGalleries.slice(rawGalleries.length, 5)];
+const featuredGallery = homeGalleries[0];
+const supportingGalleries = homeGalleries.slice(1, 5);
+
+// Ambil Dewan Guru & Tenaga Pendidik Aktif untuk Home (Maksimal 12 dari CMS untuk Carousel Slider)
+const rawTeachers = await db
+  .select()
+  .from(teachers)
+  .where(eq(teachers.isActive, true))
+  .orderBy(asc(teachers.orderNumber), asc(teachers.id))
+  .limit(12)
+  .catch(() => []);
+
+const fallbackHomeTeachers = [
+  {
+    id: 1,
+    name: "Dr. H. Sulaiman, M.Pd.",
+    position: "Kepala Sekolah",
+    subject: "Manajemen Pendidikan",
+    photoUrl: null,
+  },
+  {
+    id: 2,
+    name: "Dra. Hj. Sri Wahyuni, M.Si.",
+    position: "Wakil Kepala Kurikulum",
+    subject: "Fisika & Riset Sains",
+    photoUrl: null,
+  },
+  {
+    id: 3,
+    name: "Budi Santoso, S.Pd., M.Kom.",
+    position: "Guru Pembina TI & AI",
+    subject: "Informatika & Robotika",
+    photoUrl: null,
+  },
+  {
+    id: 4,
+    name: "Rina Kusuma Dewi, S.Pd.",
+    position: "Guru Bahasa & Sastra",
+    subject: "Bahasa Indonesia",
+    photoUrl: null,
+  },
+  {
+    id: 5,
+    name: "Ahmad Zaki, M.Pd.",
+    position: "Wakil Kepala Kesiswaan",
+    subject: "Matematika Peminatan",
+    photoUrl: null,
+  },
+  {
+    id: 6,
+    name: "Siti Rahmawati, S.Si., M.Sc.",
+    position: "Koordinator Riset Laboratorium",
+    subject: "Biologi & Sains Terapan",
+    photoUrl: null,
+  },
+  {
+    id: 7,
+    name: "Hendro Wibowo, S.Pd.",
+    position: "Pembina Ekstrakurikuler",
+    subject: "Pendidikan Jasmani & Kesehatan",
+    photoUrl: null,
+  },
+  {
+    id: 8,
+    name: "Nurul Hidayah, S.Pd., M.Hum.",
+    position: "Kepala Graha Pustaka",
+    subject: "Bahasa Inggris & Literasi",
+    photoUrl: null,
+  },
+];
+
+// Pastikan selalu mengambil foto resmi dari CMS tanpa stok foto orang lain atau poster
+const activeTeachers = (
+  rawTeachers.length >= 8
+    ? rawTeachers
+    : [...rawTeachers, ...fallbackHomeTeachers.slice(rawTeachers.length, 8)]
+).map((t) => ({
+  ...t,
+  photoUrl: t.photoUrl?.trim() || "/images/default-avatar.svg",
+}));
+
+// Duplikasi data 3 set untuk infinite seamless loop tanpa rewind ke awal
+const displayTeachers =
+  activeTeachers.length >= 4
+    ? [...activeTeachers, ...activeTeachers, ...activeTeachers]
+    : activeTeachers;
+
+// Konfigurasi Organisasi Kesiswaan (OSIS / OSIM) untuk Home
+const isMadrasah = ["MA", "MTS", "MI"].includes(schoolType);
+const defaultOrgType = isMadrasah ? "OSIM" : "OSIS";
+const orgTypeSetting = schoolInfo["student_org_type"] || "auto";
+const resolvedOrgType =
+  orgTypeSetting === "auto" ? defaultOrgType : orgTypeSetting;
+const orgIsActive = schoolInfo["student_org_active"] !== "false";
+
+const rawOrgName =
+  schoolInfo["student_org_name"] || `${resolvedOrgType} ${schoolName}`;
+const orgName =
+  resolvedOrgType === "OSIM"
+    ? rawOrgName.replace(/^OSIS\b/i, "OSIM")
+    : resolvedOrgType === "OSIS"
+      ? rawOrgName.replace(/^OSIM\b/i, "OSIS")
+      : rawOrgName;
+
+const orgPeriod = schoolInfo["student_org_period"] || "2025/2026";
+const orgTagline =
+  schoolInfo["student_org_tagline"] ||
+  "Bersinergi, Berkarakter, dan Berintegritas Memimpin Perubahan";
+const orgLogo = schoolInfo["student_org_logo"] || "";
+const orgBanner =
+  schoolInfo["student_org_banner"] ||
+  "/uploads/2026/10/1792898750482_whatsapp_image_2026-10-22_at_21_14_35.jpeg";
+
+const leaderName = schoolInfo["student_org_leader"] || "Muhammad Zaki Pratama";
+const leaderPhoto = schoolInfo["student_org_leader_photo"] || "";
+
+const deputyLeaderName = schoolInfo["student_org_deputy"] || "Alya Khairunnisa";
+const deputyLeaderPhoto = schoolInfo["student_org_deputy_photo"] || "";
+
+const secretaryName = schoolInfo["student_org_secretary"] || "Nadia Rahmawati";
+const secretaryPhoto = schoolInfo["student_org_secretary_photo"] || "";
+
+const treasurerName = schoolInfo["student_org_treasurer"] || "Rizky Ramadhan";
+const treasurerPhoto = schoolInfo["student_org_treasurer_photo"] || "";
+
+const advisorName =
+  schoolInfo["student_org_advisor"] || "Drs. H. Mulyadi, M.Pd.";
+const advisorPhoto = schoolInfo["student_org_advisor_photo"] || "";
+const rawAdvisorTitle =
+  schoolInfo["student_org_advisor_title"] ||
+  `Pembina ${resolvedOrgType} & Waka Kesiswaan`;
+const advisorTitle =
+  resolvedOrgType === "OSIM"
+    ? rawAdvisorTitle.replace(/\bOSIS\b/g, "OSIM")
+    : resolvedOrgType === "OSIS"
+      ? rawAdvisorTitle.replace(/\bOSIM\b/g, "OSIS")
+      : rawAdvisorTitle;
+
+const coreOfficers = [
+  {
+    role: "Wakil Ketua",
+    name: deputyLeaderName,
+    photo: deputyLeaderPhoto || "/images/default-avatar.svg",
+  },
+  {
+    role: "Sekretaris Umum",
+    name: secretaryName,
+    photo: secretaryPhoto || "/images/default-avatar.svg",
+  },
+  {
+    role: "Bendahara Umum",
+    name: treasurerName,
+    photo: treasurerPhoto || "/images/default-avatar.svg",
+  },
+];
+
+let orgDepartments: any[] = [];
+try {
+  if (schoolInfo["student_org_departments"]) {
+    orgDepartments = JSON.parse(schoolInfo["student_org_departments"]);
+  }
+} catch {}
+if (!Array.isArray(orgDepartments) || orgDepartments.length === 0) {
+  orgDepartments = [
+    {
+      name: "Keagamaan & Budi Pekerti",
+      lead: "Fathur Rahman",
+      proker: "Peringatan Hari Besar Keagamaan & Kajian Karakter",
+    },
+    {
+      name: "Kepemimpinan & Bela Negara",
+      lead: "Dimas Anggara",
+      proker: "LDKS, Pasukan Pengibar Bendera & Apel Disiplin",
+    },
+    {
+      name: "Akademik, Riset & Teknologi",
+      lead: "Zahra Salsabila",
+      proker: "Klinik Sains, Literasi Digital & Science Fair",
+    },
+    {
+      name: "Seni Budaya & Olahraga",
+      lead: "Bagus Setiawan",
+      proker: "Classmeeting, Pentas Seni & Turnamen Siswa",
+    },
+  ];
+}
+const displayDepartments = orgDepartments.slice(0, 4);
+
+// Evaluasi Konfigurasi & Status Pendaftaran SPMB / PPDB untuk Section CTA
+let ppdbConfig: PpdbFullConfig;
+const rawPpdbConfig = schoolInfo["ppdb_form_config"];
+const boardingAvailable = schoolInfo["boarding_available"] === "true";
+
+if (rawPpdbConfig) {
+  try {
+    ppdbConfig = JSON.parse(rawPpdbConfig);
+    if (
+      !ppdbConfig ||
+      !Array.isArray(ppdbConfig.steps) ||
+      ppdbConfig.steps.length === 0
+    ) {
+      ppdbConfig = getDefaultPpdbConfig(
+        schoolType,
+        schoolName,
+        boardingAvailable,
+      );
+    }
+  } catch {
+    ppdbConfig = getDefaultPpdbConfig(
+      schoolType,
+      schoolName,
+      boardingAvailable,
+    );
+  }
+} else {
+  ppdbConfig = getDefaultPpdbConfig(schoolType, schoolName, boardingAvailable);
+}
+
+if (
+  !ppdbConfig.waves ||
+  !Array.isArray(ppdbConfig.waves) ||
+  ppdbConfig.waves.length === 0
+) {
+  const def = getDefaultPpdbConfig(schoolType, schoolName, boardingAvailable);
+  ppdbConfig.waves = def.waves;
+  ppdbConfig.activeWave = def.activeWave || "Gelombang 1";
+}
+
+const spmbPortal = resolvePpdbPortal(ppdbConfig, new Date());
+const spmbStatus = spmbPortal.effectiveStatus; // 'opened' | 'upcoming' | 'closed'
+const spmbActiveWave = spmbPortal.activeWave;
+const spmbNextWave = spmbPortal.nextWave;
+const spmbAcademicYear =
+  ppdbConfig.academicYear ||
+  schoolInfo["admissions_year"] ||
+  schoolInfo["ppdb_year"] ||
+  "2027/2028";
+
+const defaultAdmissionsTitle =
+  admissionsLabel.toUpperCase() === "PSB"
+    ? boardingAvailable
+      ? "Penerimaan Santri & Siswa Baru"
+      : "Penerimaan Siswa Baru"
+    : admissionsLabel.toUpperCase() === "SPMB"
+      ? "Sistem Penerimaan Siswa Baru"
+      : admissionsLabel.toUpperCase() === "PPDBM"
+        ? "Penerimaan Peserta Didik Baru Madrasah"
+        : admissionsLabel.toUpperCase() === "PPDB"
+          ? "Penerimaan Peserta Didik Baru"
+          : `Pendaftaran Siswa Baru (${admissionsLabel})`;
+
+const rawAdmissionsTitle = (
+  schoolInfo["admissions_title"] ||
+  schoolInfo["ppdb_title"] ||
+  ""
+).trim();
+const admissionsTitle =
+  rawAdmissionsTitle || `${defaultAdmissionsTitle} ${spmbAcademicYear}`;
+
+const admissionsSubtitle =
+  (
+    schoolInfo["admissions_subtitle"] ||
+    schoolInfo["ppdb_subtitle"] ||
+    ""
+  ).trim() ||
+  "Temukan lingkungan pendidikan yang mendukung pengembangan potensi, karakter, dan prestasi peserta didik.";
+
+// 13. Testimoni Alumni untuk Beranda (Slider)
+const alumniSectionActive = schoolInfo["alumni_section_active"] !== "false";
+const alumniSectionTitle =
+  schoolInfo["alumni_section_title"] || "Kisah Inspiratif & Jejak Alumni";
+const alumniSectionDesc =
+  schoolInfo["alumni_section_desc"] ||
+  "Mendengar pengalaman dan cerita sukses para lulusan yang berkiprah di perguruan tinggi ternama serta dunia profesional global.";
+
+const rawAlumni = await db
+  .select()
+  .from(studentsAlumni)
+  .where(
+    and(
+      eq(studentsAlumni.type, "alumni"),
+      eq(studentsAlumni.isPublicConsent, true),
+    ),
+  )
+  .orderBy(desc(studentsAlumni.year), desc(studentsAlumni.id))
+  .catch(() => []);
+
+const fallbackAlumni = [
+  {
+    id: 1,
+    name: "dr. Farhan Ramadhan",
+    title: "Dokter Residen Bedah Saraf",
+    year: "2018",
+    organization: "RSUPN Dr. Cipto Mangunkusumo / FK UI",
+    photoUrl:
+      "https://images.unsplash.com/photo-1622253692010-333f2da6031d?auto=format&fit=crop&w=600&q=80",
+    description:
+      "Pembiasaan riset mandiri dan keteladanan bapak ibu guru di SMAN 1 Unggulan menjadi modal utama saya menempuh jenjang kedokteran yang menuntut stamina mental serta ketelitian tingkat tinggi.",
+  },
+  {
+    id: 2,
+    name: "Alisha Salsabila, B.Eng",
+    title: "Robotics & Embedded Systems Engineer",
+    year: "2020",
+    organization: "Mitsubishi Electric Tokyo / STEI ITB",
+    photoUrl:
+      "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=600&q=80",
+    description:
+      "Laboratorium komputer dan bimbingan klub robotika di sekolah ini luar biasa progresif. Kami dilatih memecahkan persoalan riil dengan teknologi terkini sejak bangku kelas X.",
+  },
+  {
+    id: 3,
+    name: "Muhammad Rayhan Pratama, S.Kom",
+    title: "Senior Cloud Solutions Architect",
+    year: "2019",
+    organization: "Unicorn Tech Indonesia / Fasilkom UI",
+    photoUrl:
+      "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80",
+    description:
+      "Bukan hanya unggul di ruang kelas sains, atmosfer organisasi OSIS dan kegiatan kepemimpinan di sekolah membentuk cara berpikir terstruktur, kerja tim, dan ketahanan karier saya.",
+  },
+  {
+    id: 4,
+    name: "Nabila Zahra Putri, S.Farm",
+    title: "Peneliti Formulasi Farmasi Klinis",
+    year: "2021",
+    organization: "Fakultas Farmasi Universitas Gadjah Mada",
+    photoUrl:
+      "https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=600&q=80",
+    description:
+      "Guru-guru selalu memberi ruang apresiasi bagi minat riset siswa. Pendampingan intensif olimpiade kimia menjadi gerbang utama saya mendapatkan beasiswa penuh di kampus impian.",
+  },
+];
+
+const alumniTestimonials = rawAlumni.length > 0 ? rawAlumni : fallbackAlumni;
+const displayAlumni =
+  alumniTestimonials.length >= 3
+    ? [...alumniTestimonials, ...alumniTestimonials, ...alumniTestimonials]
+    : alumniTestimonials;
+
+// 14. Mitra Industri & Jejaring Perguruan Tinggi (MoU Aktif) untuk Home
+const rawDedicatedPartners = await db
+  .select()
+  .from(partners)
+  .where(eq(partners.isActive, true))
+  .orderBy(asc(partners.orderNumber), desc(partners.id))
+  .catch(() => []);
+
+const rawBkkPartners = await db
+  .select()
+  .from(bkkOpportunities)
+  .where(eq(bkkOpportunities.isActive, true))
+  .orderBy(asc(bkkOpportunities.orderNumber), desc(bkkOpportunities.id))
+  .catch(() => []);
+
+const fallbackPartners = [
+  {
+    id: 1,
+    name: "Institut Teknologi Bandung",
+    category: "Perguruan Tinggi",
+    logoUrl: "https://upload.wikimedia.org/wikipedia/id/thumb/9/95/Logo_Institut_Teknologi_Bandung.png/250px-Logo_Institut_Teknologi_Bandung.png",
+    websiteUrl: "https://itb.ac.id",
+    description: "Kerja sama beasiswa & jalur minat bakat",
+  },
+  {
+    id: 2,
+    name: "Universitas Indonesia",
+    category: "Perguruan Tinggi",
+    logoUrl: "https://upload.wikimedia.org/wikipedia/id/thumb/8/80/Lambang_Universitas_Indonesia.svg/300px-Lambang_Universitas_Indonesia.svg.png",
+    websiteUrl: "https://ui.ac.id",
+    description: "Program riset saintek & olimpiade",
+  },
+  {
+    id: 3,
+    name: "Universitas Gadjah Mada",
+    category: "Perguruan Tinggi",
+    logoUrl: "https://upload.wikimedia.org/wikipedia/id/thumb/a/a9/Lambang_Universitas_Gadjah_Mada.svg/300px-Lambang_Universitas_Gadjah_Mada.svg.png",
+    websiteUrl: "https://ugm.ac.id",
+    description: "Kemitraan akademik & pembinaan guru",
+  },
+  {
+    id: 4,
+    name: "Institut Teknologi Sepuluh Nopember",
+    category: "Perguruan Tinggi",
+    logoUrl: "https://upload.wikimedia.org/wikipedia/id/thumb/0/07/Lambang_ITS.png/250px-Lambang_ITS.png",
+    websiteUrl: "https://its.ac.id",
+    description: "Pengembangan robotika & coding",
+  },
+  {
+    id: 5,
+    name: "PT Telkom Indonesia (Persero) Tbk",
+    category: "Industri & BUMN",
+    logoUrl: "https://upload.wikimedia.org/wikipedia/id/thumb/c/c4/Telkom_Indonesia_2013.svg/300px-Telkom_Indonesia_2013.svg.png",
+    websiteUrl: "https://telkom.co.id",
+    description: "Digital talent & konektivitas fiber optik",
+  },
+  {
+    id: 6,
+    name: "PT Bank Mandiri (Persero) Tbk",
+    category: "Industri & BUMN",
+    logoUrl: "https://upload.wikimedia.org/wikipedia/id/thumb/f/fa/Bank_Mandiri_logo.svg/300px-Bank_Mandiri_logo.svg.png",
+    websiteUrl: "https://bankmandiri.co.id",
+    description: "Literasi finansial & tabungan pelajar",
+  },
+  {
+    id: 7,
+    name: "Badan Riset dan Inovasi Nasional (BRIN)",
+    category: "Instansi Pemerintah",
+    logoUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/Logo_BRIN.png/300px-Logo_BRIN.png",
+    websiteUrl: "https://brin.go.id",
+    description: "Pendampingan Karya Tulis Ilmiah Remaja",
+  },
+];
+
+const activePartners =
+  rawDedicatedPartners.length > 0
+    ? rawDedicatedPartners.map((p) => ({
+        id: p.id,
+        name: p.name,
+        category: p.category,
+        logoUrl: p.logoUrl,
+        websiteUrl: p.websiteUrl,
+        description: p.description || p.category,
+      }))
+    : rawBkkPartners.length > 0
+      ? rawBkkPartners
+          .filter((p) => p.type === "mitra_mou" || Boolean(p.companyLogo))
+          .map((p) => ({
+            id: p.id,
+            name: p.companyName,
+            category: "Mitra Industri (DUDI)",
+            logoUrl: p.companyLogo || "",
+            websiteUrl: "/bkk",
+            description: p.title,
+          }))
+      : fallbackPartners;
+
+// Duplikasi data 3 set untuk infinite seamless loop tanpa rewind ke awal
+let basePartners = activePartners;
+while (basePartners.length > 0 && basePartners.length < 5) {
+  basePartners = [...basePartners, ...activePartners];
+}
+const displayPartners =
+  basePartners.length > 0
+    ? [...basePartners, ...basePartners, ...basePartners]
+    : [];
+
+// Format tanggal Indonesia untuk sinkronisasi otomatis status PPDB
+function formatIndoDate(dateStr: string) {
+  try {
+    const [y, m, d] = dateStr.split("-");
+    const months = [
+      "Januari",
+      "Februari",
+      "Maret",
+      "April",
+      "Mei",
+      "Juni",
+      "Juli",
+      "Agustus",
+      "September",
+      "Oktober",
+      "November",
+      "Desember",
+    ];
+    const monthName = months[parseInt(m, 10) - 1] || m;
+    return `${parseInt(d, 10)} ${monthName} ${y}`;
+  } catch {
+    return dateStr;
+  }
+}
+
+// Sinkronisasi otomatis teks pengumuman PPDB real-time dari engine SPMB
+let displayAnnouncement = activeAnnouncement;
+const isPpdbAnnouncement =
+  !displayAnnouncement ||
+  (displayAnnouncement.text &&
+    (displayAnnouncement.text.includes("PPDB") ||
+      displayAnnouncement.text.includes("Pendaftaran") ||
+      displayAnnouncement.text.includes("10 November 2026")));
+
+if (isPpdbAnnouncement) {
+  if (spmbStatus === "opened" && spmbActiveWave) {
+    displayAnnouncement = {
+      id: displayAnnouncement?.id || 1,
+      text: `Pendaftaran Peserta Didik Baru (${admissionsLabel}) ${spmbActiveWave.name} resmi dibuka hingga ${formatIndoDate(spmbActiveWave.endDate)}.`,
+      linkUrl: "/ppdb",
+      linkText: "Daftar Sekarang",
+      isUrgent: true,
+      isActive: true,
+      createdAt: "",
+      expiresAt: null,
+    };
+  } else if (spmbStatus === "upcoming" && spmbNextWave) {
+    displayAnnouncement = {
+      id: displayAnnouncement?.id || 1,
+      text: `Pendaftaran Peserta Didik Baru (${admissionsLabel}) ${spmbNextWave.name} dibuka mulai ${formatIndoDate(spmbNextWave.startDate)}.`,
+      linkUrl: "/ppdb",
+      linkText: "Lihat Alur & Syarat",
+      isUrgent: true,
+      isActive: true,
+      createdAt: "",
+      expiresAt: null,
+    };
+  }
+}
+---
+
+<Layout
+  title={`${schoolName} — Pusat Pendidikan & Prestasi Generasi Mandiri`}
+  description={`Portal resmi ${schoolName}. Informasi kurikulum riset, pendaftaran ${admissionsLabel}, kalender akademik, serta prestasi siswa tingkat nasional dan global.`}
+  image="https://images.unsplash.com/photo-1541339907198-e08756dedf3f?auto=format&fit=crop&w=1200&q=80"
+>
+  {displayAnnouncement && (
+    <AnnouncementBar
+      id={displayAnnouncement.id}
+      text={displayAnnouncement.text}
+      linkText={displayAnnouncement.linkText || undefined}
+      href={displayAnnouncement.linkUrl || undefined}
+      isUrgent={displayAnnouncement.isUrgent}
+    />
+  )}
+  <Header currentPath="/" />
+
+  <main class="flex-1">
+    {/* 1. HERO SLIDER */}
+    {activeSlides.length > 0 ? (
+      <section
+        id="hero-slider"
+        class="relative overflow-hidden bg-heading text-white min-h-[380px] sm:min-h-[480px] lg:min-h-[580px] flex flex-col justify-between"
+        data-slide-count={activeSlides.length}
+      >
+        <!-- Slides Container -->
+        <div class="relative flex-1 flex items-center">
+          {activeSlides.map((slide, index) => (
+            <div
+              class:list={[
+                "hero-slide absolute inset-0 transition-opacity duration-700 ease-in-out flex items-center",
+                index === 0
+                  ? "opacity-100 z-10 pointer-events-auto"
+                  : "opacity-0 z-0 pointer-events-none",
+              ]}
+              data-index={index}
+            >
+              <!-- Background Image with Gradient Overlay -->
+              <img
+                src={
+                  index === 0
+                    ? slide.imageUrl
+                    : "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 9'%3E%3C/svg%3E"
+                }
+                data-src={index > 0 ? slide.imageUrl : undefined}
+                alt={slide.title}
+                width="1920"
+                height="1080"
+                class="absolute inset-0 h-full w-full object-cover object-center"
+                loading={index === 0 ? "eager" : "lazy"}
+                fetchpriority={index === 0 ? "high" : "low"}
+                decoding={index === 0 ? "sync" : "async"}
+              />
+              <div class="absolute inset-0 bg-gradient-to-t from-black/95 via-black/60 to-black/35"></div>
+
+              <!-- Slide Content -->
+              <div class="relative z-20 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10 sm:py-16 lg:py-20 w-full">
+                <div class="max-w-3xl space-y-2.5 sm:space-y-3">
+                  <div class="uppercase text-[11px] sm:text-xs font-semibold text-white/80 tracking-wider">
+                    {slide.tagline ||
+                      (schoolAccreditation
+                        ? `Akreditasi ${schoolAccreditation}`
+                        : "Selamat Datang")}
+                  </div>
+
+                  <h1 class="font-display text-2xl sm:text-4xl lg:text-6xl font-bold tracking-tight text-white leading-tight sm:leading-[1.12] line-clamp-3 sm:line-clamp-none">
+                    {slide.title}
+                  </h1>
+
+                  {slide.subtitle && (
+                    <p class="max-w-2xl font-body text-xs sm:text-base lg:text-lg text-white/90 leading-relaxed line-clamp-2">
+                      {slide.subtitle}
+                    </p>
+                  )}
+
+                  <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 pt-2">
+                    {slide.linkUrl && (
+                      <a
+                        href={slide.linkUrl}
+                        class="inline-flex h-10 items-center justify-center gap-1.5 rounded-[6px] bg-primary px-5 font-body text-xs sm:text-sm font-semibold text-white transition-all duration-200 hover:-translate-y-[1px] hover:bg-primary-hover hover:shadow-(--shadow-button-glow) w-full sm:w-auto"
+                      >
+                        <span>
+                          {slide.linkText || `Info Alur ${admissionsLabel}`}
+                        </span>
+                        <Icon name="chevron-right" class="h-3.5 w-3.5" />
+                      </a>
+                    )}
+
+                    <a
+                      href={slide.linkUrl2 || "/profil"}
+                      class="inline-flex h-10 items-center justify-center gap-2 rounded-[6px] border border-white/30 bg-white/10 backdrop-blur-md px-5 font-body text-xs sm:text-sm font-medium text-white transition-all duration-200 hover:-translate-y-[1px] hover:bg-white/20 hover:border-white w-full sm:w-auto"
+                    >
+                      {slide.linkText2 || "Profil Sekolah"}
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+
+          <!-- Tombol Navigasi Panah Kiri/Kanan -->
+          {activeSlides.length > 1 && (
+            <div class="hidden sm:flex">
+              <button
+                id="hero-slider-prev"
+                type="button"
+                class="absolute left-6 top-1/2 -translate-y-1/2 z-30 flex h-11 w-11 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-md border border-white/20 transition-all hover:bg-black/70 hover:scale-105 cursor-pointer"
+                aria-label="Slide sebelumnya"
+              >
+                <Icon name="chevron-left" class="h-5 w-5" />
+              </button>
+              <button
+                id="hero-slider-next"
+                type="button"
+                class="absolute right-6 top-1/2 -translate-y-1/2 z-30 flex h-11 w-11 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-md border border-white/20 transition-all hover:bg-black/70 hover:scale-105 cursor-pointer"
+                aria-label="Slide berikutnya"
+              >
+                <Icon name="chevron-right" class="h-5 w-5" />
+              </button>
+            </div>
+          )}
+        </div>
+
+        <!-- Indikator Slide Bulat di Tengah Bawah -->
+        {activeSlides.length > 1 && (
+          <div
+            id="hero-slider-dots"
+            class="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2"
+          >
+            {activeSlides.map((_, i) => (
+              <button
+                type="button"
+                class:list={[
+                  "hero-dot h-2 rounded-full transition-all duration-300 cursor-pointer",
+                  i === 0
+                    ? "w-8 bg-white"
+                    : "w-2 bg-white/40 hover:bg-white/70",
+                ]}
+                data-index={i}
+                aria-label={`Pindah ke slide ${i + 1}`}
+              ></button>
+            ))}
+          </div>
+        )}
+      </section>
+    ) : (
+      <section class="bg-surface py-16 sm:py-20">
+        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
+            <div class="lg:col-span-7 space-y-4">
+              <div class="uppercase text-xs font-semibold text-primary tracking-wider">
+                Akreditasi {schoolAccreditation}
+              </div>
+
+              <h1 class="font-display text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-heading leading-[1.12]">
+                Membentuk Generasi Unggul, Berintegritas, dan Berdaya Saing
+                Global.
+              </h1>
+
+              <p class="max-w-2xl font-body text-base text-muted leading-relaxed">
+                Portal resmi pusat informasi kegiatan kurikuler, capaian
+                prestasi nasional, transparansi tata kelola akademik, serta
+                layanan publik peserta didik.
+              </p>
+
+              <div class="flex flex-wrap items-center gap-3 pt-2">
+                <a
+                  href="/pendaftaran"
+                  class="inline-flex h-10 items-center justify-center gap-1.5 rounded-[6px] bg-primary px-5 font-body text-sm font-semibold text-white transition-all duration-200 hover:-translate-y-[1px] hover:bg-primary-hover hover:shadow-(--shadow-button-glow)"
+                >
+                  <span>Info Alur {admissionsLabel}</span>
+                  <Icon name="chevron-right" class="h-3.5 w-3.5" />
+                </a>
+
+                <a
+                  href="/profil"
+                  class="inline-flex h-10 items-center justify-center gap-2 rounded-[6px] border border-border bg-surface px-5 font-body text-sm font-medium text-heading transition-all duration-200 hover:-translate-y-[1px] hover:border-border-hover hover:bg-surface-subtle"
+                >
+                  Profil Sekolah
+                </a>
+              </div>
+            </div>
+
+            <div class="lg:col-span-5">
+              <div class="overflow-hidden rounded-[10px] border border-border bg-surface-subtle">
+                <img
+                  src="https://images.unsplash.com/photo-1509062522246-3755977927d7?auto=format&fit=crop&w=1000&q=80"
+                  alt={`Kampus ${schoolName}`}
+                  width="800"
+                  height="600"
+                  class="aspect-[4/3] w-full object-cover"
+                  loading="lazy"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    )}
+
+    {/* 2. STATISTIK SEKOLAH */}
+    <section class="bg-surface py-6">
+      <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
+          {stats.map((stat, sIdx) => (
+            <div
+              class="p-3.5 sm:p-4 rounded-[10px] border border-border bg-surface-subtle lg:border-none lg:bg-transparent lg:p-2 lg:border-r lg:border-border lg:last:border-r-0 reveal-on-scroll"
+              data-reveal-delay={String(sIdx * 80)}
+            >
+              <span
+                class="font-display text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-heading block stat-number"
+                data-stat-value={stat.value}
+              >
+                {stat.value}
+              </span>
+              <span class="mt-1 font-body text-xs sm:text-sm font-semibold text-heading block truncate">
+                {stat.label}
+              </span>
+              <span class="mt-0.5 text-[11px] text-muted block line-clamp-1">
+                {stat.desc}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+    {/* 3. SAMBUTAN KEPALA SEKOLAH */}
+    {welcomeActive && (
+      <section class="bg-primary py-12">
+        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div class="grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-10 items-center">
+            <!-- Kolom Foto & Identitas Kepala Sekolah -->
+            <div class="md:col-span-4 flex flex-col items-center md:items-start text-center md:text-left reveal-on-scroll">
+              <div class="relative w-full max-w-[200px] sm:max-w-[240px] md:max-w-[280px] mx-auto md:mx-0">
+                <div class="overflow-hidden rounded-[10px] border border-border bg-surface-subtle aspect-[4/5] shadow-xs">
+                  <img
+                    src={principalPhoto}
+                    alt={principalName}
+                    width="280"
+                    height="350"
+                    class="h-full w-full object-cover object-top"
+                    loading="lazy"
+                  />
+                </div>
+                <div class="absolute bottom-3 left-0 right-0 p-2 mx-auto bg-white text-center">
+                  <h3 class="font-display text-primary font-bold text-sm sm:text-lg">
+                    {principalName}
+                  </h3>
+                  <p class="font-body text-xs text-muted">{principalTitle}</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Kolom Sambutan Singkat -->
+            <div
+              class="md:col-span-8 space-y-3.5 sm:space-y-4 reveal-on-scroll"
+              data-reveal-delay="150"
+            >
+              <div>
+                <div class="uppercase text-xs font-semibold text-white tracking-wider">
+                  Kepemimpinan Institusi
+                </div>
+                <h2 class="mt-1 font-display text-2xl sm:text-3xl font-bold tracking-tight text-white leading-snug">
+                  Sambutan Kepala Sekolah
+                </h2>
+              </div>
+
+              <!-- Kutipan Sambutan Singkat (Excerpt) -->
+              <blockquote class="border-l-2 border-warning pl-4 text-xs sm:text-sm lg:text-base text-white italic leading-relaxed">
+                "{principalExcerpt}"
+              </blockquote>
+
+              <!-- Tombol Aksi -->
+              <div class="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3">
+                <a
+                  href="/profil#sambutan"
+                  class="inline-flex h-10 items-center justify-center gap-1.5 rounded-[6px] border border-warning px-4 font-body text-xs sm:text-sm font-medium text-white transition-all duration-200 hover:-translate-y-[1px] hover:bg-warning-hover text-center"
+                >
+                  <span>Baca Selengkapnya</span>
+                  <Icon name="chevron-right" class="h-3.5 w-3.5" />
+                </a>
+
+                <a
+                  href="/profil#kepala-sekolah"
+                  class="inline-flex h-10 items-center justify-center gap-2 rounded-[6px] border border-border bg-surface px-4 font-body text-xs sm:text-sm font-medium text-heading transition-all duration-200 hover:-translate-y-[1px] hover:border-border-hover hover:bg-surface-subtle text-center"
+                >
+                  Profil Kepala Sekolah
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    )}
+
+    {/* 4. BERITA SEKOLAH TERKINI (1 Berita Utama Besar + 4 Berita Kecil Sejajar) */}
+    <section class="bg-surface py-16">
+      <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div class="flex flex-col sm:flex-row sm:items-end justify-between mb-8 gap-4 reveal-on-scroll">
+          <div>
+            <div class="uppercase text-xs font-semibold text-primary tracking-wider">
+              Informasi & Publikasi
+            </div>
+            <h2 class="mt-1.5 font-display text-2xl sm:text-3xl font-bold tracking-tight text-heading">
+              Berita Sekolah Terkini
+            </h2>
+          </div>
+          <a
+            href="/berita"
+            class="inline-flex items-center gap-1 font-body text-xs font-semibold text-primary hover:underline shrink-0"
+          >
+            <span>Lihat Semua Berita</span>
+            <Icon name="chevron-right" class="h-3.5 w-3.5" />
+          </a>
+        </div>
+
+        {latestArticles.length === 0 ? (
+          <div class="rounded-[10px] border border-border bg-surface-subtle p-8 text-center">
+            <p class="font-display text-sm font-bold text-heading">
+              Belum ada berita diterbitkan
+            </p>
+            <p class="mt-1 text-xs text-muted">
+              Kabar dan dokumentasi terbaru sekolah akan segera hadir.
+            </p>
+          </div>
+        ) : (
+          <div class="space-y-6 sm:space-y-8">
+            <!-- 1 Berita Utama Besar (Horizontal Layout: Foto 16:9 + Teks Lengkap) -->
+            {featuredArticle && (
+              <article
+                class="group overflow-hidden rounded-[12px] border border-border bg-surface card-hover-interactive reveal-on-scroll"
+                data-reveal-delay="100"
+              >
+                <div class="grid grid-cols-1 lg:grid-cols-12">
+                  <a
+                    href={`/berita/${featuredArticle.slug}`}
+                    aria-label={featuredArticle.title}
+                    class="lg:col-span-7 aspect-video w-full overflow-hidden bg-surface-subtle block min-h-[240px] sm:min-h-[300px] lg:min-h-[340px]"
+                  >
+                    <img
+                      src={
+                        featuredArticle.coverImage ||
+                        "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=1200&q=80"
+                      }
+                      alt={featuredArticle.title}
+                      width="800"
+                      height="450"
+                      class="h-full w-full object-cover card-image-zoom"
+                      loading="lazy"
+                    />
+                  </a>
+                  <div class="lg:col-span-5 p-5 sm:p-7 lg:p-8 flex flex-col justify-between space-y-4">
+                    <div class="space-y-3">
+                      <div class="flex items-center gap-2">
+                        {featuredArticle.categorySlug ? (
+                          <a
+                            href={`/berita?kategori=${featuredArticle.categorySlug}`}
+                            class="rounded-[4px] border border-primary/20 bg-primary px-2.5 py-0.5 text-[10px] font-semibold text-white uppercase tracking-wider transition-colors hover:bg-primary-hover shadow-xs"
+                            title={`Lihat kategori ${featuredArticle.categoryName}`}
+                          >
+                            {featuredArticle.categoryName}
+                          </a>
+                        ) : (
+                          <span class="rounded-[4px] border border-primary/20 bg-primary px-2.5 py-0.5 text-[10px] font-semibold text-white uppercase tracking-wider shadow-xs">
+                            {featuredArticle.categoryName || "Umum"}
+                          </span>
+                        )}
+                        <span class="text-xs text-muted">
+                          {featuredArticle.publishedAt
+                            ? new Date(
+                                featuredArticle.publishedAt,
+                              ).toLocaleDateString("id-ID", {
+                                day: "numeric",
+                                month: "short",
+                                year: "numeric",
+                              })
+                            : "-"}
+                        </span>
+                      </div>
+                      <h3 class="font-display text-lg sm:text-2xl font-bold text-heading leading-snug group-hover:text-primary transition-colors">
+                        <a href={`/berita/${featuredArticle.slug}`}>
+                          {featuredArticle.title}
+                        </a>
+                      </h3>
+                      <p class="font-body text-xs sm:text-sm text-muted line-clamp-2 leading-relaxed">
+                        {featuredArticle.summary}
+                      </p>
+                    </div>
+
+                    <div class="pt-2 flex items-center justify-between text-xs text-muted">
+                      {"authorId" in featuredArticle &&
+                      featuredArticle.authorId ? (
+                        <a
+                          href={`/penulis/${encodeURIComponent(featuredArticle.authorId)}`}
+                          class="font-medium text-heading truncate hover:text-primary hover:underline transition-colors"
+                        >
+                          {featuredArticle.authorName || "Humas Sekolah"}
+                        </a>
+                      ) : (
+                        <span class="font-medium text-heading truncate">
+                          {featuredArticle.authorName || "Humas Sekolah"}
+                        </span>
+                      )}
+                      <a
+                        href={`/berita/${featuredArticle.slug}`}
+                        class="font-semibold text-primary hover:underline inline-flex items-center gap-1 shrink-0"
+                      >
+                        <span>Selengkapnya</span>
+                        <Icon name="chevron-right" class="h-3 w-3" />
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            )}
+
+            <!-- 4 Berita Kecil Sejajar (Mobile: 1 Kolom, Tablet: 2 Kolom, Desktop: 4 Kolom) -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+              {secondaryArticles.map((article, aIdx) => (
+                <article
+                  class="group overflow-hidden rounded-[10px] border border-border bg-surface card-hover-interactive reveal-on-scroll flex flex-col justify-between"
+                  data-reveal-delay={String(240 + aIdx * 130)}
+                >
+                  <div class="relative aspect-video w-full overflow-hidden bg-surface-subtle shrink-0">
+                    <a
+                      href={`/berita/${article.slug}`}
+                      aria-label={article.title}
+                      class="block h-full w-full"
+                    >
+                      <img
+                        src={
+                          article.coverImage ||
+                          "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=600&q=80"
+                        }
+                        alt={article.title}
+                        width="600"
+                        height="338"
+                        class="h-full w-full object-cover card-image-zoom"
+                        loading="lazy"
+                      />
+                    </a>
+                    {article.categorySlug ? (
+                      <a
+                        href={`/berita?kategori=${article.categorySlug}`}
+                        class="absolute top-2.5 left-2.5 z-10 rounded-[4px] border border-primary/20 bg-primary px-2 py-1 text-[10px] font-semibold text-white uppercase tracking-wider shadow-xs transition-colors hover:bg-primary-hover"
+                        title={`Lihat kategori ${article.categoryName}`}
+                      >
+                        {article.categoryName}
+                      </a>
+                    ) : (
+                      <span class="absolute top-2.5 left-2.5 z-10 rounded-[4px] border border-primary/20 bg-primary px-2 py-1 text-[10px] font-semibold text-white uppercase tracking-wider shadow-xs">
+                        {article.categoryName || "Umum"}
+                      </span>
+                    )}
+                  </div>
+
+                  <div class="p-3 sm:p-3.5 flex flex-col flex-1 justify-between gap-3">
+                    <div class="flex items-center justify-between text-[11px] text-muted">
+                      {"authorId" in article && article.authorId ? (
+                        <a
+                          href={`/penulis/${encodeURIComponent(article.authorId)}`}
+                          class="font-medium text-heading truncate max-w-[65%] hover:text-primary hover:underline transition-colors"
+                        >
+                          {article.authorName || "Humas Sekolah"}
+                        </a>
+                      ) : (
+                        <span class="font-medium text-heading truncate max-w-[65%]">
+                          {article.authorName || "Humas Sekolah"}
+                        </span>
+                      )}
+                      <time class="shrink-0">
+                        {article.publishedAt
+                          ? new Date(article.publishedAt).toLocaleDateString(
+                              "id-ID",
+                              {
+                                day: "numeric",
+                                month: "short",
+                              },
+                            )
+                          : "-"}
+                      </time>
+                    </div>
+                    <div class="space-y-1.5">
+                      <h4 class="font-display text-xs sm:text-sm font-bold text-heading leading-snug group-hover:text-primary transition-colors line-clamp-2">
+                        <a href={`/berita/${article.slug}`}>{article.title}</a>
+                      </h4>
+                      {article.summary && (
+                        <p class="text-[11px] sm:text-xs text-muted line-clamp-2 leading-relaxed font-body">
+                          {article.summary}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+
+    {/* 5. PROGRAM UNGGULAN & EKSTRAKURIKULER (Maksimal 4 Kartu) */}
+    {activeEkskul.length > 0 && (
+      <section class="bg-surface-subtle py-12 sm:py-16 lg:py-20">
+        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div class="flex flex-col sm:flex-row sm:items-end justify-between mb-8 gap-4 reveal-on-scroll">
+            <div>
+              <div class="uppercase text-xs font-semibold text-primary tracking-wider">
+                Pengembangan Minat & Bakat
+              </div>
+              <h2 class="mt-1.5 font-display text-2xl sm:text-3xl font-bold tracking-tight text-heading">
+                Program Unggulan & Ekstrakurikuler
+              </h2>
+            </div>
+            <a
+              href="/ekstrakurikuler"
+              class="inline-flex items-center gap-1 font-body text-xs font-semibold text-primary hover:underline shrink-0"
+            >
+              <span>Semua Ekstrakurikuler</span>
+              <Icon name="chevron-right" class="h-3.5 w-3.5" />
+            </a>
+          </div>
+
+          <!-- Grid 4 Ekstrakurikuler Unggulan (Mobile: 1 Kolom, Tablet: 2 Kolom, Desktop: 4 Kolom) -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+            {activeEkskul.map((ekskul, eIdx) => (
+              <a
+                href="/ekstrakurikuler"
+                class="group overflow-hidden rounded-[10px] border border-border bg-surface card-hover-interactive reveal-on-scroll flex flex-col justify-between"
+                data-reveal-delay={String(eIdx * 100)}
+                aria-label={`Lihat program ${ekskul.name}`}
+              >
+                <div>
+                  <div class="relative aspect-video w-full overflow-hidden bg-surface-subtle">
+                    <img
+                      src={
+                        ekskul.imageUrl ||
+                        "https://images.unsplash.com/photo-1541829070764-84a7d30dd3f3?auto=format&fit=crop&w=800&q=80"
+                      }
+                      alt={ekskul.name}
+                      width="400"
+                      height="225"
+                      class="h-full w-full object-cover card-image-zoom"
+                      loading="lazy"
+                    />
+                    <div class="absolute bottom-2.5 w-full p-2 bg-surface">
+                      <h3 class="font-display text-xs font-bold text-heading leading-snug transition-colors group-hover:text-primary line-clamp-2">
+                        {ekskul.name}
+                      </h3>
+                    </div>
+                  </div>
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      </section>
+    )}
+    {achievementList.length > 0 && (
+      <section class="bg-surface py-12 sm:py-16">
+        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div class="flex flex-col sm:flex-row sm:items-end justify-between mb-8 sm:mb-10 gap-4 reveal-on-scroll">
+            <div>
+              <div class="uppercase text-xs font-semibold text-primary tracking-wider">
+                Prestasi & Kejuaraan
+              </div>
+              <h2 class="mt-1.5 font-display text-2xl sm:text-3xl font-bold tracking-tight text-heading">
+                Prestasi Siswa Unggulan
+              </h2>
+            </div>
+            <a
+              href="/prestasi"
+              class="inline-flex items-center gap-1 font-body text-xs sm:text-sm font-semibold text-primary shrink-0 hover:underline"
+            >
+              <span>Semua Prestasi</span>
+              <Icon name="chevron-right" class="h-3.5 w-3.5" />
+            </a>
+          </div>
+
+          <!-- Komposisi Prestasi: 1 Prestasi Utama Besar (7 Kolom) + 4 Prestasi Pendukung (5 Kolom 2x2 Grid) -->
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6 items-stretch">
+            <!-- 1 Prestasi Utama Besar (Tablet: Full Width, Desktop: 7 Kolom) -->
+            {featuredAchievement && (
+              <div
+                class="lg:col-span-7 reveal-on-scroll"
+                data-reveal-delay="100"
+              >
+                <a
+                  href={`/prestasi/${featuredAchievement.id}`}
+                  aria-label={featuredAchievement.title}
+                  class="group relative block aspect-[16/10] sm:aspect-[16/9] lg:h-full w-full overflow-hidden rounded-[8px] sm:rounded-[12px] bg-surface-subtle card-hover-interactive"
+                >
+                  <img
+                    src={
+                      featuredAchievement.photoUrl ||
+                      "https://images.unsplash.com/photo-1577495508048-b635879837f1?auto=format&fit=crop&w=800&q=80"
+                    }
+                    alt={featuredAchievement.title}
+                    width="800"
+                    height="500"
+                    class="h-full w-full object-cover card-image-zoom"
+                    loading="lazy"
+                  />
+                  <!-- Gradient Overlay -->
+                  <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent pointer-events-none"></div>
+
+                  <!-- Konten Prestasi Utama -->
+                  <div class="absolute bottom-0 inset-x-0 p-4 sm:p-6 text-white space-y-1.5 sm:space-y-2">
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span class="inline-block rounded-[4px] bg-white/20 backdrop-blur-xs px-2 py-0.5 text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-white">
+                        {featuredAchievement.year}
+                      </span>
+                      <span class="text-[11px] sm:text-xs text-white/80 truncate">
+                        {featuredAchievement.organization ||
+                          "Prestasi Unggulan"}
+                      </span>
+                    </div>
+
+                    <h3 class="font-display text-base sm:text-xl lg:text-2xl font-bold text-white leading-snug line-clamp-2">
+                      {featuredAchievement.title}
+                    </h3>
+
+                    {featuredAchievement.description && (
+                      <p class="font-body text-xs text-white/80 line-clamp-2">
+                        {featuredAchievement.description}
+                      </p>
+                    )}
+
+                    <div class="pt-1 flex items-center gap-1.5 text-xs text-white/90">
+                      <Icon
+                        name="user"
+                        class="w-3.5 h-3.5 text-white/80 shrink-0"
+                      />
+                      <span class="font-medium truncate">
+                        {featuredAchievement.name}
+                      </span>
+                    </div>
+                  </div>
+                </a>
+              </div>
+            )}
+
+            <!-- 4 Prestasi Pendukung (Grid 2 Kolom, Desktop: 5 Kolom) -->
+            <div class="lg:col-span-5 grid grid-cols-2 gap-3.5 sm:gap-4">
+              {supportingAchievements.map((item, sIdx) => (
+                <a
+                  href={`/prestasi/${item.id}`}
+                  aria-label={`${item.title} - ${item.name}`}
+                  class="group relative block aspect-[4/3] sm:aspect-[16/10] overflow-hidden rounded-[6px] sm:rounded-[8px] bg-surface-subtle reveal-on-scroll"
+                  data-reveal-delay={String(240 + sIdx * 130)}
+                >
+                  <img
+                    src={
+                      item.photoUrl ||
+                      "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=600&q=80"
+                    }
+                    alt={item.title}
+                    width="400"
+                    height="300"
+                    class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
+                    loading="lazy"
+                  />
+                  <!-- Overlay Gradient Lembut -->
+                  <div class="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent pointer-events-none"></div>
+
+                  <!-- Label, Judul Singkat, Nama Siswa -->
+                  <div class="absolute bottom-0 inset-x-0 p-2.5 sm:p-3 text-white space-y-0.5">
+                    <span class="block text-[8px] sm:text-[9px] font-semibold uppercase tracking-wider text-white/80 truncate">
+                      {item.year} &bull; {item.organization || "Prestasi"}
+                    </span>
+                    <h4 class="font-display text-[11px] sm:text-xs font-semibold text-white leading-tight line-clamp-1 sm:line-clamp-2 mt-0.5">
+                      {item.title}
+                    </h4>
+                    <p class="text-[10px] text-white/70 truncate pt-0.5 font-body">
+                      {item.name}
+                    </p>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+    )}
+    {/* 6. FASILITAS SEKOLAH (4 Fasilitas Kecil Sejajar) */}
+    {homeFacilities.length > 0 && (
+      <section class="bg-primary py-12 sm:py-16">
+        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div class="flex flex-col sm:flex-row sm:items-end justify-between mb-8 gap-4 reveal-on-scroll">
+            <div>
+              <div class="uppercase text-xs font-semibold text-white tracking-wider">
+                Sarana & Prasarana
+              </div>
+              <h2 class="mt-1.5 font-display text-2xl sm:text-3xl font-bold tracking-tight text-white">
+                Fasilitas Unggulan Sekolah
+              </h2>
+            </div>
+            <a
+              href="/fasilitas"
+              class="inline-flex items-center gap-1 font-body text-xs font-semibold text-primary hover:underline shrink-0"
+            >
+              <span>Lihat Fasilitas</span>
+              <Icon name="chevron-right" class="h-3.5 w-3.5" />
+            </a>
+          </div>
+
+          <!-- Grid Fasilitas Sekolah (Mobile: 1 Kolom, Tablet: 2 Kolom, Desktop: 4 Kolom) -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+            {homeFacilities.map((fac, fIdx) => (
+              <a
+                href="/fasilitas"
+                class="group overflow-hidden rounded-[10px] border border-border bg-surface card-hover-interactive reveal-on-scroll flex flex-col justify-between"
+                data-reveal-delay={String(fIdx * 100)}
+                aria-label={`Lihat fasilitas ${fac.name}`}
+              >
+                <div>
+                  {/* Foto Rasio 16:9 */}
+                  <div class="relative aspect-video w-full overflow-hidden bg-surface-subtle">
+                    <img
+                      src={
+                        fac.imageUrl ||
+                        "https://images.unsplash.com/photo-1562774053-701939374585?auto=format&fit=crop&w=800&q=80"
+                      }
+                      alt={fac.name}
+                      width="400"
+                      height="225"
+                      class="h-full w-full object-cover card-image-zoom"
+                      loading="lazy"
+                    />
+                    {/* Judul Fasilitas Saja */}
+                    <div class="absolute bottom-2.5 w-full p-2 bg-surface">
+                      <h3 class="font-display text-xs font-bold text-heading leading-snug line-clamp-2 transition-colors group-hover:text-primary">
+                        {fac.name}
+                      </h3>
+                    </div>
+                  </div>
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      </section>
+    )}
+
+    {/* 7. DEWAN GURU & TENAGA PENDIDIK (Slider Responsif Berbasis Foto) */}
+    {activeTeachers.length > 0 && (
+      <section class="bg-surface py-12 sm:py-16">
+        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div class="flex flex-col sm:flex-row sm:items-end justify-between mb-8 gap-4 reveal-on-scroll">
+            <div>
+              <div class="uppercase text-xs font-semibold text-primary tracking-wider">
+                Sumber Daya Pendidik
+              </div>
+              <h2 class="mt-1.5 font-display text-2xl sm:text-3xl font-bold tracking-tight text-heading">
+                Dewan Guru & Tenaga Pendidik
+              </h2>
+              <p class="mt-1 text-xs sm:text-sm text-muted">
+                Pendidik profesional berdedikasi yang membina karakter dan
+                capaian prestasi peserta didik.
+              </p>
+            </div>
+
+            <div class="flex items-center gap-3 shrink-0">
+              <!-- Slider Navigation Controls -->
+              <div class="flex items-center gap-1.5">
+                <button
+                  id="teacher-slider-prev"
+                  type="button"
+                  class="inline-flex h-9 w-9 items-center justify-center rounded-[6px] border border-border bg-surface text-muted transition-all duration-200 hover:-translate-y-[1px] hover:border-heading hover:text-heading cursor-pointer active:scale-95"
+                  aria-label="Guru sebelumnya"
+                >
+                  <Icon name="chevron-left" class="h-4 w-4" />
+                </button>
+                <button
+                  id="teacher-slider-next"
+                  type="button"
+                  class="inline-flex h-9 w-9 items-center justify-center rounded-[6px] border border-border bg-surface text-muted transition-all duration-200 hover:-translate-y-[1px] hover:border-heading hover:text-heading cursor-pointer active:scale-95"
+                  aria-label="Guru berikutnya"
+                >
+                  <Icon name="chevron-right" class="h-4 w-4" />
+                </button>
+              </div>
+
+              <a
+                href="/direktori"
+                class="inline-flex items-center gap-1 font-body text-xs font-semibold text-primary hover:underline ml-2"
+              >
+                <span>Lihat Semua Guru</span>
+                <Icon name="chevron-right" class="h-3.5 w-3.5" />
+              </a>
+            </div>
+          </div>
+
+          <!-- Carousel Slider Track (Scroll-Snap horizontal, touch-friendly, smooth) -->
+          <div
+            id="teacher-slider-track"
+            class="flex gap-4 sm:gap-5 lg:gap-6 overflow-x-auto scroll-smooth snap-x snap-mandatory py-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {displayTeachers.map((teacher, tIdx) => (
+              <a
+                href="/direktori"
+                class="group relative flex-none w-[calc(50%-8px)] sm:w-[calc(33.333%-14px)] lg:w-[calc(25%-18px)] aspect-[3/4] overflow-hidden rounded-[10px] border border-border bg-surface-subtle snap-start transition-all duration-200 hover:-translate-y-0.5 hover:border-border-hover hover:shadow-(--shadow-hover) block reveal-on-scroll"
+                data-reveal-delay={String(120 + Math.min(tIdx, 4) * 130)}
+                aria-label={`Profil ${teacher.name}`}
+              >
+                <img
+                  src={teacher.photoUrl || "/images/default-avatar.svg"}
+                  alt={teacher.name}
+                  width="300"
+                  height="400"
+                  class="h-full w-full object-cover object-top transition-transform duration-300 group-hover:scale-[1.04]"
+                  loading="lazy"
+                  onerror="this.onerror=null;this.src='/images/default-avatar.svg';"
+                />
+
+                <!-- Info menempel di bagian bawah foto (Scrim Gradient) -->
+                <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 via-black/60 to-transparent p-3.5 sm:p-4 pt-14 text-white space-y-1 pointer-events-none">
+                  {teacher.position && (
+                    <span class="block text-[10px] sm:text-[11px] font-semibold text-secondary uppercase tracking-wider truncate">
+                      {teacher.position}
+                    </span>
+                  )}
+                  <h3
+                    class="font-display text-xs sm:text-sm font-bold text-white leading-snug line-clamp-1 group-hover:text-secondary transition-colors"
+                    title={teacher.name}
+                  >
+                    {teacher.name}
+                  </h3>
+                  <p class="font-body text-[11px] sm:text-xs text-white/80 truncate">
+                    {teacher.subject || "Tenaga Pendidik"}
+                  </p>
+                </div>
+              </a>
+            ))}
+          </div>
+        </div>
+      </section>
+    )}
+
+    {/* 8. ORGANISASI KESISWAAN (OSIS / OSIM) */}
+    {orgIsActive && (
+      <section class="bg-surface py-12 sm:py-16">
+        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-center mb-8 sm:mb-10 gap-4 text-center reveal-on-scroll">
+            <div>
+              <div class="uppercase text-xs font-semibold text-primary tracking-wider">
+                Kepemimpinan Kesiswaan
+              </div>
+              <h2 class="mt-1.5 font-display text-2xl sm:text-3xl font-bold tracking-tight text-heading">
+                {orgName}
+              </h2>
+              <p class="mt-1 text-xs sm:text-sm text-muted max-w-2xl">
+                Wadah aspirasi, penguatan karakter, kepemimpinan demokratis, dan
+                aktualisasi potensi peserta didik masa bakti {orgPeriod}.
+              </p>
+            </div>
+          </div>
+
+          <!-- Komposisi Kepemimpinan: 1 Banner Utama Besar (Desktop: 7 Kolom) + 4 Pengurus Inti 2x2 (Desktop: 5 Kolom) -->
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6 items-stretch">
+            <!-- 1 Banner Utama Besar (Profil Ketua Umum) -->
+            <div class="lg:col-span-7 reveal-on-scroll" data-reveal-delay="100">
+              <a
+                href="/osis"
+                class="group relative block aspect-[16/10] sm:aspect-[16/9] lg:h-full w-full overflow-hidden rounded-[12px] border border-border bg-surface-subtle"
+                aria-label={`Profil Ketua Umum ${leaderName}`}
+              >
+                <img
+                  src={leaderPhoto || orgBanner}
+                  alt={`Ketua Umum ${resolvedOrgType} ${leaderName}`}
+                  width="700"
+                  height="440"
+                  class="h-full w-full object-cover object-top transition-transform duration-300 group-hover:scale-[1.02]"
+                  loading="lazy"
+                  onerror={`this.onerror=null;this.src='${orgBanner}';`}
+                />
+                <!-- Gradient Overlay -->
+                <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent pointer-events-none"></div>
+
+                <!-- Konten Banner Utama (Ketua Umum) -->
+                <div class="absolute bottom-0 inset-x-0 p-4 sm:p-6 text-white space-y-1 sm:space-y-1.5">
+                  <div class="flex items-center gap-2 mb-1 flex-wrap">
+                    <span class="inline-block rounded-[4px] bg-primary text-white px-2 py-0.5 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider">
+                      Ketua Umum {resolvedOrgType}
+                    </span>
+                    <span class="inline-block rounded-[4px] bg-white/20 backdrop-blur-xs px-2 py-0.5 text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-white">
+                      Masa Bakti {orgPeriod}
+                    </span>
+                  </div>
+                  <h3
+                    class="font-display text-base sm:text-xl lg:text-2xl font-bold text-white leading-snug line-clamp-1"
+                    title={leaderName}
+                  >
+                    {leaderName}
+                  </h3>
+                  <p class="font-body text-xs sm:text-sm text-white/85 line-clamp-2 italic">
+                    &ldquo;{orgTagline}&rdquo;
+                  </p>
+                  <div class="pt-2 flex items-center justify-end text-xs text-white/80 mt-2">
+                    <span class="inline-flex items-center gap-1 text-xs text-white/90 font-medium group-hover:text-secondary transition-colors shrink-0">
+                      <span>Lihat Profil Lengkap</span>
+                      <Icon name="chevron-right" class="h-3 w-3" />
+                    </span>
+                  </div>
+                </div>
+              </a>
+            </div>
+
+            <!-- 3 Pengurus Inti (Berjejer Vertikal, Desktop: 5 Kolom) -->
+            <div class="lg:col-span-5 flex flex-col justify-between gap-3 sm:gap-3.5">
+              {coreOfficers.map((officer, oIdx) => (
+                <a
+                  href="/osis"
+                  class="group relative flex items-center gap-3.5 sm:gap-4 p-3 sm:p-3.5 lg:p-4 rounded-[10px] border border-border bg-surface transition-all duration-200 hover:-translate-y-0.5 hover:border-border-hover hover:shadow-(--shadow-hover) flex-1 min-h-[96px] reveal-on-scroll"
+                  data-reveal-delay={String(240 + oIdx * 140)}
+                  aria-label={`Profil ${officer.role} ${officer.name}`}
+                >
+                  <div class="relative h-14 w-14 sm:h-20 sm:w-20 rounded-[8px] overflow-hidden border border-border bg-surface-subtle shrink-0 aspect-square">
+                    <img
+                      src={officer.photo}
+                      alt={officer.name}
+                      width="80"
+                      height="80"
+                      class="h-full w-full object-cover object-top transition-transform duration-300 group-hover:scale-[1.05]"
+                      loading="lazy"
+                      onerror="this.onerror=null;this.src='/images/default-avatar.svg';"
+                    />
+                  </div>
+                  <div class="min-w-0 flex-1 space-y-1">
+                    <div class="flex items-center gap-2">
+                      <span class="inline-block rounded-[4px] border border-primary/20 bg-primary px-2 py-0.5 text-[10px] font-semibold text-white uppercase tracking-wider shadow-xs">
+                        {officer.role}
+                      </span>
+                    </div>
+                    <h4
+                      class="font-display text-sm sm:text-base font-bold text-heading leading-tight truncate group-hover:text-primary transition-colors"
+                      title={officer.name}
+                    >
+                      {officer.name}
+                    </h4>
+                    <p class="font-body text-[11px] text-muted truncate">
+                      Pengurus Harian {resolvedOrgType} {schoolName}
+                    </p>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+    )}
+
+    {/* 9. AGENDA KEGIATAN & PUSAT LAYANAN */}
+    <section class="bg-primary py-12 sm:py-16">
+      <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <!-- Section Header -->
+        <div class="flex flex-col sm:flex-row sm:items-end justify-between mb-8 sm:mb-10 gap-4 reveal-on-scroll">
+          <div>
+            <div class="uppercase text-xs font-semibold text-white/80 tracking-wider">
+              Kalender Akademik
+            </div>
+            <h2 class="mt-1.5 font-display text-2xl sm:text-3xl font-bold tracking-tight text-white">
+              Agenda & Jadwal Mendatang
+            </h2>
+            <p class="mt-1 text-xs sm:text-sm text-white/80 max-w-2xl">
+              Rangkaian kegiatan akademik, ujian, rapat pleno, dan agenda resmi
+              kampus sekolah.
+            </p>
+          </div>
+        </div>
+
+        <!-- Grid 4 Kartu Agenda Widget (Tablet: 2x2, Desktop: 4 Kolom Sejajar - Token @theme Resmi) -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 items-stretch">
+          {upcomingAgendas.slice(0, 4).map((agenda, idx) => (
+            <a
+              href={`/agenda/${agenda.id}`}
+              class="group rounded-[12px] border border-border bg-surface p-5 sm:p-6 flex flex-col justify-between transition-all duration-200 hover:-translate-y-0.5 hover:border-border-hover hover:shadow-(--shadow-hover) reveal-on-scroll"
+              data-reveal-delay={String(120 + idx * 130)}
+              aria-label={`Agenda: ${agenda.title}`}
+            >
+              <div>
+                <!-- Top: Date Badge & Status/Icon -->
+                <div class="flex items-start justify-between mb-3.5">
+                  <span class="inline-flex items-center gap-1.5 text-primary text-xs font-bold">
+                    <Icon
+                      name="calendar"
+                      class="h-5 w-5 text-accent shrink-0"
+                    />
+                    {agenda.day} {agenda.month}
+                  </span>
+
+                  {idx === 0 ? (
+                    <div class="h-8 w-8 rounded-full bg-primary text-white flex items-center justify-center">
+                      <Icon name="bell-ring" class="h-4 w-4" />
+                    </div>
+                  ) : (
+                    <span class="rounded-full border border-primary/20 bg-primary-light px-2.5 py-0.5 text-[11px] font-semibold text-primary">
+                      Terjadwal
+                    </span>
+                  )}
+                </div>
+
+                <!-- Title -->
+                <h3
+                  class="font-display text-sm font-semibold text-heading leading-snug line-clamp-2 group-hover:text-primary transition-colors"
+                  title={agenda.title}
+                >
+                  {agenda.title}
+                </h3>
+              </div>
+            </a>
+          ))}
+        </div>
+        <div class="flex justify-end">
+          <a
+            href="/agenda"
+            class="flex items-center justify-end gap-1.5 mt-5 w-fit font-body text-xs font-semibold text-primary shrink-0 transition-colors bg-surface hover:bg-surface-subtle py-2 px-4 rounded-full shadow-xs reveal-on-scroll"
+            data-reveal-delay="400"
+          >
+            <span>Selengkapnya</span>
+            <Icon name="chevron-right" class="h-3.5 w-3.5" />
+          </a>
+        </div>
+        <!-- Bottom Banner: Jam Operasional & Layanan Terpadu PTSP -->
+        <div
+          class="mt-8 rounded-[12px] border border-white/10 bg-white/5 backdrop-blur-md p-4 sm:p-6 reveal-on-scroll"
+          data-reveal-delay="300"
+        >
+          <div class="flex items-center justify-between pb-2 text-xs">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-semibold uppercase tracking-wider text-white/90">
+                Jam Layanan & Operasional Administrasi
+              </span>
+            </div>
+          </div>
+
+          <!-- Grid 4 Kolom -->
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-0">
+            <!-- 1. Senin – Kamis -->
+            <div class="p-3 sm:p-4 rounded-[8px] border border-white/10 bg-white/5 lg:border-none lg:bg-transparent lg:p-3 lg:border-r lg:border-white/10">
+              <span class="font-display text-lg sm:text-xl lg:text-2xl font-bold tracking-tight text-white block font-mono">
+                07.00 – 15.30
+              </span>
+              <span class="mt-1 font-body text-xs sm:text-sm font-semibold text-white/90 block truncate">
+                Senin – Kamis
+              </span>
+              <span class="mt-0.5 text-[11px] text-white/70 block line-clamp-1">
+                Administrasi & perizinan
+              </span>
+            </div>
+
+            <!-- 2. Jumat -->
+            <div class="p-3 sm:p-4 rounded-[8px] border border-white/10 bg-white/5 lg:border-none lg:bg-transparent lg:p-3 lg:border-r lg:border-white/10">
+              <span class="font-display text-lg sm:text-xl lg:text-2xl font-bold tracking-tight text-white block font-mono">
+                07.00 – 14.30
+              </span>
+              <span class="mt-1 font-body text-xs sm:text-sm font-semibold text-white/90 block truncate">
+                Jumat
+              </span>
+              <span class="mt-0.5 text-[11px] text-white/70 block line-clamp-1">
+                Loket pelayanan terpadu
+              </span>
+            </div>
+
+            <!-- 3. Sabtu – Minggu -->
+            <div class="p-3 sm:p-4 rounded-[8px] border border-white/10 bg-white/5 lg:border-none lg:bg-transparent lg:p-3 lg:border-r lg:border-white/10">
+              <span class="font-display text-lg sm:text-xl lg:text-2xl font-bold tracking-tight text-white/60 block">
+                Libur / Tutup
+              </span>
+              <span class="mt-1 font-body text-xs sm:text-sm font-semibold text-white/80 block truncate">
+                Sabtu – Minggu
+              </span>
+              <span class="mt-0.5 text-[11px] text-white/60 block line-clamp-1">
+                Non-operasional kantor
+              </span>
+            </div>
+
+            <!-- 4. Kontak & PTSP -->
+            <div class="p-3 sm:p-4 rounded-[8px] border border-white/10 bg-white/5 lg:border-none lg:bg-transparent lg:p-3 lg:last:border-r-0">
+              <span class="font-display text-lg sm:text-xl lg:text-2xl font-bold tracking-tight text-white hover:text-accent transition-colors block font-mono truncate">
+                {schoolPhone}
+              </span>
+              <span class="mt-1 font-body text-xs sm:text-sm font-semibold text-white/90 block truncate">
+                Layanan Telepon
+              </span>
+              <span class="mt-0.5 text-[11px] text-white/70 block line-clamp-1">
+                Informasi & bantuan
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {/* 10. JEJARING KEMITRAAN INDUSTRI & DUDI (SLIDER LOGO) - KHUSUS SMK */}
+    {isSMK && activePartners.length > 0 && (
+      <section class="bg-surface py-12 sm:py-16 overflow-hidden">
+        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-8">
+          <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 reveal-on-scroll">
+            <div>
+              <div class="uppercase text-xs font-semibold text-primary tracking-wider">
+                Mitra Strategis & Kolaborasi
+              </div>
+              <h2 class="mt-1.5 font-display text-2xl sm:text-3xl font-bold tracking-tight text-heading">
+                Jejaring Perguruan Tinggi & Rekanan Industri
+              </h2>
+              <p class="mt-1 text-xs sm:text-sm text-muted max-w-2xl">
+                Kerja sama institusi {schoolName} bersama perguruan tinggi terkemuka, BUMN, industri nasional, dan lembaga mitra dalam beasiswa, riset, serta penyaluran lulusan.
+              </p>
+            </div>
+
+            <div class="flex items-center gap-3 shrink-0">
+              <!-- Slider Navigation Controls -->
+              <div class="flex items-center gap-1.5 *:inline-flex *:h-8 *:w-8 *:items-center *:justify-center *:rounded-[6px] *:border *:border-border *:bg-surface *:text-heading *:transition-colors *:cursor-pointer">
+                <button
+                  id="home-partner-slider-prev"
+                  type="button"
+                  class="hover:bg-surface-subtle hover:text-primary active:scale-95"
+                  aria-label="Mitra sebelumnya"
+                >
+                  <Icon name="chevron-left" class="h-3.5 w-3.5" />
+                </button>
+                <button
+                  id="home-partner-slider-next"
+                  type="button"
+                  class="hover:bg-surface-subtle hover:text-primary active:scale-95"
+                  aria-label="Mitra berikutnya"
+                >
+                  <Icon name="chevron-right" class="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Carousel Slider Track (Scroll-Snap horizontal, touch-friendly, smooth) -->
+          <div
+            id="home-partner-slider-track"
+            class="flex gap-4 sm:gap-5 overflow-x-auto scroll-smooth snap-x snap-mandatory py-2 cursor-grab active:cursor-grabbing select-none [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {displayPartners.map((partner, pIdx) => (
+              <a
+                href={partner.websiteUrl || "#"}
+                target={partner.websiteUrl?.startsWith("http") ? "_blank" : undefined}
+                rel={partner.websiteUrl?.startsWith("http") ? "noopener noreferrer" : undefined}
+                class="flex-none w-[190px] sm:w-[220px] rounded-[10px] border border-border bg-surface p-4 snap-start shadow-xs hover:-translate-y-0.5 hover:shadow-(--shadow-hover) hover:border-primary transition-all duration-200 flex flex-col items-center justify-between text-center space-y-3 group reveal-on-scroll"
+                data-reveal-delay={String(100 + Math.min(pIdx % 6, 5) * 100)}
+                aria-label={`Kemitraan ${partner.name}`}
+              >
+                <div class="h-16 w-full rounded-[6px] bg-surface flex items-center justify-center p-1.5">
+                  {partner.logoUrl ? (
+                    <img
+                      src={partner.logoUrl}
+                      alt={partner.name}
+                      class="max-h-full max-w-full object-contain filter group-hover:scale-105 transition-transform duration-200 pointer-events-none"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <span class="font-display font-bold text-lg text-primary">
+                      {partner.name.trim().charAt(0).toUpperCase()}
+                    </span>
+                  )}
+                </div>
+
+                <div class="w-full space-y-1">
+                  <h3 class="font-display text-xs font-bold text-heading line-clamp-1 group-hover:text-primary transition-colors">
+                    {partner.name}
+                  </h3>
+                  <p class="font-body text-[11px] text-muted line-clamp-1" title={partner.description}>
+                    {partner.description}
+                  </p>
+                </div>
+
+                <span class="inline-block rounded-[4px] bg-surface-subtle border border-border text-muted px-2 py-0.5 text-[10px] font-medium truncate max-w-full">
+                  {partner.category}
+                </span>
+              </a>
+            ))}
+          </div>
+        </div>
+      </section>
+    )}
+
+    {/* 11. GALERI KEGIATAN SEKOLAH (1 Utama Besar + 4 Pendukung) */}
+    {homeGalleries.length > 0 && (
+      <section class="bg-surface py-12 sm:py-16">
+        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div class="flex flex-col sm:flex-row sm:items-end justify-between mb-8 sm:mb-10 gap-4 reveal-on-scroll">
+            <div>
+              <div class="uppercase text-xs font-semibold text-primary tracking-wider">
+                Dokumentasi & Aktivitas
+              </div>
+              <h2 class="mt-1.5 font-display text-2xl sm:text-3xl font-bold tracking-tight text-heading">
+                Galeri Kegiatan
+              </h2>
+              <p class="mt-1 text-xs sm:text-sm text-muted">
+                Ragam momen kebersamaan, dinamika pembelajaran, dan pembinaan
+                karakter di lingkungan sekolah.
+              </p>
+            </div>
+            <a
+              href="/galeri"
+              class="inline-flex items-center gap-1 font-body text-xs sm:text-sm font-semibold text-primary hover:underline shrink-0"
+            >
+              <span>Lihat Semua</span>
+              <Icon name="chevron-right" class="h-3.5 w-3.5" />
+            </a>
+          </div>
+
+          <!-- Komposisi Galeri: Mobile/Tablet: 1 Foto Utama + 2x2 Pendukung Cukup Besar; Desktop: 7 Kolom Utama + 5 Kolom 2x2 -->
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6 items-stretch">
+            <!-- 1 Foto Utama Besar (Tablet: Full Width, Desktop: 7 Kolom) -->
+            {featuredGallery && (
+              <div
+                class="lg:col-span-7 reveal-on-scroll"
+                data-reveal-delay="100"
+              >
+                <a
+                  href={featuredGallery.mediaUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={featuredGallery.title}
+                  class="group relative block aspect-[16/10] sm:aspect-[16/9] lg:h-full w-full overflow-hidden rounded-[12px] border border-border bg-surface-subtle"
+                >
+                  <img
+                    src={featuredGallery.mediaUrl}
+                    alt={featuredGallery.title}
+                    width="700"
+                    height="440"
+                    class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                    loading="lazy"
+                  />
+                  <!-- Gradient Overlay -->
+                  <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-transparent pointer-events-none"></div>
+
+                  <!-- Konten Foto Utama -->
+                  <div class="absolute bottom-0 inset-x-0 p-4 sm:p-6 text-white space-y-1 sm:space-y-1.5">
+                    <span class="inline-block rounded-[4px] border border-white/20 bg-black/60 backdrop-blur-xs px-2.5 py-1 text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider text-white shadow-xs">
+                      {featuredGallery.albumName || "Dokumentasi Utama"}
+                    </span>
+                    <h3 class="font-display text-base sm:text-xl lg:text-2xl font-bold text-white leading-snug line-clamp-2">
+                      {featuredGallery.title}
+                    </h3>
+                    {featuredGallery.caption && (
+                      <p class="font-body text-xs text-white/80 line-clamp-1">
+                        {featuredGallery.caption}
+                      </p>
+                    )}
+                  </div>
+                </a>
+              </div>
+            )}
+
+            <!-- 4 Foto Pendukung (Grid 2 Kolom, Desktop: 5 Kolom) -->
+            <div class="lg:col-span-5 grid grid-cols-2 gap-3.5 sm:gap-4">
+              {supportingGalleries.map((item, gIdx) => (
+                <a
+                  href={item.mediaUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={item.title}
+                  class="group relative block aspect-[4/3] sm:aspect-[16/10] overflow-hidden rounded-[10px] border border-border bg-surface-subtle reveal-on-scroll"
+                  data-reveal-delay={String(240 + gIdx * 130)}
+                >
+                  <img
+                    src={item.mediaUrl}
+                    alt={item.title}
+                    width="400"
+                    height="250"
+                    class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
+                    loading="lazy"
+                  />
+                  <!-- Overlay Gradient Lembut -->
+                  <div class="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent pointer-events-none"></div>
+
+                  <!-- Label & Judul Singkat -->
+                  <div class="absolute bottom-0 inset-x-0 p-2.5 sm:p-3 text-white">
+                    <span class="block text-[8px] sm:text-[9px] font-semibold uppercase tracking-wider text-white/80 truncate">
+                      {item.albumName || "Kegiatan"}
+                    </span>
+                    <h4 class="font-display text-[11px] sm:text-xs font-semibold text-white leading-tight line-clamp-1 sm:line-clamp-2 mt-0.5">
+                      {item.title}
+                    </h4>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+    )}
+
+    {/* 12. CTA PENERIMAAN SISWA BARU (SPMB / PPDB) */}
+    <section class="bg-surface py-12 sm:py-16">
+      <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div class="relative overflow-hidden rounded-[12px] border border-border bg-heading text-white min-h-[280px] sm:min-h-[340px] flex items-center reveal-on-scroll">
+          <!-- Background Visual Sekolah dengan Overlay -->
+          <img
+            src="https://images.unsplash.com/photo-1541339907198-e08756dedf3f?auto=format&fit=crop&w=1600&q=80"
+            alt={`Penerimaan Siswa Baru ${schoolName}`}
+            width="1600"
+            height="600"
+            class="absolute inset-0 h-full w-full object-cover object-center"
+            loading="lazy"
+          />
+          <div class="absolute inset-0 bg-gradient-to-r from-black/95 via-black/85 to-black/60 pointer-events-none"></div>
+
+          <!-- Konten CTA Terfokus -->
+          <div class="relative z-10 w-full px-5 py-8 sm:px-10 sm:py-12 lg:p-14 space-y-3 sm:space-y-4 flex items-center justify-center flex-col gap-2 text-center">
+            <!-- Status Pendaftaran Mengikuti Pengaturan SPMB / PPDB Admin -->
+            <div class="flex items-center gap-2">
+              {spmbStatus === "opened" ? (
+                <span class="inline-flex items-center text-[10px] sm:text-[11px] font-semibold text-white uppercase tracking-wider">
+                  Pendaftaran Dibuka &bull;{" "}
+                  {spmbActiveWave?.name || "Gelombang Aktif"}
+                </span>
+              ) : spmbStatus === "upcoming" ? (
+                <span class="inline-flex items-center rounded-[4px] border border-warning/30 bg-warning-light px-2.5 py-1 text-[10px] sm:text-[11px] font-semibold text-warning-text uppercase tracking-wider">
+                  Segera Dibuka &bull;{" "}
+                  {spmbNextWave
+                    ? `${spmbNextWave.name} (${spmbNextWave.startDate})`
+                    : "Jadwal Mendatang"}
+                </span>
+              ) : (
+                <span class="inline-flex items-center text-[10px] sm:text-[11px] font-semibold text-white uppercase tracking-wider">
+                  Pendaftaran Ditutup
+                </span>
+              )}
+            </div>
+
+            <h2 class="font-display text-xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-white leading-tight uppercase">
+              {admissionsTitle}
+            </h2>
+
+            <p class="font-body text-xs sm:text-sm lg:text-base text-white/85 leading-relaxed max-w-2xl line-clamp-2 sm:line-clamp-none">
+              {admissionsSubtitle}
+            </p>
+
+            <!-- Maksimal Dua Tombol Aksi (Mobile: Full-Width Stacked, Desktop: Inline) -->
+            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 pt-2">
+              {spmbStatus === "opened" ? (
+                <a
+                  href="/pendaftaran"
+                  class="inline-flex h-10 items-center justify-center gap-1.5 rounded-[6px] bg-primary px-5 font-body text-xs sm:text-sm font-semibold text-white btn-hover-interactive hover:bg-primary-hover w-full sm:w-auto"
+                >
+                  <span>Daftar {admissionsLabel} Online</span>
+                  <Icon name="chevron-right" class="h-3.5 w-3.5" />
+                </a>
+              ) : (
+                <a
+                  href="/pendaftaran"
+                  class="inline-flex h-10 items-center justify-center gap-1.5 rounded-[6px] bg-primary px-5 font-body text-xs sm:text-sm font-semibold text-white btn-hover-interactive hover:bg-primary-hover w-full sm:w-auto"
+                >
+                  <span>Lihat Jadwal & Syarat</span>
+                  <Icon name="chevron-right" class="h-3.5 w-3.5" />
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {/* 13. TESTIMONI ALUMNI (SLIDER EDITORIAL BANNER) */}
+    {alumniSectionActive && alumniTestimonials.length > 0 && (
+      <section
+        class="bg-surface py-12 sm:py-16 overflow-hidden"
+        aria-labelledby="alumni-section-title"
+      >
+        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <!-- Outer Banner Box (Warna Primary Solid Penuh Berbingkai Halus) -->
+          <div class="relative rounded-[20px] bg-primary text-white p-6 sm:p-10 lg:p-12 shadow-lg pt-12 sm:pt-14 reveal-on-scroll">
+            <!-- Floating Top Quote Badge (Identik Gambar Referensi) -->
+            <div class="absolute -top-7 sm:-top-8 left-6 sm:left-10 h-16 w-16 sm:h-20 sm:w-20 rounded-full bg-secondary text-secondary-foreground shadow-md flex items-center justify-center z-10 ring-4 ring-surface">
+              <Icon name="quote" class="h-8 w-8 sm:h-10 sm:w-10" />
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-stretch">
+              <!-- Kolom Kiri: Judul, Deskripsi, Tautan & Navigasi -->
+              <div class="lg:col-span-4 flex flex-col justify-between">
+                <div>
+                  <h2
+                    id="alumni-section-title"
+                    class="font-display text-2xl sm:text-3xl font-bold tracking-tight text-white leading-tight"
+                  >
+                    {alumniSectionTitle}
+                  </h2>
+                  <p class="font-body text-xs sm:text-sm text-white/80 leading-relaxed mt-3 max-w-sm">
+                    {alumniSectionDesc}
+                  </p>
+                  <div class="mt-5">
+                    <a
+                      href="/prestasi"
+                      class="inline-flex items-center gap-1.5 font-body text-xs sm:text-sm font-semibold text-secondary hover:text-white transition-colors group"
+                    >
+                      <span>Lihat Jejak Prestasi</span>
+                      <Icon
+                        name="chevron-right"
+                        class="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5"
+                      />
+                    </a>
+                  </div>
+                </div>
+
+                <!-- Tombol Navigasi Prev / Next (Bentuk Kotak di Kiri Bawah) -->
+                <div class="flex items-center gap-1.5 mt-8 *:inline-flex *:h-8 *:w-8 *:items-center *:justify-center *:rounded-[4px] *:border *:border-white/20 *:bg-white/10 *:text-white *:transition-all *:duration-200 *:cursor-pointer">
+                  <button
+                    id="alumni-slider-prev"
+                    type="button"
+                    class="hover:bg-white hover:text-primary active:scale-95"
+                    aria-label="Testimoni sebelumnya"
+                  >
+                    <Icon name="chevron-left" class="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    id="alumni-slider-next"
+                    type="button"
+                    class="hover:bg-white hover:text-primary active:scale-95"
+                    aria-label="Testimoni berikutnya"
+                  >
+                    <Icon name="chevron-right" class="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              <!-- Kolom Kanan: Slider Kartu Testimoni & Dots -->
+              <div class="lg:col-span-8 min-w-0 flex flex-col justify-between">
+                <!-- Track Kartu -->
+                <div
+                  id="alumni-slider-track"
+                  class="flex gap-4 sm:gap-5 overflow-x-auto scroll-smooth snap-x snap-mandatory pb-2 pt-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                >
+                  {displayAlumni.map((alumni) => (
+                    <article class="snap-start shrink-0 w-[84%] sm:w-[calc(50%-10px)] lg:w-[calc(33.333%-14px)] rounded-[12px] bg-surface text-heading overflow-hidden border border-border shadow-md flex flex-col justify-between transition-all duration-200 hover:-translate-y-0.5 hover:shadow-(--shadow-hover)">
+                      <!-- Foto Profil Alumni (Bagian Atas) -->
+                      <div class="relative aspect-[4/3] w-full overflow-hidden bg-surface-subtle">
+                        <img
+                          src={
+                            alumni.photoUrl ||
+                            "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80"
+                          }
+                          alt={alumni.name}
+                          width="400"
+                          height="300"
+                          class="h-full w-full object-cover"
+                          loading="lazy"
+                        />
+                      </div>
+
+                      <!-- Overlapping Quote Badge (Tepat di Perbatasan Foto & Konten) -->
+                      <div class="relative z-10 -mt-4 ml-4 h-8 w-8 rounded-full bg-secondary text-secondary-foreground shadow-xs flex items-center justify-center ring-2 ring-surface shrink-0">
+                        <Icon name="quote" class="h-3.5 w-3.5" />
+                      </div>
+
+                      <!-- Isi Kutipan & Identitas Alumni -->
+                      <div class="p-5 pt-2.5 flex-1 flex flex-col justify-between space-y-4">
+                        <p class="font-body text-xs text-body leading-relaxed line-clamp-4">
+                          "{alumni.description}"
+                        </p>
+                        <div>
+                          <h3 class="font-display text-sm font-bold text-heading truncate">
+                            {alumni.name}
+                          </h3>
+                          <p class="font-body text-xs text-muted truncate mt-0.5">
+                            {alumni.title}
+                          </p>
+                          {alumni.organization && (
+                            <p class="font-body text-[11px] text-primary font-medium truncate mt-0.5">
+                              {alumni.organization}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+
+                <!-- Indikator Dots Pagination (Kanan Bawah) -->
+                <div
+                  class="flex items-center justify-end gap-1.5 mt-4"
+                  id="alumni-slider-dots"
+                >
+                  {alumniTestimonials.map((_, i) => (
+                    <button
+                      type="button"
+                      class:list={[
+                        "alumni-dot h-1.5 rounded-full transition-all duration-200 cursor-pointer",
+                        i === 0
+                          ? "w-5 bg-white"
+                          : "w-1.5 bg-white/40 hover:bg-white/70",
+                      ]}
+                      data-index={i}
+                      aria-label={`Testimoni slide ${i + 1}`}
+                    ></button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    )}
+  </main>
+
+  <Footer />
+
+  <script>
+    function initHeroSlider() {
+      const slider = document.getElementById("hero-slider");
+      if (!slider) return;
+
+      const slides = slider.querySelectorAll(".hero-slide");
+      const dots = slider.querySelectorAll(".hero-dot");
+      const prevBtn = document.getElementById("hero-slider-prev");
+      const nextBtn = document.getElementById("hero-slider-next");
+
+      if (slides.length <= 1) return;
+
+      let currentIndex = 0;
+      let timer: any = null;
+
+      function loadDeferredImages() {
+        const deferredImages = slider.querySelectorAll("img[data-src]");
+        deferredImages.forEach((img) => {
+          const src = img.getAttribute("data-src");
+          if (src) {
+            img.setAttribute("src", src);
+            img.removeAttribute("data-src");
+          }
+        });
+      }
+
+      function goToSlide(index: number) {
+        loadDeferredImages();
+        currentIndex = (index + slides.length) % slides.length;
+
+        slides.forEach((slide, i) => {
+          if (i === currentIndex) {
+            slide.classList.remove("opacity-0", "pointer-events-none", "z-0");
+            slide.classList.add("opacity-100", "pointer-events-auto", "z-10");
+          } else {
+            slide.classList.remove(
+              "opacity-100",
+              "pointer-events-auto",
+              "z-10",
+            );
+            slide.classList.add("opacity-0", "pointer-events-none", "z-0");
+          }
+        });
+
+        dots.forEach((dot, i) => {
+          if (i === currentIndex) {
+            dot.classList.remove("w-2", "bg-surface/40");
+            dot.classList.add("w-8", "bg-surface");
+          } else {
+            dot.classList.remove("w-8", "bg-surface");
+            dot.classList.add("w-2", "bg-surface/40");
+          }
+        });
+      }
+
+      function nextSlide() {
+        goToSlide(currentIndex + 1);
+      }
+
+      function prevSlide() {
+        goToSlide(currentIndex - 1);
+      }
+
+      function startTimer() {
+        stopTimer();
+        timer = setInterval(nextSlide, 5000);
+      }
+
+      function stopTimer() {
+        if (timer) clearInterval(timer);
+      }
+
+      prevBtn?.addEventListener("click", () => {
+        prevSlide();
+        startTimer();
+      });
+
+      nextBtn?.addEventListener("click", () => {
+        nextSlide();
+        startTimer();
+      });
+
+      dots.forEach((dot) => {
+        dot.addEventListener("click", () => {
+          const idx = parseInt(dot.getAttribute("data-index") || "0", 10);
+          goToSlide(idx);
+          startTimer();
+        });
+      });
+
+      slider.addEventListener("mouseenter", stopTimer);
+      slider.addEventListener("mouseleave", startTimer);
+
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowLeft") prevSlide();
+        if (e.key === "ArrowRight") nextSlide();
+      });
+
+      // Unduh gambar slide berikutnya setelah LCP slide utama selesai (idle / sebelum slide berganti)
+      if ("requestIdleCallback" in window) {
+        (window as any).requestIdleCallback(() => loadDeferredImages(), {
+          timeout: 2000,
+        });
+      } else {
+        setTimeout(loadDeferredImages, 1500);
+      }
+
+      startTimer();
+    }
+
+    function initTeacherSlider() {
+      const track = document.getElementById("teacher-slider-track");
+      const prevBtn = document.getElementById("teacher-slider-prev");
+      const nextBtn = document.getElementById("teacher-slider-next");
+      if (!track) return;
+
+      const totalItems = track.children.length;
+      if (totalItems <= 4) return;
+
+      const singleSetCount = Math.floor(totalItems / 3);
+      let isNormalizing = false;
+      let autoTimer: any = null;
+      let scrollTimeout: any = null;
+
+      function getSingleSetWidth(): number {
+        if (!track || track.children.length < singleSetCount) return 0;
+        const firstCard = track.children[0] as HTMLElement;
+        const middleCard = track.children[singleSetCount] as HTMLElement;
+        if (!firstCard || !middleCard) return 0;
+        return middleCard.offsetLeft - firstCard.offsetLeft;
+      }
+
+      function setInitialPosition() {
+        if (!track) return;
+        const singleSetWidth = getSingleSetWidth();
+        if (singleSetWidth > 0 && track.scrollLeft < singleSetWidth * 0.5) {
+          track.classList.remove("scroll-smooth");
+          track.style.scrollSnapType = "none";
+          track.scrollLeft = singleSetWidth;
+          void track.offsetWidth;
+          track.classList.add("scroll-smooth");
+          track.style.scrollSnapType = "";
+        }
+      }
+
+      function normalizePosition() {
+        if (!track || isNormalizing) return;
+        const singleSetWidth = getSingleSetWidth();
+        if (singleSetWidth <= 0) return;
+
+        // If scrolled into third set, jump back to second set seamlessly
+        if (track.scrollLeft >= 2 * singleSetWidth - 8) {
+          isNormalizing = true;
+          track.classList.remove("scroll-smooth");
+          track.style.scrollSnapType = "none";
+          track.scrollLeft -= singleSetWidth;
+          void track.offsetWidth;
+          track.classList.add("scroll-smooth");
+          track.style.scrollSnapType = "";
+          setTimeout(() => {
+            isNormalizing = false;
+          }, 60);
+        }
+        // If scrolled back into first set, jump forward to second set seamlessly
+        else if (track.scrollLeft <= singleSetWidth * 0.4) {
+          isNormalizing = true;
+          track.classList.remove("scroll-smooth");
+          track.style.scrollSnapType = "none";
+          track.scrollLeft += singleSetWidth;
+          void track.offsetWidth;
+          track.classList.add("scroll-smooth");
+          track.style.scrollSnapType = "";
+          setTimeout(() => {
+            isNormalizing = false;
+          }, 60);
+        }
+      }
+
+      function scrollStep(direction: number) {
+        if (!track) return;
+        normalizePosition();
+        const firstCard = track.querySelector("a") as HTMLElement | null;
+        const step = firstCard
+          ? firstCard.offsetWidth + 20
+          : track.clientWidth * 0.75;
+        track.scrollBy({ left: direction * step, behavior: "smooth" });
+      }
+
+      function startAutoPlay() {
+        stopAutoPlay();
+        autoTimer = setInterval(() => {
+          scrollStep(1);
+        }, 3500);
+      }
+
+      function stopAutoPlay() {
+        if (autoTimer) {
+          clearInterval(autoTimer);
+          autoTimer = null;
+        }
+      }
+
+      prevBtn?.addEventListener("click", () => {
+        scrollStep(-1);
+        startAutoPlay();
+      });
+
+      nextBtn?.addEventListener("click", () => {
+        scrollStep(1);
+        startAutoPlay();
+      });
+
+      // Pause autoplay on mouse hover or touch interaction
+      track.addEventListener("mouseenter", stopAutoPlay);
+      track.addEventListener("mouseleave", startAutoPlay);
+      track.addEventListener("touchstart", stopAutoPlay, { passive: true });
+      track.addEventListener("touchend", startAutoPlay, { passive: true });
+
+      track.addEventListener(
+        "scroll",
+        () => {
+          if (scrollTimeout) clearTimeout(scrollTimeout);
+          scrollTimeout = setTimeout(normalizePosition, 160);
+        },
+        { passive: true },
+      );
+
+      window.addEventListener(
+        "resize",
+        () => {
+          setInitialPosition();
+        },
+        { passive: true },
+      );
+
+      setInitialPosition();
+      setTimeout(setInitialPosition, 100);
+      startAutoPlay();
+    }
+
+    function initAlumniSlider() {
+      const track = document.getElementById("alumni-slider-track");
+      const prevBtn = document.getElementById("alumni-slider-prev");
+      const nextBtn = document.getElementById("alumni-slider-next");
+      if (!track) return;
+
+      const totalItems = track.children.length;
+      if (totalItems <= 3) return;
+
+      const singleSetCount = Math.floor(totalItems / 3);
+      let isNormalizing = false;
+      let autoTimer: any = null;
+      let scrollTimeout: any = null;
+
+      function getSingleSetWidth(): number {
+        if (!track || track.children.length < singleSetCount) return 0;
+        const firstCard = track.children[0] as HTMLElement;
+        const middleCard = track.children[singleSetCount] as HTMLElement;
+        if (!firstCard || !middleCard) return 0;
+        return middleCard.offsetLeft - firstCard.offsetLeft;
+      }
+
+      function setInitialPosition() {
+        if (!track) return;
+        const singleSetWidth = getSingleSetWidth();
+        if (singleSetWidth > 0 && track.scrollLeft < singleSetWidth * 0.5) {
+          track.classList.remove("scroll-smooth");
+          track.style.scrollSnapType = "none";
+          track.scrollLeft = singleSetWidth;
+          void track.offsetWidth;
+          track.classList.add("scroll-smooth");
+          track.style.scrollSnapType = "";
+        }
+      }
+
+      function normalizePosition() {
+        if (!track || isNormalizing) return;
+        const singleSetWidth = getSingleSetWidth();
+        if (singleSetWidth <= 0) return;
+
+        if (track.scrollLeft >= 2 * singleSetWidth - 8) {
+          isNormalizing = true;
+          track.classList.remove("scroll-smooth");
+          track.style.scrollSnapType = "none";
+          track.scrollLeft -= singleSetWidth;
+          void track.offsetWidth;
+          track.classList.add("scroll-smooth");
+          track.style.scrollSnapType = "";
+          setTimeout(() => {
+            isNormalizing = false;
+          }, 60);
+        } else if (track.scrollLeft <= singleSetWidth * 0.4) {
+          isNormalizing = true;
+          track.classList.remove("scroll-smooth");
+          track.style.scrollSnapType = "none";
+          track.scrollLeft += singleSetWidth;
+          void track.offsetWidth;
+          track.classList.add("scroll-smooth");
+          track.style.scrollSnapType = "";
+          setTimeout(() => {
+            isNormalizing = false;
+          }, 60);
+        }
+      }
+
+      function scrollStep(direction: number) {
+        if (!track) return;
+        normalizePosition();
+        const firstCard = track.querySelector("article") as HTMLElement | null;
+        const step = firstCard
+          ? firstCard.offsetWidth + 24
+          : track.clientWidth * 0.8;
+        track.scrollBy({ left: direction * step, behavior: "smooth" });
+      }
+
+      function startAutoPlay() {
+        stopAutoPlay();
+        autoTimer = setInterval(() => {
+          scrollStep(1);
+        }, 4500);
+      }
+
+      function stopAutoPlay() {
+        if (autoTimer) {
+          clearInterval(autoTimer);
+          autoTimer = null;
+        }
+      }
+
+      prevBtn?.addEventListener("click", () => {
+        scrollStep(-1);
+        startAutoPlay();
+      });
+
+      nextBtn?.addEventListener("click", () => {
+        scrollStep(1);
+        startAutoPlay();
+      });
+
+      const dots = document.querySelectorAll(".alumni-dot");
+      const originalCount = dots.length || 1;
+
+      function updateDots() {
+        if (!track || dots.length === 0) return;
+        const firstCard = track.children[0] as HTMLElement;
+        const cardStep = firstCard
+          ? firstCard.offsetWidth + 20
+          : track.offsetWidth * 0.8;
+        const currentActive =
+          Math.round(track.scrollLeft / cardStep) % originalCount;
+
+        dots.forEach((dot, idx) => {
+          if (idx === currentActive) {
+            dot.classList.remove("w-1.5", "bg-white/40");
+            dot.classList.add("w-5", "bg-white");
+          } else {
+            dot.classList.remove("w-5", "bg-white");
+            dot.classList.add("w-1.5", "bg-white/40");
+          }
+        });
+      }
+
+      dots.forEach((dot) => {
+        dot.addEventListener("click", () => {
+          const idx = parseInt(dot.getAttribute("data-index") || "0", 10);
+          const singleSetWidth = getSingleSetWidth();
+          const firstCard = track.children[0] as HTMLElement;
+          const cardStep = firstCard
+            ? firstCard.offsetWidth + 20
+            : singleSetWidth / singleSetCount;
+          track.scrollTo({
+            left: singleSetWidth + idx * cardStep,
+            behavior: "smooth",
+          });
+          startAutoPlay();
+        });
+      });
+
+      track.addEventListener("mouseenter", stopAutoPlay);
+      track.addEventListener("mouseleave", startAutoPlay);
+      track.addEventListener("touchstart", stopAutoPlay, { passive: true });
+      track.addEventListener("touchend", startAutoPlay, { passive: true });
+
+      track.addEventListener(
+        "scroll",
+        () => {
+          if (scrollTimeout) clearTimeout(scrollTimeout);
+          scrollTimeout = setTimeout(() => {
+            normalizePosition();
+            updateDots();
+          }, 160);
+        },
+        { passive: true },
+      );
+
+      window.addEventListener(
+        "resize",
+        () => {
+          setInitialPosition();
+          updateDots();
+        },
+        { passive: true },
+      );
+
+      setInitialPosition();
+      setTimeout(() => {
+        setInitialPosition();
+        updateDots();
+      }, 100);
+      startAutoPlay();
+    }
+
+    function initHomePartnerSlider() {
+      const track = document.getElementById("home-partner-slider-track");
+      const prevBtn = document.getElementById("home-partner-slider-prev");
+      const nextBtn = document.getElementById("home-partner-slider-next");
+      if (!track) return;
+
+      const totalItems = track.children.length;
+      if (totalItems <= 3) return;
+
+      const singleSetCount = Math.floor(totalItems / 3);
+      let isNormalizing = false;
+      let autoTimer: any = null;
+      let scrollTimeout: any = null;
+
+      function getSingleSetWidth(): number {
+        if (!track || track.children.length < singleSetCount) return 0;
+        const firstCard = track.children[0] as HTMLElement;
+        const middleCard = track.children[singleSetCount] as HTMLElement;
+        if (!firstCard || !middleCard) return 0;
+        return middleCard.offsetLeft - firstCard.offsetLeft;
+      }
+
+      function setInitialPosition() {
+        if (!track) return;
+        const singleSetWidth = getSingleSetWidth();
+        if (singleSetWidth > 0 && track.scrollLeft < singleSetWidth * 0.5) {
+          track.classList.remove("scroll-smooth");
+          track.style.scrollSnapType = "none";
+          track.scrollLeft = singleSetWidth;
+          void track.offsetWidth;
+          track.classList.add("scroll-smooth");
+          track.style.scrollSnapType = "";
+        }
+      }
+
+      function normalizePosition() {
+        if (!track || isNormalizing) return;
+        const singleSetWidth = getSingleSetWidth();
+        if (singleSetWidth <= 0) return;
+
+        // Scrolled into third set -> seamlessly jump back to second set without visual rewind
+        if (track.scrollLeft >= 2 * singleSetWidth - 8) {
+          isNormalizing = true;
+          track.classList.remove("scroll-smooth");
+          track.style.scrollSnapType = "none";
+          track.scrollLeft -= singleSetWidth;
+          void track.offsetWidth;
+          track.classList.add("scroll-smooth");
+          track.style.scrollSnapType = "";
+          setTimeout(() => {
+            isNormalizing = false;
+          }, 60);
+        }
+        // Scrolled into first set -> seamlessly jump forward to second set
+        else if (track.scrollLeft <= singleSetWidth * 0.4) {
+          isNormalizing = true;
+          track.classList.remove("scroll-smooth");
+          track.style.scrollSnapType = "none";
+          track.scrollLeft += singleSetWidth;
+          void track.offsetWidth;
+          track.classList.add("scroll-smooth");
+          track.style.scrollSnapType = "";
+          setTimeout(() => {
+            isNormalizing = false;
+          }, 60);
+        }
+      }
+
+      function scrollStep(direction: number) {
+        if (!track) return;
+        normalizePosition();
+        const firstCard = track.children[0] as HTMLElement | null;
+        const step = firstCard
+          ? firstCard.offsetWidth + 20
+          : track.clientWidth * 0.75;
+        track.scrollBy({ left: direction * step, behavior: "smooth" });
+      }
+
+      function startAutoPlay() {
+        stopAutoPlay();
+        autoTimer = setInterval(() => {
+          scrollStep(1);
+        }, 3200);
+      }
+
+      function stopAutoPlay() {
+        if (autoTimer) {
+          clearInterval(autoTimer);
+          autoTimer = null;
+        }
+      }
+
+      prevBtn?.addEventListener("click", () => {
+        scrollStep(-1);
+        startAutoPlay();
+      });
+
+      nextBtn?.addEventListener("click", () => {
+        scrollStep(1);
+        startAutoPlay();
+      });
+
+      // Mouse drag & touch drag support (smooth gesture without clicking buttons)
+      let isDragging = false;
+      let startX = 0;
+      let startScrollLeft = 0;
+
+      track.addEventListener("mousedown", (e) => {
+        isDragging = true;
+        stopAutoPlay();
+        track.classList.remove("scroll-smooth");
+        startX = e.pageX - track.offsetLeft;
+        startScrollLeft = track.scrollLeft;
+      });
+
+      window.addEventListener("mouseup", () => {
+        if (!isDragging) return;
+        isDragging = false;
+        track.classList.add("scroll-smooth");
+        normalizePosition();
+        startAutoPlay();
+      });
+
+      track.addEventListener("mousemove", (e) => {
+        if (!isDragging) return;
+        e.preventDefault();
+        const x = e.pageX - track.offsetLeft;
+        const walk = (x - startX) * 1.2;
+        track.scrollLeft = startScrollLeft - walk;
+      });
+
+      track.addEventListener("mouseenter", stopAutoPlay);
+      track.addEventListener("mouseleave", () => {
+        if (!isDragging) startAutoPlay();
+      });
+      track.addEventListener("touchstart", stopAutoPlay, { passive: true });
+      track.addEventListener("touchend", () => {
+        normalizePosition();
+        startAutoPlay();
+      }, { passive: true });
+
+      track.addEventListener(
+        "scroll",
+        () => {
+          if (scrollTimeout) clearTimeout(scrollTimeout);
+          scrollTimeout = setTimeout(normalizePosition, 160);
+        },
+        { passive: true },
+      );
+
+      window.addEventListener(
+        "resize",
+        () => {
+          setInitialPosition();
+        },
+        { passive: true },
+      );
+
+      setInitialPosition();
+      setTimeout(setInitialPosition, 100);
+      startAutoPlay();
+    }
+
+    function initHomePage() {
+      initHeroSlider();
+      initTeacherSlider();
+      initHomePartnerSlider();
+      initAlumniSlider();
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", initHomePage);
+    } else {
+      initHomePage();
+    }
+  </script>
+</Layout>

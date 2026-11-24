@@ -1,0 +1,918 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import Header from "../../components/Header.astro";
+import Footer from "../../components/Footer.astro";
+import Breadcrumb from "../../components/Breadcrumb.astro";
+import Icon from "../../components/Icon.astro";
+import ShareButtons from "../../components/ShareButtons.astro";
+import { db, articles, categories, users, settings } from "../../db";
+import { eq, ne, desc, asc, and, isNull, sql } from "drizzle-orm";
+import { verifyPreviewToken } from "../../server/auth";
+import { sanitizeArticleHtml } from "../../utils/sanitizeHtml";
+
+export const prerender = false;
+
+const { slug } = Astro.params;
+
+if (!slug) {
+  return Astro.redirect("/berita");
+}
+
+// Cek token pratinjau draf staf (jika ada)
+const previewToken = Astro.url.searchParams.get("preview_token");
+let isPreview = false;
+if (previewToken) {
+  const verified = await verifyPreviewToken(previewToken);
+  if (verified && verified.slug === slug) {
+    isPreview = true;
+  }
+}
+
+// Kondisi filter: Draf & artikel dihapus hanya boleh tampil jika ada token preview sah
+const conditions: any[] = [eq(articles.slug, slug), isNull(articles.deletedAt)];
+if (!isPreview) {
+  conditions.push(eq(articles.status, "published"));
+  conditions.push(sql`${articles.publishedAt} <= ${new Date().toISOString()}`);
+}
+
+// Ambil konfigurasi sekolah & pendaftaran dari database
+let schoolSettings: Record<string, string> = {};
+try {
+  const allSettings = await db.select().from(settings);
+  schoolSettings = (allSettings || []).reduce(
+    (acc, curr) => {
+      acc[curr.key] = curr.value;
+      return acc;
+    },
+    {} as Record<string, string>,
+  );
+} catch {
+  schoolSettings = {};
+}
+
+// Konfigurasi Pendaftaran / PPDB Dinamis dari CMS
+const admissionsLabel =
+  schoolSettings["admissions_label"] || schoolSettings["ppdb_label"] || "PPDB";
+const academicYear =
+  schoolSettings["ppdb_year"] ||
+  schoolSettings["admissions_year"] ||
+  "2026/2027";
+const schoolType = (
+  schoolSettings["school_type"] ||
+  schoolSettings["school_level"] ||
+  "SMA"
+).toUpperCase();
+const boardingAvailable = schoolSettings["boarding_available"] === "true";
+
+const defaultAdmissionsTitle =
+  admissionsLabel.toUpperCase() === "PSB"
+    ? boardingAvailable
+      ? "Penerimaan Santri & Siswa Baru"
+      : "Penerimaan Siswa Baru"
+    : admissionsLabel.toUpperCase() === "SPMB"
+      ? "Sistem Penerimaan Siswa Baru"
+      : admissionsLabel.toUpperCase() === "PPDBM"
+        ? "Penerimaan Peserta Didik Baru Madrasah"
+        : admissionsLabel.toUpperCase() === "PPDB"
+          ? "Penerimaan Peserta Didik Baru"
+          : `Pendaftaran Siswa Baru (${admissionsLabel})`;
+
+const rawAdmissionsTitle = (
+  schoolSettings["admissions_title"] ||
+  schoolSettings["ppdb_title"] ||
+  ""
+).trim();
+const admissionsTitle =
+  rawAdmissionsTitle || `${defaultAdmissionsTitle} TA ${academicYear}`;
+
+const admissionsSubtitle =
+  (
+    schoolSettings["admissions_subtitle"] ||
+    schoolSettings["ppdb_subtitle"] ||
+    ""
+  ).trim() ||
+  "Akses alur registrasi resmi, jadwal seleksi akademik, dan persyaratan berkas secara daring.";
+
+// Ambil artikel saat ini
+const articleData = await db
+  .select({
+    id: articles.id,
+    slug: articles.slug,
+    title: articles.title,
+    summary: articles.summary,
+    content: articles.content,
+    coverImage: articles.coverImage,
+    publishedAt: articles.publishedAt,
+    viewCount: articles.viewCount,
+    metaTitle: articles.metaTitle,
+    metaDescription: articles.metaDescription,
+    categoryName: categories.name,
+    categorySlug: categories.slug,
+    categoryId: articles.categoryId,
+    authorId: articles.authorId,
+    authorName: users.name,
+    status: articles.status,
+  })
+  .from(articles)
+  .leftJoin(categories, eq(articles.categoryId, categories.id))
+  .leftJoin(users, eq(articles.authorId, users.id))
+  .where(and(...conditions))
+  .limit(1)
+  .then((res) => res[0]);
+
+if (!articleData) {
+  Astro.response.status = 404;
+}
+
+// Hitung estimasi waktu membaca
+const plainText = (articleData?.content || "").replace(/<[^>]+>/g, " ");
+const wordCount = plainText.split(/\s+/).filter(Boolean).length;
+const readingTime = Math.max(1, Math.ceil(wordCount / 180));
+
+// Ambil berita terkait dalam kategori sama (atau berita terbaru jika kategori tidak ditentukan)
+const relatedArticles = articleData
+  ? await db
+      .select({
+        id: articles.id,
+        slug: articles.slug,
+        title: articles.title,
+        coverImage: articles.coverImage,
+        publishedAt: articles.publishedAt,
+        categoryName: categories.name,
+      })
+      .from(articles)
+      .leftJoin(categories, eq(articles.categoryId, categories.id))
+      .where(
+        and(
+          ne(articles.id, articleData.id),
+          eq(articles.status, "published"),
+          isNull(articles.deletedAt),
+          sql`${articles.publishedAt} <= ${new Date().toISOString()}`,
+          articleData.categoryId
+            ? eq(articles.categoryId, articleData.categoryId)
+            : undefined,
+        ),
+      )
+      .orderBy(desc(articles.publishedAt))
+      .limit(3)
+  : [];
+
+// Ambil berita terpopuler (berdasarkan viewCount)
+const popularArticles = articleData
+  ? await db
+      .select({
+        id: articles.id,
+        slug: articles.slug,
+        title: articles.title,
+        coverImage: articles.coverImage,
+        viewCount: articles.viewCount,
+        publishedAt: articles.publishedAt,
+        categoryName: categories.name,
+      })
+      .from(articles)
+      .leftJoin(categories, eq(articles.categoryId, categories.id))
+      .where(
+        and(
+          ne(articles.id, articleData.id),
+          eq(articles.status, "published"),
+          isNull(articles.deletedAt),
+          sql`${articles.publishedAt} <= ${new Date().toISOString()}`,
+        ),
+      )
+      .orderBy(desc(articles.viewCount), desc(articles.publishedAt))
+      .limit(4)
+  : [];
+
+// Ambil navigasi artikel Sebelumnya (Prev) dan Berikutnya (Next)
+const [prevArticle, nextArticle] =
+  articleData && articleData.publishedAt
+    ? await Promise.all([
+        db
+          .select({
+            id: articles.id,
+            slug: articles.slug,
+            title: articles.title,
+          })
+          .from(articles)
+          .where(
+            and(
+              ne(articles.id, articleData.id),
+              eq(articles.status, "published"),
+              isNull(articles.deletedAt),
+              sql`${articles.publishedAt} <= ${new Date().toISOString()}`,
+              sql`${articles.publishedAt} < ${articleData.publishedAt}`,
+            ),
+          )
+          .orderBy(desc(articles.publishedAt))
+          .limit(1)
+          .then((r) => r[0] || null),
+        db
+          .select({
+            id: articles.id,
+            slug: articles.slug,
+            title: articles.title,
+          })
+          .from(articles)
+          .where(
+            and(
+              ne(articles.id, articleData.id),
+              eq(articles.status, "published"),
+              isNull(articles.deletedAt),
+              sql`${articles.publishedAt} <= ${new Date().toISOString()}`,
+              sql`${articles.publishedAt} > ${articleData.publishedAt}`,
+            ),
+          )
+          .orderBy(asc(articles.publishedAt))
+          .limit(1)
+          .then((r) => r[0] || null),
+      ])
+    : [null, null];
+
+// Ekstrak domain situs dari email / website settings untuk lead prefix artikel berita (seperti Bola.net -)
+const siteEmail = schoolSettings["email"] || "";
+const emailDomain = siteEmail.includes("@")
+  ? siteEmail.split("@")[1].trim()
+  : "";
+const rawWebsite = (
+  schoolSettings["website"] ||
+  schoolSettings["school_website"] ||
+  ""
+).trim();
+let websiteDomain = "";
+try {
+  if (rawWebsite) {
+    websiteDomain = new URL(
+      rawWebsite.startsWith("http") ? rawWebsite : `https://${rawWebsite}`,
+    ).hostname.replace(/^www\./, "");
+  }
+} catch {}
+
+const siteDomain =
+  (schoolSettings["site_domain"] || "").trim() ||
+  websiteDomain ||
+  emailDomain ||
+  (Astro.url.hostname !== "localhost" && Astro.url.hostname !== "127.0.0.1"
+    ? Astro.url.hostname.replace(/^www\./, "")
+    : "sman1unggulan.sch.id");
+
+const schoolName = schoolSettings["school_name"] || "SMAN 1 Unggulan";
+
+// Prefix awal kalimat artikel berita (contoh: Bola.net - atau sman1unggulan.sch.id -)
+const leadPrefix =
+  (schoolSettings["article_lead_prefix"] || "").trim() || siteDomain;
+
+// Sisipkan rekomendasi inline "Baca Juga" setelah paragraf ke-2 jika artikel memiliki panjang cukup
+const inlineArticle = relatedArticles[0] || popularArticles[0] || null;
+let processedContent = articleData?.content || "";
+
+// Sisipkan prefix nama situs/domain di awal paragraf pertama artikel
+if (processedContent && leadPrefix) {
+  const firstPOpenRegex = /<p(?:\s+[^>]*)?>/i;
+  const match = firstPOpenRegex.exec(processedContent);
+  if (match) {
+    const index = match.index + match[0].length;
+    const afterOpen = processedContent.slice(index);
+    if (!afterOpen.trimStart().startsWith("<strong")) {
+      processedContent =
+        processedContent.slice(0, index) +
+        `<strong>${leadPrefix}</strong> &ndash; ` +
+        afterOpen;
+    }
+  } else if (!processedContent.trimStart().startsWith("<")) {
+    processedContent = `<p><strong>${leadPrefix}</strong> &ndash; ${processedContent}</p>`;
+  }
+}
+
+if (inlineArticle && processedContent) {
+  let pCount = 0;
+  const pRegex = /<\/p>/gi;
+  let match;
+  let insertIndex = -1;
+
+  while ((match = pRegex.exec(processedContent)) !== null) {
+    pCount++;
+    if (pCount === 2) {
+      insertIndex = match.index + match[0].length;
+      break;
+    }
+  }
+
+  if (insertIndex !== -1) {
+    const inlineBox = `
+      <div class="not-prose my-8 rounded-[8px] border border-border border-l-4 border-l-primary bg-surface-subtle p-4 transition-colors hover:bg-surface">
+        <span class="text-[11px] font-bold uppercase tracking-wider text-primary">Baca Juga:</span>
+        <a href="/berita/${inlineArticle.slug || ""}" class="mt-1 block font-display text-sm font-bold text-heading hover:text-primary transition-colors">
+          ${inlineArticle.title} 
+        </a>
+      </div>
+    `;
+    processedContent =
+      processedContent.slice(0, insertIndex) +
+      inlineBox +
+      processedContent.slice(insertIndex);
+  }
+}
+
+// Sanitasi keamanan XSS & normalisasi tag konten artikel sebelum rendering
+processedContent = sanitizeArticleHtml(processedContent);
+
+const newsArticleSchema = articleData
+  ? {
+      "@context": "https://schema.org",
+      "@type": "NewsArticle",
+      headline: articleData.title,
+      description: articleData.summary,
+      image: [
+        articleData.coverImage ||
+          "https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?w=1200",
+      ],
+      datePublished: articleData.publishedAt,
+      author: [
+        {
+          "@type": "Person",
+          name: articleData.authorName || "Redaksi SMAN 1 Unggulan",
+        },
+      ],
+      publisher: {
+        "@type": "Organization",
+        name: "SMAN 1 Unggulan",
+        logo: {
+          "@type": "ImageObject",
+          url: "https://sman1unggulan.sch.id/favicon.svg",
+        },
+      },
+    }
+  : undefined;
+
+const shareTitle = articleData?.title || "Berita SMAN 1 Unggulan";
+const shareUrl = Astro.url.href;
+---
+
+<Layout
+  title={
+    articleData
+      ? articleData.metaTitle || `${articleData.title} — SMAN 1 Unggulan`
+      : "Artikel Tidak Ditemukan"
+  }
+  description={
+    articleData
+      ? articleData.metaDescription || articleData.summary
+      : "Artikel yang Anda cari tidak tersedia."
+  }
+  image={articleData?.coverImage}
+  type="article"
+  publishedTime={articleData?.publishedAt}
+  author={articleData?.authorName || "Humas SMAN 1 Unggulan"}
+  jsonLd={newsArticleSchema}
+>
+  <Header currentPath="/berita" />
+
+  <main class="flex-1 py-8 sm:py-12 bg-background">
+    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <!-- Breadcrumbs Navigasi Jejak -->
+      <Breadcrumb
+        class="mb-2"
+        items={[
+          { label: "Beranda", href: "/" },
+          {
+            label: "Berita",
+            href: articleData?.categoryName ? "/berita" : undefined,
+          },
+          ...(articleData?.categoryName
+            ? [{ label: articleData.categoryName }]
+            : []),
+        ]}
+      />
+
+      {!articleData ? (
+        <div class="rounded-[12px] border border-border bg-surface p-12 text-center my-12">
+          <h1 class="font-display text-2xl font-bold text-heading">
+            Berita Tidak Ditemukan
+          </h1>
+          <p class="mt-2 text-sm text-muted">
+            Artikel yang Anda minta telah dipindahkan atau belum diterbitkan.
+          </p>
+          <a
+            href="/berita"
+            class="mt-6 inline-flex h-9 items-center justify-center rounded-[6px] bg-primary px-4 text-xs font-semibold text-white shadow-xs transition-all duration-200 hover:bg-primary-hover hover:shadow-(--shadow-button-glow)"
+          >
+            Kembali ke Semua Berita
+          </a>
+        </div>
+      ) : (
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-10 lg:gap-12">
+          <!-- Kolom Konten Artikel (8 Kolom) -->
+          <article id="article-content" data-article-id={articleData.id} class="lg:col-span-8">
+            <header class="space-y-4">
+              <h1 class="font-display text-2xl sm:text-3xl lg:text-[38px] font-bold tracking-tight text-heading leading-[1.18] max-w-3xl">
+                {articleData.title}
+              </h1>
+
+              <!-- Informasi Penulis & Redaksi (Bersih tanpa avatar huruf generik) -->
+              <div class="pt-2 text-xs text-muted flex flex-wrap items-center gap-1.5">
+                {articleData.authorId ? (
+                  <a
+                    href={`/penulis/${encodeURIComponent(articleData.authorId)}`}
+                    class="font-semibold text-heading hover:text-primary hover:underline transition-colors"
+                  >
+                    {articleData.authorName || "Humas Sekolah"}
+                  </a>
+                ) : (
+                  <strong class="font-semibold text-heading">
+                    {articleData.authorName || "Humas Sekolah"}
+                  </strong>
+                )}
+                <span>&bull;</span>
+                <span class="text-muted font-medium">
+                  {articleData.publishedAt
+                    ? new Date(articleData.publishedAt).toLocaleDateString(
+                        "id-ID",
+                        { day: "numeric", month: "long", year: "numeric" },
+                      )
+                    : "-"}
+                </span>
+              </div>
+            </header>
+
+            {articleData.coverImage && (
+              <figure class="my-8 overflow-hidden rounded-[12px] border border-border bg-surface-subtle shadow-xs">
+                <img
+                  src={articleData.coverImage}
+                  alt={`${articleData.title}`}
+                  width="1200"
+                  height="675"
+                  class="aspect-video w-full object-cover"
+                  loading="eager"
+                  fetchpriority="high"
+                />
+              </figure>
+            )}
+
+            <!-- Area Baca Artikel (Sesuai Token Desain @theme: text-body, text-heading, dsb) -->
+            <div class="article-prose py-2" set:html={processedContent} />
+
+            <!-- Bagian Penutup: Tombol Bagikan Tunggal & Navigasi Prev/Next (No ad-hoc divider) -->
+            <div class="py-10 space-y-8">
+              <div class="flex flex-col sm:justify-between gap-4">
+                <div>
+                  <p class="text-sm font-bold text-heading">
+                    Bagikan Artikel Ini
+                  </p>
+                </div>
+                <ShareButtons
+                  title={shareTitle}
+                  url={shareUrl}
+                  shareText="Cek artikel menarik dari SMAN 1 Unggulan:"
+                />
+              </div>
+
+              <!-- Navigasi Artikel Sebelumnya & Berikutnya -->
+              {(prevArticle || nextArticle) && (
+                <nav
+                  class="grid grid-cols-1 sm:grid-cols-2 gap-4"
+                  aria-label="Navigasi Artikel Sebelumnya dan Berikutnya"
+                >
+                  {prevArticle ? (
+                    <a
+                      href={`/berita/${prevArticle.slug}`}
+                      class="group flex flex-col justify-between rounded-[8px] border border-border bg-surface p-4 hover:border-primary/50 hover:bg-surface-subtle transition-all"
+                    >
+                      <div class="flex items-center gap-1.5 text-xs font-semibold text-muted group-hover:text-primary transition-colors">
+                        <Icon name="chevron-left" class="h-3.5 w-3.5" />
+                        <span>Previous</span>
+                      </div>
+                      <p class="mt-2 font-display text-xs sm:text-sm font-bold text-heading line-clamp-2 leading-snug group-hover:text-primary transition-colors">
+                        {prevArticle.title}
+                      </p>
+                    </a>
+                  ) : (
+                    <div class="hidden sm:block" />
+                  )}
+
+                  {nextArticle ? (
+                    <a
+                      href={`/berita/${nextArticle.slug}`}
+                      class="group flex flex-col justify-between rounded-[8px] border border-border bg-surface p-4 text-right hover:border-primary/50 hover:bg-surface-subtle transition-all sm:col-start-2"
+                    >
+                      <div class="flex items-center justify-end gap-1.5 text-xs font-semibold text-muted group-hover:text-primary transition-colors">
+                        <span>Next</span>
+                        <Icon name="chevron-right" class="h-3.5 w-3.5" />
+                      </div>
+                      <p class="mt-2 font-display text-xs sm:text-sm font-bold text-heading line-clamp-2 leading-snug group-hover:text-primary transition-colors">
+                        {nextArticle.title}
+                      </p>
+                    </a>
+                  ) : (
+                    <div class="hidden sm:block" />
+                  )}
+                </nav>
+              )}
+            </div>
+          </article>
+
+          <!-- Sidebar Kolom Kanan (4 Kolom Desktop) -->
+          <aside class="lg:col-span-4 space-y-8">
+            <!-- Widget Berita Terpopuler (Zero divide-y) -->
+            {popularArticles.length > 0 && (
+              <div class="rounded-[12px] border border-border bg-surface p-6 shadow-xs">
+                <div class="flex items-center justify-between pb-3">
+                  <div class="flex items-center gap-2">
+                    <h3 class="font-display text-sm font-bold uppercase tracking-wider text-heading">
+                      Berita Terpopuler
+                    </h3>
+                  </div>
+                  <span class="text-[10px] font-mono text-muted">Views</span>
+                </div>
+
+                <div class="mt-3 space-y-2">
+                  {popularArticles.map((pop, idx) => (
+                    <a
+                      href={`/berita/${pop.slug}`}
+                      class="p-2 rounded-[8px] hover:bg-surface-subtle flex items-start gap-3 group transition-colors"
+                    >
+                      <span
+                        class={`flex h-5 w-5 shrink-0 items-center justify-center rounded-[4px] font-mono text-xs font-bold ${
+                          idx === 0
+                            ? "bg-primary text-white"
+                            : "bg-surface-subtle text-muted group-hover:bg-primary group-hover:text-white"
+                        } transition-colors`}
+                      >
+                        {idx + 1}
+                      </span>
+                      <div class="min-w-0 flex-1">
+                        <h4 class="font-display text-xs font-bold text-heading leading-snug group-hover:text-primary transition-colors line-clamp-2">
+                          {pop.title}
+                        </h4>
+                        <div class="mt-1 flex items-center gap-2 text-[10px] text-muted font-mono">
+                          <span>{pop.viewCount} views</span>
+                          {pop.publishedAt && (
+                            <>
+                              <span>&bull;</span>
+                              <span>
+                                {new Date(pop.publishedAt).toLocaleDateString(
+                                  "id-ID",
+                                  { day: "numeric", month: "short" },
+                                )}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <!-- Widget Berita Terkait Lainnya (Zero divide-y) -->
+            {relatedArticles.length > 0 && (
+              <div class="rounded-[12px] border border-border bg-surface p-6 shadow-xs">
+                <h3 class="font-display text-sm font-bold uppercase tracking-wider text-heading pb-1">
+                  Berita Terkait{" "}
+                  {articleData.categoryName
+                    ? `(${articleData.categoryName})`
+                    : ""}
+                </h3>
+
+                <div class="mt-3 space-y-2">
+                  {relatedArticles.map((rel) => (
+                    <div class="p-2.5 rounded-[8px] hover:bg-surface-subtle group transition-colors">
+                      <span class="text-[10px] font-semibold uppercase tracking-wider text-primary">
+                        {rel.categoryName || "Info"}
+                      </span>
+                      <h4 class="mt-0.5 font-display text-xs font-bold text-heading leading-snug group-hover:text-primary transition-colors">
+                        <a href={`/berita/${rel.slug}`}>{rel.title}</a>
+                      </h4>
+                      <p class="mt-1 font-mono text-[10px] text-muted">
+                        {rel.publishedAt
+                          ? new Date(rel.publishedAt).toLocaleDateString(
+                              "id-ID",
+                              {
+                                day: "numeric",
+                                month: "short",
+                                year: "numeric",
+                              },
+                            )
+                          : "-"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <!-- Widget Banner Pendaftaran (Dinamis dari Konfigurasi CMS) -->
+            <div class="rounded-[12px] border border-border bg-surface p-5 sm:p-6 shadow-xs space-y-3">
+              <span class="inline-block rounded-[4px] bg-primary-light text-primary font-bold px-2 py-0.5 text-[10px] tracking-wider uppercase border border-primary/20">
+                Informasi {admissionsLabel}
+              </span>
+              <h4 class="font-display text-sm font-bold text-heading">
+                {admissionsTitle}
+              </h4>
+              <p class="text-xs leading-relaxed text-muted font-body">
+                {admissionsSubtitle}
+              </p>
+              <div class="pt-2">
+                <a
+                  href="/pendaftaran"
+                  class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-[8px] bg-primary px-5 font-display text-xs sm:text-sm font-semibold text-white shadow-xs transition-all duration-200 hover:bg-primary-hover hover:shadow-(--shadow-button-glow) group"
+                >
+                  <span>Lihat Informasi {admissionsLabel}</span>
+                  <span class="transition-transform duration-200 group-hover:translate-x-1">
+                    &rarr;
+                  </span>
+                </a>
+              </div>
+            </div>
+          </aside>
+        </div>
+      )}
+    </div>
+  </main>
+
+  <Footer />
+
+  <script>
+    // Bungkus tabel konten ke wrapper horizontal scroll responsif
+    document
+      .querySelectorAll(".article-prose table, .prose table")
+      .forEach((table) => {
+        if (!table.parentElement?.classList.contains("overflow-x-auto")) {
+          const wrapper = document.createElement("div");
+          wrapper.className =
+            "my-6 overflow-x-auto rounded-[8px] border border-border shadow-xs";
+          table.parentNode?.insertBefore(wrapper, table);
+          wrapper.appendChild(table);
+        }
+      });
+
+    // Kirim view count secara asinkron & non-blocking (Anti-Bot & Anti-Spam F5)
+    try {
+      const artRoot = document.getElementById("article-content");
+      const artId = artRoot?.getAttribute("data-article-id");
+      const isDraftPreview = window.location.search.includes("preview_token");
+
+      if (artId && !isDraftPreview) {
+        const viewEndpoint = `/api/articles/${artId}/view`;
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon(viewEndpoint);
+        } else {
+          fetch(viewEndpoint, { method: "POST", keepalive: true }).catch(() => {});
+        }
+      }
+    } catch {}
+  </script>
+
+  <style is:global>
+    /* ============================================================
+       Hierarki Tipografi & Media Baca Artikel (CMS Standard)
+    ============================================================ */
+    .article-prose {
+      font-family: var(--font-body);
+      font-size: 1rem;
+      line-height: 1.8;
+      color: var(--color-body);
+    }
+
+    @media (min-width: 640px) {
+      .article-prose {
+        font-size: 1.125rem; /* 18px */
+      }
+    }
+
+    /* Headings Hierarki H1 - H6 */
+    .article-prose h1 {
+      font-family: var(--font-display);
+      font-size: 1.75rem;
+      font-weight: 700;
+      line-height: 1.25;
+      color: var(--color-heading);
+      margin-top: 2rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .article-prose h2 {
+      font-family: var(--font-display);
+      font-size: 1.5rem;
+      font-weight: 700;
+      line-height: 1.3;
+      color: var(--color-heading);
+      margin-top: 2rem;
+      margin-bottom: 0.75rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .article-prose h3 {
+      font-family: var(--font-display);
+      font-size: 1.25rem;
+      font-weight: 700;
+      line-height: 1.35;
+      color: var(--color-heading);
+      margin-top: 1.75rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .article-prose h4 {
+      font-family: var(--font-display);
+      font-size: 1.125rem;
+      font-weight: 600;
+      line-height: 1.4;
+      color: var(--color-heading);
+      margin-top: 1.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .article-prose h5 {
+      font-family: var(--font-display);
+      font-size: 1rem;
+      font-weight: 600;
+      line-height: 1.45;
+      color: var(--color-heading);
+      margin-top: 1.25rem;
+      margin-bottom: 0.35rem;
+    }
+
+    .article-prose h6 {
+      font-family: var(--font-display);
+      font-size: 0.875rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--color-muted);
+      margin-top: 1rem;
+      margin-bottom: 0.25rem;
+    }
+
+    /* Paragraf & Text Formatting */
+    .article-prose p {
+      color: var(--color-body);
+      line-height: 1.8;
+      margin-bottom: 1.25rem;
+    }
+
+    .article-prose strong,
+    .article-prose b {
+      font-weight: 700;
+      color: var(--color-heading);
+    }
+
+    .article-prose em,
+    .article-prose i {
+      font-style: italic;
+    }
+
+    .article-prose u {
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      text-decoration-thickness: 1.5px;
+    }
+
+    .article-prose s,
+    .article-prose strike,
+    .article-prose del {
+      text-decoration: line-through;
+      color: var(--color-muted);
+    }
+
+    .article-prose code {
+      font-family: var(--font-mono);
+      font-size: 0.85em;
+      background-color: var(--color-surface-subtle);
+      color: var(--color-heading);
+      padding: 0.15rem 0.4rem;
+      border-radius: var(--radius-tag);
+      border: 1px solid var(--color-border);
+    }
+
+    .article-prose pre {
+      background-color: var(--color-surface-subtle);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-panel);
+      padding: 1rem;
+      overflow-x: auto;
+      margin: 1.5rem 0;
+    }
+
+    .article-prose pre code {
+      background: transparent;
+      border: none;
+      padding: 0;
+      font-size: 0.875rem;
+      color: inherit;
+    }
+
+    /* Blockquote */
+    .article-prose blockquote {
+      border-left: 4px solid var(--color-primary);
+      background-color: var(--color-surface-subtle);
+      padding: 0.875rem 1.25rem;
+      margin: 1.5rem 0;
+      border-radius: 0 var(--radius-panel) var(--radius-panel) 0;
+      font-style: italic;
+      color: var(--color-body);
+    }
+
+    /* Lists */
+    .article-prose ul {
+      list-style-type: disc;
+      padding-left: 1.75rem;
+      margin: 1.25rem 0;
+    }
+
+    .article-prose ol {
+      list-style-type: decimal;
+      padding-left: 1.75rem;
+      margin: 1.25rem 0;
+    }
+
+    .article-prose li {
+      margin-bottom: 0.35rem;
+      line-height: 1.75;
+      color: var(--color-body);
+    }
+
+    .article-prose li > p {
+      margin-bottom: 0.25rem;
+    }
+
+    /* Links dengan underline & hover jelas */
+    .article-prose a {
+      color: var(--color-primary);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      font-weight: 500;
+      transition: color 0.15s ease;
+    }
+
+    .article-prose a:hover {
+      color: var(--color-primary-hover);
+    }
+
+    /* Gambar & Media responsif dengan aspect-ratio untuk mencegah CLS */
+    .article-prose img {
+      max-width: 100%;
+      height: auto;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      border-radius: var(--radius-panel);
+      margin: 1.5rem auto;
+      display: block;
+      box-shadow: var(--shadow-hairline);
+    }
+
+    .article-prose figure {
+      margin: 1.5rem 0;
+      text-align: center;
+    }
+
+    .article-prose figcaption {
+      font-size: 0.8125rem;
+      color: var(--color-muted);
+      margin-top: 0.5rem;
+      font-style: italic;
+    }
+
+    /* Tabel */
+    .article-prose table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.5rem 0;
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-panel);
+      overflow: hidden;
+      font-size: 0.875rem;
+    }
+
+    .article-prose thead {
+      background-color: var(--color-surface-subtle);
+    }
+
+    .article-prose th {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      font-weight: 600;
+      color: var(--color-heading);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .article-prose td {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--color-border);
+      color: var(--color-body);
+    }
+
+    .article-prose tr:last-child td {
+      border-bottom: none;
+    }
+
+    .article-prose hr {
+      border: none;
+      border-top: 1px solid var(--color-border);
+      margin: 2rem 0;
+    }
+  </style>
+</Layout>

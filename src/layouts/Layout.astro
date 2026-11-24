@@ -1,0 +1,347 @@
+---
+import "../styles/global.css";
+import { db, settings } from "../db";
+import { ClientRouter } from "astro:transitions";
+import FabMenu from "../components/FabMenu.astro";
+import SvgSprite from "../components/SvgSprite.astro";
+import { resolveThemeConfig, buildThemeCss } from "../utils/themeSystem";
+import { getSettingsMap } from "../utils/settingsCache";
+
+interface Props {
+  title?: string;
+  description?: string;
+  image?: string;
+  type?: "website" | "article";
+  publishedTime?: string;
+  author?: string;
+  jsonLd?: Record<string, any>;
+  showFab?: boolean;
+  settingsMap?: Record<string, string>;
+}
+
+const {
+  title = "Portal Resmi SMA Negeri 1 Unggulan",
+  description = "Website resmi dan portal informasi akademik, prestasi, agenda, serta profil sekolah berkinerja tinggi.",
+  image = "/favicon.svg",
+  type = "website",
+  publishedTime,
+  author,
+  jsonLd,
+  showFab = true,
+  settingsMap: passedSettings,
+} = Astro.props;
+
+// Ambil konfigurasi identitas visual dari tabel settings (cached)
+const schoolSettings: Record<string, string> =
+  passedSettings || (await getSettingsMap());
+
+const schoolName = schoolSettings["school_name"] || "SMA Negeri 1 Unggulan";
+const faviconUrl = schoolSettings["favicon_url"] || "/favicon.svg";
+const resolvedTheme = resolveThemeConfig(schoolSettings);
+const themeCss = buildThemeCss(resolvedTheme);
+const defaultThemeMode = resolvedTheme.mode;
+const schoolPhone = schoolSettings["phone"] || "+62-21-555-0199";
+const socialWhatsapp = schoolSettings["social_whatsapp"] || schoolPhone;
+const socialInstagram = schoolSettings["social_instagram"] || "";
+const socialYoutube = schoolSettings["social_youtube"] || "";
+const socialFacebook = schoolSettings["social_facebook"] || "";
+const socialTwitter = schoolSettings["social_twitter"] || "";
+const socialTiktok = schoolSettings["social_tiktok"] || "";
+const admissionsLabel =
+  schoolSettings["admissions_label"] || schoolSettings["ppdb_label"] || "PPDB";
+const schoolEmail = schoolSettings["email"] || "info@sman1unggulan.sch.id";
+const schoolAddress = schoolSettings["address"] || "Jl. Pendidikan No. 45";
+const logoUrl =
+  schoolSettings["logo_url"] || "https://sman1unggulan.sch.id/favicon.svg";
+
+const canonicalUrl = new URL(
+  Astro.url.pathname,
+  Astro.site || "https://sman1unggulan.sch.id",
+).toString();
+const safeImage = image || faviconUrl || "/favicon.svg";
+const ogImageUrl = safeImage.startsWith("http")
+  ? safeImage
+  : new URL(safeImage, Astro.site || "https://sman1unggulan.sch.id").toString();
+
+// Schema.org Default untuk Institusi Pendidikan (School)
+const defaultSchoolSchema = {
+  "@context": "https://schema.org",
+  "@type": "HighSchool",
+  name: schoolName,
+  alternateName: "SMAN 1 Unggulan",
+  url: "https://sman1unggulan.sch.id",
+  logo: logoUrl.startsWith("http")
+    ? logoUrl
+    : `https://sman1unggulan.sch.id${logoUrl}`,
+  description: description,
+  address: {
+    "@type": "PostalAddress",
+    streetAddress: schoolAddress,
+    addressLocality: "Kota Pendidikan",
+    postalCode: "12345",
+    addressCountry: "ID",
+  },
+  telephone: schoolPhone,
+  email: schoolEmail,
+};
+---
+
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href={faviconUrl} />
+    <meta name="generator" content={Astro.generator} />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonicalUrl} />
+
+    <!-- Google Fonts: Preconnect & Asynchronous Non-Blocking Stylesheet -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="preload"
+      as="style"
+      href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400;1,600&display=swap"
+      onload="this.onload=null;this.rel='stylesheet'"
+    />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400;1,600&display=swap"
+      />
+    </noscript>
+
+    {image && image !== "/favicon.svg" && !image.endsWith(".svg") && (
+      <link rel="preload" as="image" href={image} fetchpriority="high" />
+    )}
+
+    <!-- Astro ClientRouter untuk Transisi Halaman Instan Tanpa Reload Putih -->
+    <ClientRouter fallback="swap" />
+
+    <!-- Dark Mode Init (Mencegah FOUT / Flicker, mendukung Light / Dark / System) -->
+    <script is:inline define:vars={{ defaultThemeMode }}>
+      (function () {
+        function applyInitialTheme() {
+          try {
+            var stored = localStorage.getItem("theme");
+            var activeMode =
+              stored === "light" || stored === "dark" || stored === "system"
+                ? stored
+                : defaultThemeMode;
+            var isDark =
+              activeMode === "dark" ||
+              (activeMode === "system" &&
+                window.matchMedia("(prefers-color-scheme: dark)").matches);
+            document.documentElement.classList.toggle("dark", isDark);
+          } catch (e) {}
+        }
+        applyInitialTheme();
+
+        // Jaga status dark mode tetap konsisten saat swap halaman ClientRouter
+        document.addEventListener("astro:after-swap", applyInitialTheme);
+
+        if (window.matchMedia) {
+          window
+            .matchMedia("(prefers-color-scheme: dark)")
+            .addEventListener?.("change", function (e) {
+              var cur = localStorage.getItem("theme");
+              if (!cur || cur === "system") {
+                document.documentElement.classList.toggle("dark", e.matches);
+              }
+            });
+        }
+      })();
+    </script>
+
+    {/* Dynamic Semantic Theme Tokens dari Pengaturan Sekolah */}
+    <style is:inline set:html={themeCss}></style>
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content={type} />
+    <meta property="og:url" content={canonicalUrl} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={ogImageUrl} />
+    <meta property="og:image:alt" content={title} />
+    <meta property="og:site_name" content="SMAN 1 Unggulan" />
+    <meta property="og:locale" content="id_ID" />
+    {publishedTime && (
+      <meta property="article:published_time" content={publishedTime} />
+    )}
+    {author && <meta property="article:author" content={author} />}
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content={canonicalUrl} />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImageUrl} />
+
+    <!-- Schema.org JSON-LD -->
+    <script
+      type="application/ld+json"
+      set:html={JSON.stringify(defaultSchoolSchema)}
+    />
+    {jsonLd && (
+      <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+    )}
+  </head>
+  <body class="min-h-screen bg-background text-body font-body antialiased flex flex-col">
+    <SvgSprite />
+    <slot />
+    {showFab && (
+      <FabMenu
+        ppdbLabel={`Pendaftaran (${admissionsLabel})`}
+        whatsappNumber={socialWhatsapp}
+        instagramUrl={socialInstagram}
+        youtubeUrl={socialYoutube}
+        facebookUrl={socialFacebook}
+        twitterUrl={socialTwitter}
+        tiktokUrl={socialTiktok}
+      />
+    )}
+  </body>
+
+  <!-- 
+       DARK MODE TOGGLE — Circular Reveal Ripple + CSS Fallback
+       is:inline → script langsung di HTML, tidak di-bundle/defer
+        -->
+  <script is:inline>
+    (function () {
+      // Label mobile
+      function updateThemeLabel() {
+        var label = document.getElementById("mobile-theme-label");
+        if (label)
+          label.textContent = document.documentElement.classList.contains(
+            "dark",
+          )
+            ? "Gelap"
+            : "Terang";
+      }
+
+      function applyTheme(dark) {
+        if (dark) {
+          document.documentElement.classList.add("dark");
+        } else {
+          document.documentElement.classList.remove("dark");
+        }
+        try {
+          localStorage.setItem("theme", dark ? "dark" : "light");
+        } catch (_) {}
+        updateThemeLabel();
+      }
+
+      function triggerThemeSwitch(event) {
+        var nextDark = !document.documentElement.classList.contains("dark");
+        var reducedMotion = window.matchMedia(
+          "(prefers-reduced-motion: reduce)",
+        ).matches;
+        var hasVT = typeof document.startViewTransition === "function";
+
+        // Fallback: CSS transition saja
+        if (!hasVT || reducedMotion) {
+          document.documentElement.classList.add("theme-transition");
+          applyTheme(nextDark);
+          setTimeout(function () {
+            document.documentElement.classList.remove("theme-transition");
+          }, 400);
+          return;
+        }
+
+        // Posisi klik → titik awal ripple
+        var x = window.innerWidth / 2;
+        var y = window.innerHeight / 2;
+        if (event && (event.clientX || event.clientY)) {
+          x = event.clientX;
+          y = event.clientY;
+        } else {
+          var btn = event && event.currentTarget;
+          if (btn) {
+            var r = btn.getBoundingClientRect();
+            x = r.left + r.width / 2;
+            y = r.top + r.height / 2;
+          }
+        }
+
+        var endRadius = Math.hypot(
+          Math.max(x, window.innerWidth - x),
+          Math.max(y, window.innerHeight - y),
+        );
+
+        // View Transition API — Circular Reveal khusus Theme Toggle
+        document.documentElement.classList.add("theme-changing");
+        var vt = document.startViewTransition(function () {
+          applyTheme(nextDark);
+        });
+
+        vt.ready
+          .then(function () {
+            document.documentElement.animate(
+              {
+                clipPath: [
+                  "circle(0px at " + x + "px " + y + "px)",
+                  "circle(" + endRadius + "px at " + x + "px " + y + "px)",
+                ],
+              },
+              {
+                duration: 420,
+                easing: "ease-in-out",
+                pseudoElement: "::view-transition-new(root)",
+              },
+            );
+          })
+          .catch(function () {
+            applyTheme(nextDark);
+          })
+          .finally(function () {
+            document.documentElement.classList.remove("theme-changing");
+          });
+      }
+
+      function attachThemeToggle() {
+        var ids = [
+          "public-theme-toggle",
+          "mobile-theme-toggle",
+          "admin-theme-toggle",
+        ];
+        ids.forEach(function (id) {
+          var btn = document.getElementById(id);
+          if (btn && !btn.dataset.themeAttached) {
+            btn.dataset.themeAttached = "1";
+            btn.addEventListener("click", triggerThemeSwitch);
+          }
+        });
+        updateThemeLabel();
+      }
+
+      // Pasang saat DOM ready & setiap transisi Astro ClientRouter selesai
+      if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", attachThemeToggle);
+      } else {
+        attachThemeToggle();
+      }
+      document.addEventListener("astro:page-load", attachThemeToggle);
+    })();
+  </script>
+
+  <!-- 
+       ANIME.JS PUBLIC ANIMATION ENGINE (Hero Entrance, Scroll Stagger, Counters)
+        -->
+  <script>
+    import { initPublicAnimations } from "../scripts/animePublic";
+
+    function runPublicAnime() {
+      initPublicAnimations();
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", runPublicAnime);
+    } else {
+      runPublicAnime();
+    }
+    document.addEventListener("astro:page-load", runPublicAnime);
+    document.addEventListener("astro:after-swap", runPublicAnime);
+  </script>
+</html>

@@ -1,0 +1,670 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import Breadcrumb from '../components/Breadcrumb.astro';
+import Icon from '../components/Icon.astro';
+import { db, settings, registrations } from '../db';
+import { eq } from 'drizzle-orm';
+
+export const prerender = false;
+
+// 1. Fetch school profile and configuration
+const allSettings = await db.select().from(settings);
+const settingMap = allSettings.reduce(
+  (acc, curr) => {
+    acc[curr.key] = curr.value;
+    return acc;
+  },
+  {} as Record<string, string>,
+);
+
+const schoolName = settingMap['school_name'] || 'SMAN 1 UNGGULAN';
+const schoolType = (settingMap['school_type'] || settingMap['school_level'] || 'SMA').toUpperCase();
+const admissionsLabel =
+  settingMap['admissions_label'] ||
+  settingMap['ppdb_label'] ||
+  (['MA', 'MTS', 'MI'].includes(schoolType) ? 'PPDBM' : 'PPDB');
+const admissionsYear = settingMap['ppdb_year'] || '2026/2027';
+const helpdeskWa =
+  settingMap['ppdb_helpdesk_wa'] || settingMap['social_whatsapp'] || '0812-3456-7890';
+
+// 2. Read query parameters for direct link lookups
+const qReg = (Astro.url.searchParams.get('reg') || Astro.url.searchParams.get('no') || '').trim().toUpperCase();
+const qCode = (Astro.url.searchParams.get('code') || '').trim().toUpperCase();
+
+// Helper date formatter (WIB)
+function formatTanggalIndo(dateStr?: string | null) {
+  if (!dateStr) return '—';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+  } catch {
+    return dateStr;
+  }
+}
+
+// 3. Optional SSR initial lookup if both parameters are provided
+let initialStudent: any = null;
+let initialError: string | null = null;
+
+if (qReg && qCode) {
+  const student = await db
+    .select({
+      id: registrations.id,
+      registrationNumber: registrations.registrationNumber,
+      verificationCode: registrations.verificationCode,
+      fullName: registrations.fullName,
+      admissionPath: registrations.admissionPath,
+      regType: registrations.regType,
+      wave: registrations.wave,
+      academicYear: registrations.academicYear,
+      schoolType: registrations.schoolType,
+      majorChoice1: registrations.majorChoice1,
+      registrationStatus: registrations.registrationStatus,
+      verificationStatus: registrations.verificationStatus,
+      selectionStatus: registrations.selectionStatus,
+      revisionNotes: registrations.revisionNotes,
+      createdAt: registrations.createdAt,
+    })
+    .from(registrations)
+    .where(eq(registrations.registrationNumber, qReg))
+    .limit(1)
+    .then((r) => r[0]);
+
+  if (!student || !student.verificationCode || student.verificationCode.toUpperCase() !== qCode) {
+    initialError = 'Nomor registrasi atau kode verifikasi tidak cocok. Pastikan data yang dimasukkan benar sesuai bukti pendaftaran Anda.';
+  } else {
+    // Evaluate announcement gate
+    let isAnnouncementReleased = true;
+    let announcementSchedule = '';
+
+    if (settingMap['ppdb_form_config']) {
+      try {
+        const fullConf = JSON.parse(settingMap['ppdb_form_config']);
+        const currentWave = fullConf.waves?.find((w: any) => w.name === student.wave);
+        if (currentWave?.announcementDate) {
+          announcementSchedule = currentWave.announcementDate;
+          const annTime = new Date(`${currentWave.announcementDate}T00:00:00+07:00`).getTime();
+          if (Date.now() < annTime) {
+            isAnnouncementReleased = false;
+          }
+        }
+      } catch {}
+    }
+
+    initialStudent = {
+      ...student,
+      announcementSchedule,
+      isAnnouncementReleased,
+      publicSelectionStatus: isAnnouncementReleased
+        ? student.selectionStatus || 'not_announced'
+        : 'not_announced',
+    };
+  }
+}
+---
+
+<Layout
+  title={`Cek Status Pendaftaran Siswa Baru — ${schoolName}`}
+  description={`Portal verifikasi dan pengecekan status pendaftaran calon peserta didik baru ${schoolName} tahun ajaran ${admissionsYear}.`}
+>
+  <Header currentPath="/cek-status" />
+
+  <main class="flex-1 py-10 sm:py-12 bg-background min-h-[calc(100vh-14rem)]">
+    <div class="mx-auto max-w-4xl px-4 sm:px-6 space-y-8">
+      <!-- Breadcrumb -->
+      <Breadcrumb
+        items={[
+          { label: 'Beranda', href: '/' },
+          { label: 'Pendaftaran', href: '/pendaftaran' },
+          { label: 'Cek Status Pendaftaran' },
+        ]}
+      />
+
+      <!-- Page Header -->
+      <div class="text-center max-w-2xl mx-auto space-y-3">
+        <span class="inline-flex items-center gap-1.5 rounded-[4px] border border-primary/20 bg-primary-light px-2.5 py-1 font-mono text-xs font-semibold text-primary uppercase">
+          Portal Resmi {admissionsLabel} {admissionsYear}
+        </span>
+        <h1 class="font-display text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight text-heading">
+          Cek Status Pendaftaran &amp; Hasil Seleksi
+        </h1>
+        <p class="font-body text-xs sm:text-sm text-muted leading-relaxed">
+          Masukkan nomor registrasi dan kode akses verifikasi dari lembar bukti pendaftaran Anda untuk memantau status validasi berkas dan pengumuman seleksi resmi.
+        </p>
+      </div>
+
+      <!-- Search Card Form -->
+      <div class="rounded-[12px] border border-border bg-surface p-6 sm:p-8 shadow-xs max-w-2xl mx-auto">
+        <form id="form-check-status" class="space-y-4">
+          <div class="space-y-1.5">
+            <label for="input-reg-number" class="block font-body text-xs sm:text-sm font-medium text-heading">
+              Nomor Registrasi Pendaftaran <span class="text-error font-bold">*</span>
+            </label>
+            <input
+              type="text"
+              id="input-reg-number"
+              name="registrationNumber"
+              value={qReg}
+              required
+              placeholder="Contoh: REG-2026-619488"
+              class="h-10 w-full rounded-[6px] border border-border bg-surface px-3.5 font-mono text-xs sm:text-sm text-heading placeholder:text-muted/60 transition-colors uppercase focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <span class="text-[11px] text-muted block">
+              Tercantum pada lembar tanda terima pendaftaran daring yang telah Anda kirimkan.
+            </span>
+          </div>
+
+          <div class="space-y-1.5">
+            <label for="input-ver-code" class="block font-body text-xs sm:text-sm font-medium text-heading">
+              Kode Akses Verifikasi <span class="text-error font-bold">*</span>
+            </label>
+            <input
+              type="text"
+              id="input-ver-code"
+              name="verificationCode"
+              value={qCode}
+              required
+              maxlength="10"
+              placeholder="Contoh: KOD-8A2F"
+              class="h-10 w-full rounded-[6px] border border-border bg-surface px-3.5 font-mono text-xs sm:text-sm text-heading placeholder:text-muted/60 transition-colors uppercase focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <span class="text-[11px] text-muted block">
+              Kode keamanan unik 6-8 karakter yang tertera saat pendaftaran Anda berhasil.
+            </span>
+          </div>
+
+          <!-- Banner Pesan Error Pencarian -->
+          <div
+            id="error-banner"
+            class={`rounded-[6px] border border-error/30 bg-error-light p-3 text-xs font-medium text-error-text ${
+              initialError ? '' : 'hidden'
+            }`}
+          >
+            {initialError || ''}
+          </div>
+
+          <div class="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <a
+              href={`https://wa.me/${helpdeskWa.replace(/[^0-9]/g, '')}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="inline-flex items-center gap-1.5 font-body text-xs text-muted hover:text-heading transition-colors"
+            >
+              <Icon name="whatsapp" class="h-3.5 w-3.5 text-success" />
+              <span>Bantuan Panitia PPDB</span>
+            </a>
+            <button
+              type="submit"
+              id="btn-submit-check"
+              class="w-full sm:w-auto inline-flex h-10 items-center justify-center gap-2 rounded-[6px] bg-primary px-6 font-body text-xs sm:text-sm font-medium text-white transition-all duration-200 hover:-translate-y-[1px] hover:bg-primary-hover hover:shadow-(--shadow-button-glow) cursor-pointer disabled:pointer-events-none disabled:opacity-50"
+            >
+              <Icon name="search" class="h-4 w-4" />
+              <span>Periksa Status</span>
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Hasil Pengecekan Status -->
+      <div
+        id="result-container"
+        class={`space-y-5 max-w-3xl mx-auto ${initialStudent ? '' : 'hidden'}`}
+      >
+        <!-- Card Profil Pendaftar -->
+        <div class="rounded-[12px] border border-border bg-surface p-5 sm:p-6 shadow-xs space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div class="space-y-1">
+              <span class="text-[11px] font-mono font-semibold uppercase tracking-wider text-muted block">
+                Data Terverifikasi Resmi
+              </span>
+              <h3 id="res-student-name" class="font-display text-lg sm:text-xl font-bold text-heading">
+                {initialStudent?.fullName || '-'}
+              </h3>
+            </div>
+            <div class="text-left sm:text-right font-mono space-y-1">
+              <div>
+                <span class="text-[10px] text-muted block">No. Registrasi:</span>
+                <strong id="res-reg-number" class="text-sm font-bold text-primary block">
+                  {initialStudent?.registrationNumber || '-'}
+                </strong>
+              </div>
+              <div>
+                <span class="text-[10px] text-muted block">Kode Akses Verifikasi:</span>
+                <strong id="res-ver-code" class="text-xs font-bold text-warning-text bg-warning-light border border-warning/30 px-2 py-0.5 rounded-[4px] inline-block">
+                  {initialStudent?.verificationCode || '-'}
+                </strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- Metadata Detail -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+            <div class="p-3 rounded-[8px] bg-surface-subtle border border-border">
+              <span class="text-muted block text-[11px]">Jalur Pendaftaran:</span>
+              <strong id="res-admission-path" class="text-heading font-medium block mt-0.5">
+                {initialStudent ? `${initialStudent.admissionPath} (${initialStudent.regType})` : '-'}
+              </strong>
+            </div>
+            <div class="p-3 rounded-[8px] bg-surface-subtle border border-border">
+              <span class="text-muted block text-[11px]">Gelombang:</span>
+              <strong id="res-wave" class="text-heading font-medium block mt-0.5">
+                {initialStudent?.wave || 'Gelombang 1'}
+              </strong>
+            </div>
+            <div class="p-3 rounded-[8px] bg-surface-subtle border border-border">
+              <span class="text-muted block text-[11px]">Tahun Ajaran:</span>
+              <strong id="res-academic-year" class="text-heading font-medium block mt-0.5">
+                {initialStudent?.academicYear || admissionsYear}
+              </strong>
+            </div>
+            <div class="p-3 rounded-[8px] bg-surface-subtle border border-border">
+              <span class="text-muted block text-[11px]">Waktu Kirim:</span>
+              <strong id="res-submitted-at" class="text-heading font-medium block mt-0.5">
+                {initialStudent ? formatTanggalIndo(initialStudent.createdAt) : '-'}
+              </strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- Grid 3 Status Terpisah -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3.5 text-xs">
+          <!-- Status 1: Pendaftaran -->
+          <div class="rounded-[10px] border border-border bg-surface p-4 sm:p-5 flex flex-col justify-between space-y-3">
+            <div>
+              <span class="text-[10px] font-mono font-semibold uppercase tracking-wider text-muted block">Tahap 1</span>
+              <h4 class="font-display font-bold text-sm text-heading mt-0.5">Status Pendaftaran</h4>
+              <p class="text-[11px] text-muted leading-relaxed mt-1">
+                Penerimaan formulir daring pada sistem basis data sekolah.
+              </p>
+            </div>
+            <div class="pt-2">
+              <span id="badge-registration" class="inline-flex items-center px-2.5 py-1 rounded-[4px] text-[11px] font-semibold bg-success-light text-success-text border border-success/30">
+                Formulir Terkirim
+              </span>
+            </div>
+          </div>
+
+          <!-- Status 2: Verifikasi Berkas -->
+          <div class="rounded-[10px] border border-border bg-surface p-4 sm:p-5 flex flex-col justify-between space-y-3">
+            <div>
+              <span class="text-[10px] font-mono font-semibold uppercase tracking-wider text-muted block">Tahap 2</span>
+              <h4 class="font-display font-bold text-sm text-heading mt-0.5">Verifikasi Berkas</h4>
+              <p class="text-[11px] text-muted leading-relaxed mt-1">
+                Pemeriksaan keabsahan dokumen persyaratan oleh panitia.
+              </p>
+            </div>
+            <div class="pt-2 space-y-1.5">
+              <span
+                id="badge-verification"
+                class={`inline-flex items-center px-2.5 py-1 rounded-[4px] text-[11px] font-semibold ${
+                  initialStudent?.verificationStatus === 'verified'
+                    ? 'bg-success-light text-success-text border border-success/30'
+                    : initialStudent?.verificationStatus === 'revision_required'
+                      ? 'bg-warning-light text-warning-text border border-warning/30'
+                      : 'bg-surface-subtle text-muted border border-border'
+                }`}
+              >
+                {initialStudent?.verificationStatus === 'verified'
+                  ? 'Berkas Terverifikasi Sah'
+                  : initialStudent?.verificationStatus === 'revision_required'
+                    ? 'Perlu Perbaikan Berkas'
+                    : 'Menunggu Verifikasi'}
+              </span>
+              <div
+                id="revision-notice"
+                class={`p-2.5 rounded-[6px] bg-warning-light border border-warning/30 text-[11px] text-warning-text leading-snug ${
+                  initialStudent?.verificationStatus === 'revision_required' ? '' : 'hidden'
+                }`}
+              >
+                <strong>Catatan Perbaikan:</strong>
+                <span id="revision-text" class="block mt-0.5">
+                  {initialStudent?.revisionNotes || 'Terdapat berkas yang belum memenuhi ketentuan. Silakan hubungi helpdesk panitia.'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Status 3: Hasil Seleksi -->
+          <div class="rounded-[10px] border border-border bg-surface p-4 sm:p-5 flex flex-col justify-between space-y-3">
+            <div>
+              <span class="text-[10px] font-mono font-semibold uppercase tracking-wider text-muted block">Tahap 3</span>
+              <h4 class="font-display font-bold text-sm text-heading mt-0.5">Hasil Seleksi</h4>
+              <p class="text-[11px] text-muted leading-relaxed mt-1">
+                Keputusan resmi penerimaan siswa baru sesuai kuota.
+              </p>
+            </div>
+            <div class="pt-2 space-y-1">
+              <span
+                id="badge-selection"
+                class={`inline-flex items-center px-2.5 py-1 rounded-[4px] text-[11px] font-semibold ${
+                  initialStudent?.publicSelectionStatus === 'accepted'
+                    ? 'bg-success-light text-success-text border border-success/30'
+                    : initialStudent?.publicSelectionStatus === 'rejected'
+                      ? 'bg-error-light text-error-text border border-error/30'
+                      : initialStudent?.publicSelectionStatus === 'waitlist'
+                        ? 'bg-primary-light text-primary border border-primary/20'
+                        : 'bg-surface-subtle text-muted border border-border'
+                }`}
+              >
+                {initialStudent?.publicSelectionStatus === 'accepted'
+                  ? 'Diterima (Lolos Seleksi)'
+                  : initialStudent?.publicSelectionStatus === 'rejected'
+                    ? 'Tidak Diterima'
+                    : initialStudent?.publicSelectionStatus === 'waitlist'
+                      ? 'Daftar Tunggu / Cadangan'
+                      : 'Belum Diumumkan'}
+              </span>
+              <div
+                id="schedule-notice"
+                class={`text-[10px] text-muted ${
+                  initialStudent && !initialStudent.isAnnouncementReleased && initialStudent.announcementSchedule
+                    ? ''
+                    : 'hidden'
+                }`}
+              >
+                Rilis: <strong id="schedule-date">{formatTanggalIndo(initialStudent?.announcementSchedule)}</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Petunjuk Langkah Lanjutan -->
+        <div class="rounded-[10px] border border-border bg-surface p-4 sm:p-5 flex items-start gap-3.5 shadow-xs">
+          <div class="h-9 w-9 rounded-full bg-primary-light border border-primary/20 flex items-center justify-center shrink-0 text-primary">
+            <Icon name="info" class="h-4 w-4" />
+          </div>
+          <div class="space-y-1 text-xs">
+            <h4 id="next-title" class="font-display font-bold text-heading text-sm">
+              {initialStudent?.publicSelectionStatus === 'accepted'
+                ? 'Selamat! Anda Dinyatakan Lolos Seleksi'
+                : initialStudent?.publicSelectionStatus === 'rejected'
+                  ? 'Pemberitahuan Hasil Seleksi'
+                  : initialStudent?.publicSelectionStatus === 'waitlist'
+                    ? 'Calon Siswa Cadangan (Daftar Tunggu)'
+                    : initialStudent?.verificationStatus === 'revision_required'
+                      ? 'Tindakan Diperlukan: Perbaikan Berkas'
+                      : initialStudent?.verificationStatus === 'verified'
+                        ? 'Berkas Sah: Menunggu Jadwal Pengumuman'
+                        : 'Formulir Diterima: Menunggu Verifikasi Dokumen'}
+            </h4>
+            <p id="next-desc" class="text-muted leading-relaxed text-xs">
+              {initialStudent?.publicSelectionStatus === 'accepted'
+                ? 'Silakan segera lakukan proses daftar ulang sesuai jadwal resmi dengan membawa cetakan bukti status ini beserta berkas fisik asli ke sekolah.'
+                : initialStudent?.publicSelectionStatus === 'rejected'
+                  ? 'Mohon maaf, kuota penerimaan pada jalur ini telah terpenuhi. Terima kasih atas partisipasi dan antusiasme Anda mengikuti seleksi.'
+                  : initialStudent?.publicSelectionStatus === 'waitlist'
+                    ? 'Anda terdaftar dalam kuota cadangan. Panitia akan menghubungi Anda melalui nomor WhatsApp jika terdapat kursi pendaftaran yang mengundurkan diri.'
+                    : initialStudent?.verificationStatus === 'revision_required'
+                      ? 'Panitia menemukan ketidaksesuaian dokumen. Mohon hubungi panitia melalui posko Helpdesk untuk melakukan pembaruan berkas persyaratan.'
+                      : initialStudent?.verificationStatus === 'verified'
+                        ? 'Seluruh dokumen persyaratan Anda telah diverifikasi lengkap dan sah. Silakan menunggu rilis keputusan seleksi resmi sesuai jadwal gelombang.'
+                        : 'Data formulir Anda telah tersimpan. Verifikator panitia sedang memeriksa keabsahan dokumen persyaratan secara bertahap.'}
+            </p>
+          </div>
+        </div>
+
+        <!-- Tombol Aksi Bawah -->
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+          <button
+            type="button"
+            id="btn-print-status"
+            class="w-full sm:w-auto inline-flex h-10 items-center justify-center gap-2 rounded-[6px] bg-primary px-5 text-xs sm:text-sm font-medium text-white transition-all duration-200 hover:-translate-y-[1px] hover:bg-primary-hover hover:shadow-(--shadow-button-glow) cursor-pointer"
+          >
+            <Icon name="printer" class="h-4 w-4" />
+            <span>Cetak Lembar Formulir &amp; Bukti Pendaftaran (A4)</span>
+          </button>
+          <a
+            href={`https://wa.me/${helpdeskWa.replace(/[^0-9]/g, '')}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            class="w-full sm:w-auto inline-flex h-10 items-center justify-center gap-2 rounded-[6px] border border-border bg-surface px-5 text-xs sm:text-sm font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+          >
+            <Icon name="whatsapp" class="h-4 w-4 text-success" />
+            <span>Hubungi Posko Helpdesk</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <Footer />
+</Layout>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const form = document.getElementById('form-check-status') as HTMLFormElement | null;
+    const inputReg = document.getElementById('input-reg-number') as HTMLInputElement | null;
+    const inputCode = document.getElementById('input-ver-code') as HTMLInputElement | null;
+    const btnSubmit = document.getElementById('btn-submit-check') as HTMLButtonElement | null;
+    const errorBanner = document.getElementById('error-banner') as HTMLDivElement | null;
+    const resultContainer = document.getElementById('result-container') as HTMLDivElement | null;
+
+    // Result fields
+    const resStudentName = document.getElementById('res-student-name');
+    const resRegNumber = document.getElementById('res-reg-number');
+    const resVerCode = document.getElementById('res-ver-code');
+    const resAdmissionPath = document.getElementById('res-admission-path');
+    const resWave = document.getElementById('res-wave');
+    const resAcademicYear = document.getElementById('res-academic-year');
+    const resSubmittedAt = document.getElementById('res-submitted-at');
+
+    // Badges & notices
+    const badgeRegistration = document.getElementById('badge-registration');
+    const badgeVerification = document.getElementById('badge-verification');
+    const badgeSelection = document.getElementById('badge-selection');
+    const revisionNotice = document.getElementById('revision-notice');
+    const revisionText = document.getElementById('revision-text');
+    const scheduleNotice = document.getElementById('schedule-notice');
+    const scheduleDate = document.getElementById('schedule-date');
+    const nextTitle = document.getElementById('next-title');
+    const nextDesc = document.getElementById('next-desc');
+
+    function formatTglIndo(isoStr?: string | null) {
+      if (!isoStr) return '—';
+      try {
+        const d = new Date(isoStr);
+        if (isNaN(d.getTime())) return isoStr;
+        return d.toLocaleDateString('id-ID', {
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        });
+      } catch {
+        return isoStr;
+      }
+    }
+
+    form?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const registrationNumber = (inputReg?.value || '').trim().toUpperCase();
+      const verificationCode = (inputCode?.value || '').trim().toUpperCase();
+
+      if (!registrationNumber || !verificationCode) {
+        if (errorBanner) {
+          errorBanner.textContent = 'Nomor registrasi dan kode akses verifikasi wajib diisi.';
+          errorBanner.classList.remove('hidden');
+        }
+        return;
+      }
+
+      if (errorBanner) errorBanner.classList.add('hidden');
+      if (btnSubmit) {
+        btnSubmit.disabled = true;
+        btnSubmit.innerHTML = `<span>Memeriksa...</span>`;
+      }
+
+      try {
+        const res = await fetch('/api/ppdb/check-status', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          body: JSON.stringify({ registrationNumber, verificationCode }),
+        });
+
+        const data = await res.json();
+        if (btnSubmit) {
+          btnSubmit.disabled = false;
+          btnSubmit.innerHTML = `
+            <svg class="h-4 w-4" aria-hidden="true"><use href="#icon-search" /></svg>
+            <span>Periksa Status</span>
+          `;
+        }
+
+        if (data.success && data.data) {
+          const s = data.data;
+
+          if (resStudentName) resStudentName.textContent = s.studentName;
+          if (resRegNumber) resRegNumber.textContent = s.registrationNumber;
+          if (resVerCode) resVerCode.textContent = s.verificationCode || '-';
+          if (resAdmissionPath) resAdmissionPath.textContent = `${s.admissionPath} (${s.regType})`;
+          if (resWave) resWave.textContent = s.wave || 'Gelombang 1';
+          if (resAcademicYear) resAcademicYear.textContent = s.academicYear;
+          if (resSubmittedAt) resSubmittedAt.textContent = formatTglIndo(s.submittedAt);
+
+          // 1. Status Registrasi
+          if (badgeRegistration) {
+            badgeRegistration.className =
+              'inline-flex items-center px-2.5 py-1 rounded-[4px] text-[11px] font-semibold bg-success-light text-success-text border border-success/30';
+            badgeRegistration.textContent = 'Formulir Terkirim';
+          }
+
+          // 2. Status Verifikasi Berkas
+          if (badgeVerification) {
+            if (s.verificationStatus === 'verified') {
+              badgeVerification.className =
+                'inline-flex items-center px-2.5 py-1 rounded-[4px] text-[11px] font-semibold bg-success-light text-success-text border border-success/30';
+              badgeVerification.textContent = 'Berkas Terverifikasi Sah';
+              if (revisionNotice) revisionNotice.classList.add('hidden');
+            } else if (s.verificationStatus === 'revision_required') {
+              badgeVerification.className =
+                'inline-flex items-center px-2.5 py-1 rounded-[4px] text-[11px] font-semibold bg-warning-light text-warning-text border border-warning/30';
+              badgeVerification.textContent = 'Perlu Perbaikan Berkas';
+              if (revisionNotice) {
+                revisionNotice.classList.remove('hidden');
+                if (revisionText) {
+                  revisionText.textContent =
+                    s.revisionNotes || 'Terdapat berkas yang belum memenuhi ketentuan. Silakan hubungi helpdesk panitia.';
+                }
+              }
+            } else {
+              badgeVerification.className =
+                'inline-flex items-center px-2.5 py-1 rounded-[4px] text-[11px] font-semibold bg-surface-subtle text-muted border border-border';
+              badgeVerification.textContent = 'Menunggu Verifikasi';
+              if (revisionNotice) revisionNotice.classList.add('hidden');
+            }
+          }
+
+          // 3. Status Seleksi
+          if (badgeSelection) {
+            if (s.selectionStatus === 'accepted') {
+              badgeSelection.className =
+                'inline-flex items-center px-2.5 py-1 rounded-[4px] text-[11px] font-semibold bg-success-light text-success-text border border-success/30';
+              badgeSelection.textContent = 'Diterima (Lolos Seleksi)';
+              if (scheduleNotice) scheduleNotice.classList.add('hidden');
+            } else if (s.selectionStatus === 'rejected') {
+              badgeSelection.className =
+                'inline-flex items-center px-2.5 py-1 rounded-[4px] text-[11px] font-semibold bg-error-light text-error-text border border-error/30';
+              badgeSelection.textContent = 'Tidak Diterima';
+              if (scheduleNotice) scheduleNotice.classList.add('hidden');
+            } else if (s.selectionStatus === 'waitlist') {
+              badgeSelection.className =
+                'inline-flex items-center px-2.5 py-1 rounded-[4px] text-[11px] font-semibold bg-primary-light text-primary border border-primary/20';
+              badgeSelection.textContent = 'Daftar Tunggu / Cadangan';
+              if (scheduleNotice) scheduleNotice.classList.add('hidden');
+            } else {
+              badgeSelection.className =
+                'inline-flex items-center px-2.5 py-1 rounded-[4px] text-[11px] font-semibold bg-surface-subtle text-muted border border-border';
+              badgeSelection.textContent = 'Belum Diumumkan';
+              if (scheduleNotice) {
+                scheduleNotice.classList.remove('hidden');
+                if (scheduleDate) {
+                  scheduleDate.textContent = formatTglIndo(s.announcementSchedule) || 'Sesuai kalender sekolah';
+                }
+              }
+            }
+          }
+
+          // Petunjuk Langkah Lanjutan
+          if (nextTitle && nextDesc) {
+            if (s.selectionStatus === 'accepted') {
+              nextTitle.textContent = 'Selamat! Anda Dinyatakan Lolos Seleksi';
+              nextDesc.textContent =
+                'Silakan segera lakukan proses daftar ulang sesuai jadwal resmi dengan membawa cetakan bukti status ini beserta berkas fisik asli ke sekolah.';
+            } else if (s.selectionStatus === 'rejected') {
+              nextTitle.textContent = 'Pemberitahuan Hasil Seleksi';
+              nextDesc.textContent =
+                'Mohon maaf, kuota penerimaan pada jalur ini telah terpenuhi. Terima kasih atas partisipasi dan antusiasme Anda mengikuti seleksi.';
+            } else if (s.selectionStatus === 'waitlist') {
+              nextTitle.textContent = 'Calon Siswa Cadangan (Daftar Tunggu)';
+              nextDesc.textContent =
+                'Anda terdaftar dalam kuota cadangan. Panitia akan menghubungi Anda melalui nomor WhatsApp jika terdapat kursi pendaftaran yang mengundurkan diri.';
+            } else if (s.verificationStatus === 'revision_required') {
+              nextTitle.textContent = 'Tindakan Diperlukan: Perbaikan Berkas';
+              nextDesc.textContent =
+                'Panitia menemukan ketidaksesuaian dokumen. Mohon hubungi panitia melalui posko Helpdesk untuk melakukan pembaruan berkas persyaratan.';
+            } else if (s.verificationStatus === 'verified') {
+              nextTitle.textContent = 'Berkas Sah: Menunggu Jadwal Pengumuman';
+              nextDesc.textContent =
+                'Seluruh dokumen persyaratan Anda telah diverifikasi lengkap dan sah. Silakan menunggu rilis keputusan seleksi resmi sesuai jadwal gelombang.';
+            } else {
+              nextTitle.textContent = 'Formulir Diterima: Menunggu Verifikasi Dokumen';
+              nextDesc.textContent =
+                'Data formulir Anda telah tersimpan. Verifikator panitia sedang memeriksa keabsahan dokumen persyaratan secara bertahap.';
+            }
+          }
+
+          if (resultContainer) {
+            resultContainer.classList.remove('hidden');
+            resultContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+
+          // Update URL without page reload for shareability
+          const newUrl = new URL(window.location.href);
+          newUrl.searchParams.set('reg', registrationNumber);
+          newUrl.searchParams.set('code', verificationCode);
+          window.history.replaceState({}, '', newUrl.toString());
+        } else {
+          if (errorBanner) {
+            errorBanner.textContent = data.error || 'Nomor registrasi atau kode verifikasi tidak cocok.';
+            errorBanner.classList.remove('hidden');
+          }
+          if (resultContainer) resultContainer.classList.add('hidden');
+        }
+      } catch (err) {
+        if (btnSubmit) {
+          btnSubmit.disabled = false;
+          btnSubmit.innerHTML = `
+            <svg class="h-4 w-4" aria-hidden="true"><use href="#icon-search" /></svg>
+            <span>Periksa Status</span>
+          `;
+        }
+        if (errorBanner) {
+          errorBanner.textContent = 'Gagal terhubung ke server institusi. Silakan periksa koneksi internet Anda.';
+          errorBanner.classList.remove('hidden');
+        }
+      }
+    });
+
+    // Buka Lembar Formulir Pendaftaran A4 Resmi
+    const btnPrintStatus = document.getElementById('btn-print-status');
+    btnPrintStatus?.addEventListener('click', () => {
+      const reg = (inputReg?.value || document.getElementById('res-reg-number')?.textContent || '').trim();
+      const code = (inputCode?.value || document.getElementById('res-ver-code')?.textContent || '').trim();
+      if (reg && reg !== '-' && code && code !== '-') {
+        window.open(`/pendaftaran/cetak?reg=${encodeURIComponent(reg)}&code=${encodeURIComponent(code)}&print=true`, '_blank');
+      } else {
+        alert('Nomor registrasi dan kode akses verifikasi belum lengkap untuk mencetak lembar A4.');
+      }
+    });
+  });
+</script>

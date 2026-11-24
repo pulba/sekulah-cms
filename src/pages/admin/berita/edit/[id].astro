@@ -1,0 +1,626 @@
+---
+import AdminLayout from '../../../../layouts/AdminLayout.astro';
+import TiptapEditor from '../../../../components/TiptapEditor.astro';
+import MediaPickerModal from '../../../../components/MediaPickerModal.astro';
+import Breadcrumb from '../../../../components/Breadcrumb.astro';
+import { db, articles, categories } from '../../../../db';
+import { eq } from 'drizzle-orm';
+
+export const prerender = false;
+
+const { id } = Astro.params;
+const articleId = Number(id);
+
+if (!articleId) return Astro.redirect('/admin/berita');
+
+const article = await db.select().from(articles).where(eq(articles.id, articleId)).limit(1).then(r => r[0]);
+if (!article) return Astro.redirect('/admin/berita?error=not_found');
+
+const allCategories = await db.select().from(categories).orderBy(categories.name);
+
+// Escape existing content for safe use in JS define:vars
+const existingContent = article.content || '';
+---
+
+<AdminLayout title={`Edit: ${article.title}`} activeNav="berita">
+  <div class="space-y-6 max-w-5xl pb-16">
+    <!-- Header -->
+    <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-border pb-6">
+      <div class="min-w-0">
+        <Breadcrumb
+          class="mb-2"
+          items={[
+            { label: 'Manajemen Berita', href: '/admin/berita' },
+            { label: 'Edit Berita' },
+          ]}
+        />
+        <h1 class="font-display text-xl sm:text-2xl font-bold tracking-tight text-heading">
+          Sunting Berita Sekolah
+        </h1>
+        <p class="text-xs text-muted mt-1 hidden sm:block truncate max-w-sm">
+          {article.title}
+        </p>
+      </div>
+
+      <!-- Tombol Aksi -->
+      <div class="flex items-center gap-2 shrink-0 flex-wrap">
+        <button type="button" id="btn-preview"
+          class="inline-flex h-[36px] items-center justify-center gap-1.5 rounded-[6px] border border-border bg-surface px-3 sm:px-3.5 text-xs font-medium text-heading hover:bg-surface-subtle transition-colors">
+          <svg class="w-3.5 h-3.5 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+          </svg>
+          <span class="hidden sm:inline">Pratinjau</span>
+        </button>
+        <a href="/admin/berita"
+          class="inline-flex h-[36px] items-center justify-center rounded-[6px] border border-border bg-surface px-3 sm:px-4 text-xs font-medium text-heading hover:bg-surface-subtle transition-colors">
+          Batal
+        </a>
+        <button type="button" id="btn-draft"
+          class="inline-flex h-[36px] items-center justify-center rounded-[6px] border border-border bg-surface px-3 sm:px-4 text-xs font-semibold text-heading hover:bg-surface-subtle transition-colors shadow-2xs disabled:opacity-50">
+          <span id="draft-text">Simpan Draf</span>
+          <span id="draft-spinner" class="hidden">Menyimpan...</span>
+        </button>
+        <button type="button" id="btn-publish"
+          class="inline-flex h-[36px] items-center justify-center rounded-[6px] bg-primary px-4 sm:px-5 text-xs font-semibold text-white hover:bg-primary-hover shadow-xs transition-colors disabled:opacity-50">
+          <span id="publish-text">Perbarui & Terbitkan</span>
+          <span id="publish-spinner" class="hidden">Memproses...</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Error & Success Banners -->
+    <div id="error-banner" class="hidden rounded-[6px] border border-error/20 bg-error-light p-3.5 text-xs text-error-text font-medium"></div>
+    <div id="success-banner" class="hidden rounded-[6px] border border-success/20 bg-success-light p-3.5 text-xs text-success-text font-medium">
+      Artikel berhasil diperbarui. Mengalihkan...
+    </div>
+
+    <form id="edit-form">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <!-- ═══════════ Kolom Utama ═══════════ -->
+        <div class="lg:col-span-2 space-y-5">
+          <div class="rounded-[8px] border border-border bg-surface p-4 sm:p-6 space-y-5 shadow-xs">
+
+            <!-- Judul -->
+            <div class="space-y-1.5">
+              <label for="title" class="block text-xs font-semibold text-heading">
+                Judul Berita / Artikel <span class="text-error">*</span>
+              </label>
+              <input id="title" name="title" type="text" required autocomplete="off"
+                value={article.title}
+                class="h-[42px] w-full rounded-[6px] border border-border bg-surface px-3.5 text-sm font-medium text-heading placeholder:text-muted/60 transition-colors"/>
+            </div>
+
+            <!-- Slug -->
+            <div class="rounded-[6px] border border-border/80 bg-surface-subtle/60 p-3 text-xs">
+              <div class="flex items-center justify-between gap-2 mb-1.5">
+                <span class="font-semibold text-heading flex items-center gap-1.5 text-[11px]">
+                  <svg class="w-3.5 h-3.5 text-primary shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+                  </svg>
+                  Permalink URL
+                </span>
+              </div>
+              <div class="flex items-center gap-1 font-mono text-[11px] text-muted overflow-x-auto">
+                <span class="shrink-0 text-muted/70 hidden sm:inline">https://sman1unggulan.sch.id/berita/</span>
+                <span class="shrink-0 text-muted/70 sm:hidden">.../berita/</span>
+                <input id="slug" name="slug" type="text"
+                  value={article.slug}
+                  class="font-mono text-heading bg-transparent border-b border-dashed border-border px-1 py-0.5 w-full text-[11px] min-w-0"/>
+              </div>
+            </div>
+
+            <!-- Cover Image -->
+            <div class="space-y-2">
+              <label class="block text-xs font-semibold text-heading">Foto Sampul Utama</label>
+              <input id="coverImage" name="coverImage" type="hidden" value={article.coverImage || ''} />
+              <input type="file" id="cover-file-input" accept="image/jpeg,image/png,image/webp,image/avif" class="hidden" />
+
+              <!-- Dropzone (ditampilkan hanya jika tidak ada gambar) -->
+              <div id="cover-dropzone"
+                class={`relative rounded-[10px] border-2 border-dashed border-border/80 bg-surface-subtle hover:bg-surface-subtle hover:border-primary/50 transition-all p-6 sm:p-8 flex flex-col items-center justify-center text-center cursor-pointer group ${article.coverImage ? 'hidden' : ''}`}>
+                <div class="w-10 h-10 mb-3 rounded-full bg-surface border border-border flex items-center justify-center text-muted group-hover:text-primary group-hover:border-primary/40 transition-colors shadow-2xs">
+                  <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                  </svg>
+                </div>
+                <p class="text-sm text-muted">
+                  Drop an image here or <span class="font-bold text-heading underline decoration-border group-hover:text-primary group-hover:decoration-primary">browse</span>
+                </p>
+                <div class="mt-2 flex items-center gap-2 text-xs">
+                  <span class="text-muted/70">atau</span>
+                  <button type="button" id="btn-open-medialib" class="font-semibold text-primary hover:underline">Pilih dari Media Library</button>
+                </div>
+                <p class="mt-2 text-[11px] text-muted/60">JPG, PNG, WebP · Maks. 5MB</p>
+              </div>
+
+              <!-- Upload Progress -->
+              <div id="cover-uploading" class="hidden rounded-[8px] border border-border bg-surface p-4 text-center text-xs text-primary font-medium">
+                Mengunggah foto sampul ke server...
+              </div>
+
+              <!-- Preview (ditampilkan jika sudah ada gambar) -->
+              <div id="cover-preview-card" class={`rounded-[10px] border border-border bg-surface overflow-hidden shadow-xs ${!article.coverImage ? 'hidden' : ''}`}>
+                <div class="relative w-full aspect-video max-h-[220px] bg-surface-subtle overflow-hidden group">
+                  <img id="cover-preview-img" src={article.coverImage || ''} alt="" class="w-full h-full object-cover" />
+                  <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 sm:gap-2 flex-wrap p-2">
+                    <button type="button" id="btn-change-cover" class="rounded-[6px] bg-surface text-heading px-2.5 py-1.5 text-xs font-semibold hover:bg-surface-subtle shadow">Ganti Foto</button>
+                    <button type="button" id="btn-medialib-replace" class="rounded-[6px] bg-surface text-heading px-2.5 py-1.5 text-xs font-semibold hover:bg-surface-subtle shadow">Media Library</button>
+                    <button type="button" id="btn-remove-cover" class="rounded-[6px] bg-error text-white px-2.5 py-1.5 text-xs font-semibold hover:bg-error-hover shadow">Hapus</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Ringkasan -->
+            <div class="space-y-1.5">
+              <div class="flex items-center justify-between gap-2">
+                <label for="summary" class="block text-xs font-semibold text-heading">
+                  Ringkasan Berita (Lead Excerpt) <span class="text-error">*</span>
+                </label>
+                <span id="summary-counter" class="text-[11px] text-muted shrink-0">{article.summary.length} / 200</span>
+              </div>
+              <textarea id="summary" name="summary" rows="2" required
+                class="w-full rounded-[6px] border border-border bg-surface p-3 text-xs text-heading placeholder:text-muted/60 transition-colors resize-none"
+              >{article.summary}</textarea>
+            </div>
+
+            <!-- TIPTAP EDITOR -->
+            <div class="space-y-1.5">
+              <label class="block text-xs font-semibold text-heading">
+                Isi Konten Berita <span class="text-error">*</span>
+              </label>
+              <TiptapEditor />
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══════════ Sidebar ═══════════ -->
+        <div class="space-y-5">
+          <!-- Kategori & Status & Jadwal -->
+          <div class="rounded-[8px] border border-border bg-surface p-4 sm:p-5 space-y-4 shadow-xs">
+            <h3 class="text-xs font-bold tracking-tight text-muted uppercase">Taksonomi & Jadwal</h3>
+
+            <div class="space-y-1.5">
+              <label for="categoryId" class="block text-xs font-semibold text-heading">
+                Kategori <span class="text-error">*</span>
+              </label>
+              <select id="categoryId" name="categoryId" required
+                class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 text-xs text-heading transition-colors">
+                {allCategories.map((c) => (
+                  <option value={c.id} selected={article.categoryId === c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <!-- Status -->
+            <div class="pt-2 border-t border-border space-y-2">
+              <label class="block text-xs font-semibold text-heading">Status Publikasi</label>
+              <div class="flex items-center gap-4 text-xs">
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" name="status" value="draft" checked={article.status === 'draft'} class="text-primary" />
+                  <span class="text-heading">Draf</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" name="status" value="published" checked={article.status === 'published'} class="text-primary" />
+                  <span class="font-semibold text-primary">Terbitkan</span>
+                </label>
+              </div>
+              <p class="text-[10px] text-muted">Draf tidak akan tampil di web publik atau sitemap.</p>
+            </div>
+
+            <!-- Jadwal Terbit -->
+            <div class="pt-2 border-t border-border space-y-1.5">
+              <div class="flex items-center justify-between">
+                <label for="publishedAt" class="block text-xs font-semibold text-heading">Waktu Publikasi</label>
+                <span class="text-[10px] text-muted">WIB</span>
+              </div>
+              <input id="publishedAt" name="publishedAt" type="datetime-local"
+                value={article.publishedAt ? new Date(article.publishedAt).toISOString().slice(0,16) : ''}
+                class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 text-xs text-heading transition-colors"/>
+            </div>
+          </div>
+
+          <!-- SEO Otomatis -->
+          <div class="rounded-[8px] border border-border bg-surface p-4 sm:p-5 space-y-4 shadow-xs">
+            <div class="flex items-center justify-between">
+              <h3 class="text-xs font-bold tracking-tight text-muted uppercase">Optimasi SEO</h3>
+              <span class="text-[10px] bg-accent-light text-accent-text px-1.5 py-0.5 rounded font-medium">Otomatis</span>
+            </div>
+
+            <div class="space-y-1.5">
+              <div class="flex items-center justify-between">
+                <label for="metaTitle" class="block text-xs font-semibold text-heading">Meta Title</label>
+                <span id="meta-title-counter" class="text-[10px] text-muted">{(article.metaTitle || article.title).length}/60</span>
+              </div>
+              <input id="metaTitle" name="metaTitle" type="text"
+                value={article.metaTitle || article.title}
+                class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 text-xs text-heading placeholder:text-muted/60 transition-colors"/>
+            </div>
+
+            <div class="space-y-1.5">
+              <div class="flex items-center justify-between">
+                <label for="metaDescription" class="block text-xs font-semibold text-heading">Meta Description</label>
+                <span id="meta-desc-counter" class="text-[10px] text-muted">{(article.metaDescription || article.summary).length}/160</span>
+              </div>
+              <textarea id="metaDescription" name="metaDescription" rows="2"
+                class="w-full rounded-[6px] border border-border bg-surface p-2.5 text-xs text-heading placeholder:text-muted/60 transition-colors resize-none"
+              >{article.metaDescription || article.summary}</textarea>
+            </div>
+
+            <!-- SERP Preview -->
+            <div class="pt-2 border-t border-border space-y-1.5">
+              <span class="block text-[11px] font-semibold text-muted">Simulasi Google SERP</span>
+              <div class="rounded-[6px] border border-border/80 bg-surface-subtle p-3 space-y-1">
+                <div class="flex items-center gap-1.5 text-[10px] text-accent-text overflow-hidden">
+                  <div class="w-3 h-3 shrink-0 rounded-full bg-accent flex items-center justify-center text-[7px] text-white font-bold">S</div>
+                  <span class="truncate">sman1unggulan.sch.id › berita › <span id="serp-slug">{article.slug}</span></span>
+                </div>
+                <div id="serp-title" class="text-xs font-medium text-primary line-clamp-1">{article.metaTitle || article.title}</div>
+                <div id="serp-desc" class="text-[11px] text-muted line-clamp-2 leading-relaxed">{article.metaDescription || article.summary}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <!-- Modal Media Library Terpusat -->
+  <MediaPickerModal modalId="media-picker-modal" />
+
+
+  <script define:vars={{ articleId, existingContent }}>
+    // ─── Tiptap Init: Import di atas tapi gunakan global karena define:vars
+    // Semua logika sama persis dengan tambah.astro — editor shared dari TiptapEditor component
+
+    // Tunggu DOMContentLoaded agar editor-prosemirror-mount tersedia
+    window.__articleId = articleId;
+    window.__existingContent = existingContent;
+  </script>
+
+  <script>
+    import { Editor } from '@tiptap/core';
+    import StarterKit from '@tiptap/starter-kit';
+    import Underline from '@tiptap/extension-underline';
+    import TextAlign from '@tiptap/extension-text-align';
+    import Link from '@tiptap/extension-link';
+    import Image from '@tiptap/extension-image';
+    import CharacterCount from '@tiptap/extension-character-count';
+    import Placeholder from '@tiptap/extension-placeholder';
+    import CodeBlock from '@tiptap/extension-code-block';
+
+    const articleId: number = (window as any).__articleId;
+    const existingContent: string = (window as any).__existingContent;
+
+    // ─── Inisialisasi Editor dengan Konten Existing ───────────────
+    const editor = new Editor({
+      element: document.getElementById('editor-prosemirror-mount')!,
+      content: existingContent || '',
+      extensions: [
+        StarterKit.configure({
+          codeBlock: false,
+          bold: { HTMLAttributes: {} },
+          heading: { levels: [1, 2, 3, 4, 5, 6] },
+        }),
+        Underline,
+        CodeBlock,
+        TextAlign.configure({ types: ['heading', 'paragraph'] }),
+        Link.configure({ openOnClick: false, autolink: false }),
+        Image,
+        CharacterCount,
+        Placeholder.configure({ placeholder: 'Mulai menulis isi berita di sini...' }),
+      ],
+      editorProps: {
+        attributes: { class:'ProseMirror'},
+      },
+      onUpdate() { syncMetrics(); syncToolbar(); },
+      onSelectionUpdate() { syncToolbar(); },
+    });
+
+    // ─── Metrics ──────────────────────────────────────────────────
+    function syncMetrics() {
+      const txt = editor.getText().trim();
+      const words = txt ? txt.split(/\s+/).filter(Boolean).length : 0;
+      const chars = (editor.storage.characterCount as any).characters();
+      const mins = Math.max(1, Math.ceil(words / 200));
+      document.getElementById('tip-words')!.textContent = `${words} kata`;
+      document.getElementById('tip-chars')!.textContent = `${chars} karakter`;
+      document.getElementById('tip-read')!.textContent = `${mins} menit baca`;
+    }
+    syncMetrics(); // inisialisasi awal dengan konten existing
+
+    // ─── Toolbar State ────────────────────────────────────────────
+    function syncToolbar() {
+      const isCenter = editor.isActive({ textAlign: 'center' });
+      const isRight = editor.isActive({ textAlign: 'right' });
+      const isLeft = editor.isActive({ textAlign: 'left' }) || (!isCenter && !isRight);
+
+      const checks: Record<string, () => boolean> = {
+        bold: () => editor.isActive('bold'), italic: () => editor.isActive('italic'),
+        underline: () => editor.isActive('underline'), strike: () => editor.isActive('strike'),
+        code: () => editor.isActive('code'), bulletList: () => editor.isActive('bulletList'),
+        orderedList: () => editor.isActive('orderedList'), blockquote: () => editor.isActive('blockquote'),
+        codeBlock: () => editor.isActive('codeBlock'),
+        alignLeft: () => isLeft, alignCenter: () => isCenter, alignRight: () => isRight,
+        link: () => editor.isActive('link'),
+      };
+      document.querySelectorAll<HTMLButtonElement>('.tbtn[data-tip]').forEach(btn => {
+        const key = btn.getAttribute('data-tip')!;
+        btn.classList.toggle('is-active', !!(checks[key]?.()));
+      });
+
+      // Update label indikator heading
+      const hLabel = document.getElementById('heading-btn-label');
+      const hBtnEl = document.getElementById('heading-dropdown-btn');
+      if (hLabel) {
+        if (editor.isActive('heading', { level: 1 })) { hLabel.textContent = 'H₁'; hBtnEl?.classList.add('is-active'); }
+        else if (editor.isActive('heading', { level: 2 })) { hLabel.textContent = 'H₂'; hBtnEl?.classList.add('is-active'); }
+        else if (editor.isActive('heading', { level: 3 })) { hLabel.textContent = 'H₃'; hBtnEl?.classList.add('is-active'); }
+        else if (editor.isActive('heading', { level: 4 })) { hLabel.textContent = 'H₄'; hBtnEl?.classList.add('is-active'); }
+        else if (editor.isActive('heading', { level: 5 })) { hLabel.textContent = 'H₅'; hBtnEl?.classList.add('is-active'); }
+        else if (editor.isActive('heading', { level: 6 })) { hLabel.textContent = 'H₆'; hBtnEl?.classList.add('is-active'); }
+        else { hLabel.textContent = 'H'; hBtnEl?.classList.remove('is-active'); }
+      }
+    }
+
+    // ─── Toolbar Handlers ─────────────────────────────────────────
+    document.querySelectorAll<HTMLButtonElement>('.tbtn[data-tip]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const cmd = btn.getAttribute('data-tip')!;
+        editor.commands.focus();
+        switch (cmd) {
+          case 'bold': editor.commands.toggleBold(); break;
+          case 'italic': editor.commands.toggleItalic(); break;
+          case 'underline': editor.commands.toggleUnderline(); break;
+          case 'strike': editor.commands.toggleStrike(); break;
+          case 'code': editor.commands.toggleCode(); break;
+          case 'bulletList': editor.commands.toggleBulletList(); break;
+          case 'orderedList': editor.commands.toggleOrderedList(); break;
+          case 'blockquote': editor.commands.toggleBlockquote(); break;
+          case 'codeBlock': editor.commands.toggleCodeBlock(); break;
+          case 'alignLeft': editor.commands.setTextAlign('left'); break;
+          case 'alignCenter': editor.commands.setTextAlign('center'); break;
+          case 'alignRight': editor.commands.setTextAlign('right'); break;
+          case 'undo': editor.commands.undo(); break;
+          case 'redo': editor.commands.redo(); break;
+          case 'link': {
+            const prev = editor.getAttributes('link').href;
+            const url = window.prompt('URL tautan:', prev || 'https://');
+            if (url === null) break;
+            if (url === '') { editor.commands.unsetLink(); break; }
+            editor.commands.setLink({ href: url, target: '_blank' });
+            break;
+          }
+          case 'image': {
+            if (typeof (window as any).openMediaPicker === 'function') {
+              (window as any).openMediaPicker((m: any) => {
+                const src = m.mediumUrl || m.fileUrl;
+                const alt = m.altText || m.title || '';
+                editor.commands.setImage({ src, alt });
+              }, { type: 'image' });
+            } else {
+              const url = window.prompt('URL gambar inline:', 'https://');
+              if (url) editor.commands.setImage({ src: url });
+            }
+            break;
+          }
+
+        }
+        syncToolbar();
+      });
+    });
+
+    // ─── Heading Dropdown ─────────────────────────────────────────
+    const hBtn = document.getElementById('heading-dropdown-btn')!;
+    const hMenu = document.getElementById('heading-dropdown-menu')!;
+
+    function toggleHeadingMenu(open?: boolean) {
+      const willOpen = typeof open === 'boolean' ? open : hMenu.classList.contains('hidden');
+      if (willOpen) {
+        const rect = hBtn.getBoundingClientRect();
+        hMenu.style.position = 'fixed';
+        hMenu.style.top = `${rect.bottom + 6}px`;
+        hMenu.style.left = `${Math.max(12, rect.left)}px`;
+        hMenu.style.zIndex = '9999';
+        hMenu.classList.remove('hidden');
+      } else {
+        hMenu.classList.add('hidden');
+      }
+    }
+
+    hBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleHeadingMenu();
+    });
+
+    document.addEventListener('click', (e) => {
+      const target = e.target as Node;
+      if (!hBtn.contains(target) && !hMenu.contains(target)) {
+        toggleHeadingMenu(false);
+      }
+    });
+
+    window.addEventListener('scroll', () => toggleHeadingMenu(false), { passive: true });
+    window.addEventListener('resize', () => toggleHeadingMenu(false), { passive: true });
+
+    document.querySelectorAll<HTMLButtonElement>('.h-item[data-heading]').forEach(item => {
+      item.addEventListener('click', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        const level = parseInt(item.getAttribute('data-heading') || '0', 10);
+        if (level === 0) {
+          editor.chain().focus().setParagraph().unsetAllMarks().run();
+        } else {
+          editor.chain().focus().toggleHeading({ level: level as 1|2|3|4|5|6 }).run();
+        }
+        toggleHeadingMenu(false);
+        syncToolbar();
+      });
+    });
+
+    // ─── Preview Button (Draft Token) ────────────────────────────
+    document.getElementById('btn-preview')!.addEventListener('click', async () => {
+      try {
+        const r = await fetch(`/api/admin/articles/${articleId}/preview-token`);
+        const d = await r.json();
+        if (d.success && d.previewUrl) { window.open(d.previewUrl, '_blank'); }
+        else { alert(d.error || 'Gagal membuat tautan pratinjau'); }
+      } catch { alert('Kesalahan jaringan'); }
+    });
+
+    // ─── SEO & Slug Sync ─────────────────────────────────────────
+    const titleInput = document.getElementById('title') as HTMLInputElement;
+    const slugInput = document.getElementById('slug') as HTMLInputElement;
+    const summaryInput = document.getElementById('summary') as HTMLTextAreaElement;
+    const summaryCounter = document.getElementById('summary-counter') as HTMLSpanElement;
+    const metaTitleInput = document.getElementById('metaTitle') as HTMLInputElement;
+    const metaDescInput = document.getElementById('metaDescription') as HTMLTextAreaElement;
+    const metaTitleCounter = document.getElementById('meta-title-counter') as HTMLSpanElement;
+    const metaDescCounter = document.getElementById('meta-desc-counter') as HTMLSpanElement;
+    const serpTitle = document.getElementById('serp-title') as HTMLElement;
+    const serpDesc = document.getElementById('serp-desc') as HTMLElement;
+    const serpSlugEl = document.getElementById('serp-slug') as HTMLElement;
+
+    function slugify(t: string) { return t.toLowerCase().trim().replace(/[^\w\s-]/g,'').replace(/[\s_-]+/g,'-').replace(/^-+|-+$/g,''); }
+
+    // Di edit page, slug sudah diisi — biarkan user edit bebas
+    slugInput.addEventListener('input', () => { serpSlugEl.textContent = slugInput.value || '...'; });
+
+    let metaTitleManual = !!(metaTitleInput.value && metaTitleInput.value !== titleInput.value);
+    let metaDescManual = !!(metaDescInput.value && metaDescInput.value !== summaryInput.value);
+
+    titleInput.addEventListener('input', () => {
+      if (!metaTitleManual) {
+        metaTitleInput.value = titleInput.value;
+        metaTitleCounter.textContent = `${titleInput.value.length}/60`;
+      }
+      serpTitle.textContent = metaTitleInput.value || titleInput.value || 'Judul Berita Sekolah';
+    });
+
+    summaryInput.addEventListener('input', () => {
+      summaryCounter.textContent = `${summaryInput.value.length} / 200`;
+      if (!metaDescManual) {
+        metaDescInput.value = summaryInput.value;
+        metaDescCounter.textContent = `${summaryInput.value.length}/160`;
+      }
+      serpDesc.textContent = metaDescInput.value || summaryInput.value || 'Cuplikan...';
+    });
+
+    metaTitleInput.addEventListener('input', () => {
+      metaTitleManual = true;
+      metaTitleCounter.textContent = `${metaTitleInput.value.length}/60`;
+      serpTitle.textContent = metaTitleInput.value || titleInput.value || 'Judul Berita';
+    });
+
+    metaDescInput.addEventListener('input', () => {
+      metaDescManual = true;
+      metaDescCounter.textContent = `${metaDescInput.value.length}/160`;
+      serpDesc.textContent = metaDescInput.value || summaryInput.value || 'Cuplikan...';
+    });
+
+    // ─── Cover Image ──────────────────────────────────────────────
+    const coverInput = document.getElementById('coverImage') as HTMLInputElement;
+    const coverFile = document.getElementById('cover-file-input') as HTMLInputElement;
+    const dropzone = document.getElementById('cover-dropzone') as HTMLElement;
+    const uploading = document.getElementById('cover-uploading') as HTMLElement;
+    const previewCard = document.getElementById('cover-preview-card') as HTMLElement;
+    const previewImg = document.getElementById('cover-preview-img') as HTMLImageElement;
+
+    function setCover(url: string | null) {
+      if (url) { coverInput.value = url; previewImg.src = url; previewCard.classList.remove('hidden'); dropzone.classList.add('hidden'); }
+      else { coverInput.value = ''; previewImg.src = ''; previewCard.classList.add('hidden'); dropzone.classList.remove('hidden'); }
+    }
+
+    dropzone.addEventListener('click', e => { if (!(e.target as HTMLElement).closest('#btn-open-medialib')) coverFile.click(); });
+    document.getElementById('btn-change-cover')!.addEventListener('click', () => coverFile.click());
+    document.getElementById('btn-remove-cover')!.addEventListener('click', () => setCover(null));
+    ['dragenter','dragover'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.add('border-primary','bg-primary-light'); }));
+    ['dragleave','drop'].forEach(ev => dropzone.addEventListener(ev, e => { e.preventDefault(); dropzone.classList.remove('border-primary','bg-primary-light'); }));
+    dropzone.addEventListener('drop', e => { const f = (e as DragEvent).dataTransfer?.files[0]; if(f) uploadCover(f); });
+    coverFile.addEventListener('change', () => { const f = coverFile.files?.[0]; if(f) uploadCover(f); });
+
+    async function uploadCover(file: File) {
+      if (!file.type.startsWith('image/')) { alert('Pilih file gambar.'); return; }
+      if (file.size > 5*1024*1024) { alert('Ukuran maks 5MB.'); return; }
+      dropzone.classList.add('hidden'); uploading.classList.remove('hidden');
+      const fd = new FormData(); fd.append('file', file);
+      try {
+        const r = await fetch('/api/admin/upload',{method:'POST',body:fd}); const d = await r.json();
+        if(d.success&&d.url){setCover(d.url);}else{alert(d.error||'Gagal unggah');setCover(null);}
+      } catch { alert('Kesalahan jaringan'); setCover(null); }
+      finally { uploading.classList.add('hidden'); coverFile.value=''; }
+    }
+
+    // ─── Media Library Picker untuk Cover ──────────────────────────
+    function openMediaPickerForCover() {
+      if (typeof (window as any).openMediaPicker === 'function') {
+        (window as any).openMediaPicker((m: any) => {
+          setCover(m.fileUrl);
+        }, { type: 'image' });
+      }
+    }
+
+    document.getElementById('btn-open-medialib')?.addEventListener('click', openMediaPickerForCover);
+    document.getElementById('btn-medialib-replace')?.addEventListener('click', openMediaPickerForCover);
+
+
+    // ─── Form Submit ──────────────────────────────────────────────
+    const form = document.getElementById('edit-form') as HTMLFormElement;
+    const errBanner = document.getElementById('error-banner') as HTMLElement;
+    const succBanner = document.getElementById('success-banner') as HTMLElement;
+    const btnDraft = document.getElementById('btn-draft') as HTMLButtonElement;
+    const btnPublish = document.getElementById('btn-publish') as HTMLButtonElement;
+
+    btnDraft.addEventListener('click', () => submitEdit('draft'));
+    btnPublish.addEventListener('click', () => submitEdit('published'));
+    form.addEventListener('submit', e => { e.preventDefault(); submitEdit('published'); });
+
+    async function submitEdit(statusOverride?: 'draft'|'published') {
+      errBanner.classList.add('hidden');
+      const title = titleInput.value.trim();
+      const summary = summaryInput.value.trim();
+      const content = editor.getHTML();
+
+      if (!title) { showErr('Judul berita wajib diisi.'); titleInput.focus(); return; }
+      if (!summary) { showErr('Ringkasan berita wajib diisi.'); summaryInput.focus(); return; }
+      if (!editor.getText().trim() && !content.includes('<img')) { showErr('Isi konten berita wajib diisi.'); editor.commands.focus(); return; }
+
+      btnDraft.disabled = btnPublish.disabled = true;
+      const draftT = document.getElementById('draft-text')!; const draftS = document.getElementById('draft-spinner')!;
+      const pubT = document.getElementById('publish-text')!; const pubS = document.getElementById('publish-spinner')!;
+      if (statusOverride === 'draft') { draftT.classList.add('hidden'); draftS.classList.remove('hidden'); }
+      else { pubT.classList.add('hidden'); pubS.classList.remove('hidden'); }
+
+      const fd = new FormData(form);
+      const status = statusOverride || (fd.get('status') as string) || 'draft';
+      const pubAt = (document.getElementById('publishedAt') as HTMLInputElement).value;
+
+      const payload = {
+        title, slug: slugInput.value.trim(), categoryId: fd.get('categoryId'),
+        status, publishedAt: pubAt ? new Date(pubAt).toISOString() : undefined,
+        coverImage: coverInput.value.trim() || null, summary, content,
+        metaTitle: metaTitleInput.value.trim() || title,
+        metaDescription: metaDescInput.value.trim() || summary,
+      };
+
+      try {
+        const r = await fetch(`/api/admin/articles/${articleId}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        const d = await r.json();
+        if (d.success) {
+          succBanner.classList.remove('hidden');
+          setTimeout(() => { window.location.href = '/admin/berita'; }, 800);
+        } else { showErr(d.error || 'Gagal memperbarui.'); resetBtns(); }
+      } catch { showErr('Kesalahan jaringan.'); resetBtns(); }
+    }
+
+    function showErr(msg: string) { errBanner.textContent = msg; errBanner.classList.remove('hidden'); errBanner.scrollIntoView({behavior:'smooth',block:'center'}); }
+    function resetBtns() {
+      btnDraft.disabled = btnPublish.disabled = false;
+      document.getElementById('draft-text')!.classList.remove('hidden'); document.getElementById('draft-spinner')!.classList.add('hidden');
+      document.getElementById('publish-text')!.classList.remove('hidden'); document.getElementById('publish-spinner')!.classList.add('hidden');
+    }
+  </script>
+</AdminLayout>

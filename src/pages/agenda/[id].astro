@@ -1,0 +1,289 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Header from '../../components/Header.astro';
+import Footer from '../../components/Footer.astro';
+import Breadcrumb from '../../components/Breadcrumb.astro';
+import Icon from '../../components/Icon.astro';
+import { db, agendas } from '../../db';
+import { eq, ne, and, gte, asc } from 'drizzle-orm';
+import {
+  calculateAgendaStatus,
+  getStatusMeta,
+  getAgendaCategory,
+  parseDateBadge,
+  formatTimeRange,
+  generateGoogleCalendarUrl,
+  generateIcsDataUrl,
+  isAgendaToday,
+} from '../../utils/agendaUtils';
+
+export const prerender = false;
+
+const { id } = Astro.params;
+const agendaId = parseInt(id || '', 10);
+
+if (isNaN(agendaId)) {
+  return Astro.redirect('/agenda');
+}
+
+const agenda = await db
+  .select()
+  .from(agendas)
+  .where(eq(agendas.id, agendaId))
+  .limit(1)
+  .then((r) => r[0]);
+
+if (!agenda) {
+  return Astro.redirect('/agenda');
+}
+
+const statusKey = calculateAgendaStatus(agenda);
+const statusMeta = getStatusMeta(statusKey);
+const category = getAgendaCategory(agenda.title, agenda.description);
+const dateBadge = parseDateBadge(agenda.eventDate);
+const endDateBadge = agenda.endDate ? parseDateBadge(agenda.endDate) : null;
+const isMultiDay = Boolean(agenda.endDate && agenda.endDate !== agenda.eventDate);
+const isToday = isAgendaToday(agenda.eventDate, agenda.endDate);
+const timeStr = formatTimeRange(agenda.startTime, agenda.endTime);
+const googleCalUrl = generateGoogleCalendarUrl(agenda);
+const icsUrl = generateIcsDataUrl(agenda);
+
+// Ambil agenda terkait / mendatang lainnya untuk sidebar
+const todayStr = new Date().toISOString().slice(0, 10);
+const otherAgendas = await db
+  .select()
+  .from(agendas)
+  .where(ne(agendas.id, agendaId))
+  .orderBy(asc(agendas.eventDate))
+  .limit(4);
+
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "EducationEvent",
+  "name": agenda.title,
+  "description": agenda.description || `Agenda resmi: ${agenda.title}`,
+  "startDate": agenda.startTime ? `${agenda.eventDate}T${agenda.startTime}:00+07:00` : `${agenda.eventDate}T08:00:00+07:00`,
+  "endDate": agenda.endTime ? `${agenda.endDate || agenda.eventDate}T${agenda.endTime}:00+07:00` : `${agenda.endDate || agenda.eventDate}T17:00:00+07:00`,
+  "eventStatus": statusKey === 'cancelled' ? "https://schema.org/EventCancelled" : "https://schema.org/EventScheduled",
+  "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+  "location": {
+    "@type": "Place",
+    "name": agenda.location,
+    "address": {
+      "@type": "PostalAddress",
+      "addressLocality": "Kota Pendidikan",
+      "addressCountry": "ID"
+    }
+  },
+  "organizer": {
+    "@type": "School",
+    "name": "SMA Negeri 1 Unggulan"
+  }
+};
+---
+
+<Layout
+  title={`${agenda.title} — Agenda Sekolah SMAN 1 Unggulan`}
+  description={agenda.description || `Informasi jadwal kegiatan ${agenda.title} di SMAN 1 Unggulan.`}
+  jsonLd={jsonLd}
+>
+  <Header currentPath="/agenda" />
+
+  <main class="flex-1 py-10 bg-background">
+    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <!-- Breadcrumb -->
+      <Breadcrumb
+        items={[
+          { label: 'Beranda', href: '/' },
+          { label: 'Agenda & Kalender', href: '/agenda' },
+          { label: agenda.title },
+        ]}
+      />
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        <!-- Kolom Kiri: Detail Utama (8 cols) -->
+        <div class="lg:col-span-8 space-y-6">
+          <article class="rounded-[12px] border border-border bg-surface p-6 sm:p-8">
+            <!-- Top Badges -->
+            <div class="flex flex-wrap items-center gap-2 mb-4">
+              <span class="rounded-[4px] bg-primary-light border border-primary/20 px-2.5 py-0.5 text-xs font-semibold text-primary">
+                {category}
+              </span>
+              <span class={`rounded-[4px] px-2.5 py-0.5 text-xs font-semibold ${statusMeta.badgeClass}`}>
+                {statusMeta.label}
+              </span>
+              {isToday && (
+                <span class="rounded-[4px] bg-warning-light text-warning-text border border-warning/30 px-2.5 py-0.5 text-xs font-semibold">
+                  Hari Ini
+                </span>
+              )}
+            </div>
+
+            <!-- Title -->
+            <h1 class="font-display text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-heading leading-tight">
+              {agenda.title}
+            </h1>
+
+            <!-- Meta Quick Info Box (DRY Tailwind v4 *:) -->
+            <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4 rounded-[8px] border border-border bg-surface-subtle p-4 text-xs font-body *:flex *:items-start *:gap-3">
+              <div>
+                <div class="p-2 rounded-[6px] bg-surface border border-border text-primary shrink-0">
+                  <Icon name="calendar" class="h-4 w-4" />
+                </div>
+                <div>
+                  <span class="text-muted block text-[11px] uppercase tracking-wider font-semibold">Tanggal Pelaksanaan</span>
+                  <span class="text-heading font-medium text-sm mt-0.5 block">
+                    {dateBadge.fullFormatted}
+                    {isMultiDay && endDateBadge && ` s.d. ${endDateBadge.fullFormatted}`}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <div class="p-2 rounded-[6px] bg-surface border border-border text-primary shrink-0">
+                  <Icon name="clock" class="h-4 w-4" />
+                </div>
+                <div>
+                  <span class="text-muted block text-[11px] uppercase tracking-wider font-semibold">Waktu Kegiatan</span>
+                  <span class="text-heading font-medium text-sm mt-0.5 block font-mono">
+                    {timeStr}
+                  </span>
+                </div>
+              </div>
+
+              <div class="sm:col-span-2">
+                <div class="p-2 rounded-[6px] bg-surface border border-border text-primary shrink-0">
+                  <Icon name="map-pin" class="h-4 w-4" />
+                </div>
+                <div>
+                  <span class="text-muted block text-[11px] uppercase tracking-wider font-semibold">Lokasi Penyelenggaraan</span>
+                  <span class="text-heading font-medium text-sm mt-0.5 block">
+                    {agenda.location}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Content / Description (No ad-hoc divider) -->
+            <div class="mt-8 space-y-3">
+              <h2 class="font-display text-lg font-bold text-heading">
+                Deskripsi & Agenda Kegiatan
+              </h2>
+              {agenda.description ? (
+                <div class="font-body text-[15px] text-body leading-relaxed max-w-prose whitespace-pre-line">
+                  {agenda.description}
+                </div>
+              ) : (
+                <p class="text-sm text-muted italic">
+                  Belum ada deskripsi rinci untuk agenda ini. Silakan hubungi bagian Tata Usaha sekolah untuk informasi lebih lanjut.
+                </p>
+              )}
+            </div>
+
+            <!-- Petunjuk Tambahan -->
+            <div class="mt-8 rounded-[8px] border border-border bg-surface-subtle p-4">
+              <h3 class="font-display text-sm font-semibold text-heading mb-1.5 flex items-center gap-2">
+                <Icon name="info" class="h-4 w-4 text-primary shrink-0" />
+                Catatan Penting
+              </h3>
+              <p class="text-xs text-muted leading-relaxed font-body">
+                Jadwal dapat mengalami penyesuaian situasional berdasarkan arahan pimpinan sekolah atau Dinas Pendidikan. Peserta diharapkan hadir 15 menit sebelum kegiatan dimulai dengan mengenakan seragam atau pakaian rapi sesuai ketentuan.
+              </p>
+            </div>
+
+            <!-- Calendar Action Buttons (No ad-hoc divider) -->
+            <div class="mt-8 flex flex-wrap items-center gap-3">
+              <a
+                href={googleCalUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex h-9 items-center justify-center gap-2 rounded-[6px] bg-primary px-4 font-body text-xs sm:text-sm font-medium text-white shadow-xs transition-all duration-200 hover:-translate-y-[1px] hover:bg-primary-hover hover:shadow-(--shadow-button-glow)"
+              >
+                <Icon name="calendar" class="h-4 w-4" />
+                Tambah ke Google Calendar
+              </a>
+
+              <a
+                href={icsUrl}
+                download={`${agenda.title.replace(/[/\\?%*:|"<>]/g, '_')}.ics`}
+                class="inline-flex h-9 items-center justify-center gap-2 rounded-[6px] border border-border bg-surface px-3.5 font-body text-xs sm:text-sm font-medium text-heading transition-colors hover:bg-surface-subtle"
+              >
+                <Icon name="download" class="h-4 w-4 text-muted" />
+                Unduh Kalender (.ics)
+              </a>
+
+              <a
+                href="/agenda"
+                class="inline-flex h-9 items-center justify-center gap-1.5 rounded-[6px] border border-border bg-surface px-3 font-body text-xs sm:text-sm font-medium text-muted transition-colors hover:text-heading hover:bg-surface-subtle sm:ml-auto"
+              >
+                <Icon name="chevron-left" class="h-4 w-4" />
+                Kembali ke Daftar
+              </a>
+            </div>
+          </article>
+        </div>
+
+        <!-- Kolom Kanan: Sidebar Agenda Terkait & Info Sekolah (4 cols) -->
+        <div class="lg:col-span-4 space-y-6">
+          <!-- Card Agenda Terkait Lainnya (Zero divide-y) -->
+          <div class="rounded-[12px] border border-border bg-surface p-5">
+            <h2 class="font-display text-base font-bold text-heading flex items-center justify-between mb-4">
+              <span>Agenda Lainnya</span>
+              <a href="/agenda" class="text-xs text-primary font-body font-medium hover:underline inline-flex items-center gap-1">
+                <span>Semua</span>
+                <Icon name="chevron-right" class="h-3 w-3" />
+              </a>
+            </h2>
+
+            <div class="space-y-2">
+              {otherAgendas.map((item) => {
+                const b = parseDateBadge(item.eventDate);
+                const s = calculateAgendaStatus(item);
+                const sm = getStatusMeta(s);
+                return (
+                  <a
+                    href={`/agenda/${item.id}`}
+                    class="block p-2 rounded-[8px] hover:bg-surface-subtle group transition-colors"
+                  >
+                    <div class="flex items-start gap-3">
+                      <div class="flex flex-col items-center justify-center rounded-[6px] border border-border bg-surface-subtle group-hover:bg-surface p-1.5 text-center shrink-0 w-12 transition-colors">
+                        <span class="font-display text-base font-bold text-heading leading-none">{b.day}</span>
+                        <span class="font-mono text-[9px] font-bold text-primary uppercase mt-0.5">{b.monthShort}</span>
+                      </div>
+                      <div class="flex-1 min-w-0">
+                        <span class={`inline-block text-[10px] font-semibold ${sm.textClass}`}>
+                          {sm.label}
+                        </span>
+                        <h3 class="font-display text-xs font-semibold text-heading truncate group-hover:text-primary transition-colors mt-0.5">
+                          {item.title}
+                        </h3>
+                        <p class="text-[11px] text-muted truncate mt-0.5 font-body">
+                          {item.location}
+                        </p>
+                      </div>
+                    </div>
+                  </a>
+                );
+              })}
+            </div>
+          </div>
+
+          <!-- Widget Tahun Ajaran & Narahubung (No ad-hoc divider) -->
+          <div class="rounded-[12px] border border-border bg-surface p-5 text-xs font-body space-y-3">
+            <h3 class="font-display text-sm font-bold text-heading">Pusat Informasi Agenda</h3>
+            <p class="text-muted leading-relaxed">
+              Membutuhkan konfirmasi terkait partisipasi kegiatan atau koordinasi sarana prasarana sekolah?
+            </p>
+            <div class="pt-1 space-y-1.5 text-muted">
+              <p><strong class="text-heading font-medium">Sekretariat TU:</strong> Ruang Administrasi Lt. 1</p>
+              <p><strong class="text-heading font-medium">Jam Pelayanan:</strong> Senin – Jumat, 07:30 – 15:30 WIB</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <Footer />
+</Layout>
+

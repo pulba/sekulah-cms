@@ -1,0 +1,894 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import Icon from '../../../components/Icon.astro';
+import { db, articles, categories } from '../../../db';
+import { eq, desc } from 'drizzle-orm';
+
+export const prerender = false;
+
+// Query parameter filter & pagination
+const currentStatus = Astro.url.searchParams.get('status') || 'all';
+const currentCategory = Astro.url.searchParams.get('kategori') || '';
+const searchQuery = Astro.url.searchParams.get('q') || '';
+const currentPage = Math.max(1, parseInt(Astro.url.searchParams.get('page') || '1', 10) || 1);
+const pageSize = 10;
+
+// Ambil seluruh data berita & kategori dalam 2 query paralel (Jauh lebih cepat dari 6 roundtrip remote DB)
+const [allArticles, allCategories] = await Promise.all([
+  db
+    .select({
+      id: articles.id,
+      slug: articles.slug,
+      title: articles.title,
+      coverImage: articles.coverImage,
+      status: articles.status,
+      publishedAt: articles.publishedAt,
+      viewCount: articles.viewCount,
+      deletedAt: articles.deletedAt,
+      categoryId: articles.categoryId,
+      categoryName: categories.name,
+    })
+    .from(articles)
+    .leftJoin(categories, eq(articles.categoryId, categories.id))
+    .orderBy(desc(articles.createdAt)),
+  db.select().from(categories).orderBy(categories.name),
+]);
+
+// Hitung metrik status secara instan di memori (0ms)
+const totalCount = allArticles.filter((a) => !a.deletedAt).length;
+const publishedCount = allArticles.filter((a) => !a.deletedAt && a.status === 'published').length;
+const draftCount = allArticles.filter((a) => !a.deletedAt && a.status === 'draft').length;
+const trashCount = allArticles.filter((a) => Boolean(a.deletedAt)).length;
+
+// Filter untuk SSR initial render
+const initialFiltered = allArticles.filter((a) => {
+  if (currentStatus === 'trash') {
+    if (!a.deletedAt) return false;
+  } else {
+    if (a.deletedAt) return false;
+    if (currentStatus === 'published' && a.status !== 'published') return false;
+    if (currentStatus === 'draft' && a.status !== 'draft') return false;
+  }
+  if (currentCategory && String(a.categoryId) !== currentCategory) return false;
+  if (searchQuery && !a.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+  return true;
+});
+
+const totalFiltered = initialFiltered.length;
+const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
+const validPage = Math.min(currentPage, totalPages);
+const offset = (validPage - 1) * pageSize;
+const articleList = initialFiltered.slice(offset, offset + pageSize);
+
+const currentUser = Astro.locals.user;
+---
+
+<AdminLayout title="Manajemen Berita" activeNav="berita">
+  <div class="space-y-6 max-w-6xl">
+    <!-- Header Page -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6">
+      <div>
+        <h1 class="font-display text-2xl font-bold tracking-tight text-heading">
+          Kelola Berita Sekolah
+        </h1>
+        <p class="mt-1 font-body text-xs text-muted">
+          Daftar seluruh artikel kegiatan, pengumuman akademik, pratinjau draf, dan arsip sampah.
+        </p>
+      </div>
+
+      <div class="flex items-center gap-2.5 *:inline-flex *:h-[36px] *:items-center *:justify-center *:gap-1.5 *:rounded-[6px] *:font-body *:text-xs *:transition-colors">
+        <a
+          href="/admin/berita/kategori"
+          class="border border-border bg-surface px-3.5 font-medium text-heading hover:bg-surface-subtle"
+        >
+          <Icon name="folder" class="h-3.5 w-3.5" />
+          <span>Kelola Kategori</span>
+        </a>
+        <a
+          href="/admin/berita/tambah"
+          class="bg-primary px-4 font-semibold text-white shadow-xs hover:bg-primary-hover"
+        >
+          <Icon name="plus" class="h-3.5 w-3.5" />
+          <span>Tulis Berita Baru</span>
+        </a>
+      </div>
+    </div>
+
+    <!-- Filter Bar & Status Tabs -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <!-- Status Tabs (Segmented Control - Zero Load) -->
+      <div
+        class="inline-flex bg-surface-subtle *:px-2.5 *:py-2.5 *:text-[11px] *:cursor-pointer *:transition-colors *:first:rounded-l-[4px] *:last:rounded-r-[4px]"
+        role="tablist"
+        aria-label="Filter status berita"
+      >
+        <button
+          type="button"
+          role="tab"
+          data-status="all"
+          aria-selected={currentStatus === 'all' ? "true" : "false"}
+          class:list={[
+            "status-tab-btn",
+            currentStatus === 'all' ? "bg-primary font-semibold text-white" : "font-medium text-muted hover:text-heading"
+          ]}
+        >
+          Semua (<span id="count-all">{totalCount}</span>)
+        </button>
+        <button
+          type="button"
+          role="tab"
+          data-status="published"
+          aria-selected={currentStatus === 'published' ? "true" : "false"}
+          class:list={[
+            "status-tab-btn",
+            currentStatus === 'published' ? "bg-primary font-semibold text-white" : "font-medium text-muted hover:text-heading"
+          ]}
+        >
+          Terbit (<span id="count-published">{publishedCount}</span>)
+        </button>
+        <button
+          type="button"
+          role="tab"
+          data-status="draft"
+          aria-selected={currentStatus === 'draft' ? "true" : "false"}
+          class:list={[
+            "status-tab-btn",
+            currentStatus === 'draft' ? "bg-primary font-semibold text-white" : "font-medium text-muted hover:text-heading"
+          ]}
+        >
+          Draf (<span id="count-draft">{draftCount}</span>)
+        </button>
+        <button
+          type="button"
+          role="tab"
+          data-status="trash"
+          aria-selected={currentStatus === 'trash' ? "true" : "false"}
+          class:list={[
+            "status-tab-btn",
+            currentStatus === 'trash' ? "bg-error font-semibold text-white" : "font-medium text-muted hover:text-error"
+          ]}
+        >
+          Sampah (<span id="count-trash">{trashCount}</span>)
+        </button>
+      </div>
+
+      <!-- Search & Kategori Filter (Zero Reload) -->
+      <div class="flex items-center gap-2">
+        <select
+          id="category-filter"
+          class="h-[36px] rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading cursor-pointer"
+        >
+          <option value="">Semua Kategori</option>
+          {allCategories.map((c) => (
+            <option value={c.id} selected={currentCategory === String(c.id)}>{c.name}</option>
+          ))}
+        </select>
+        <div class="relative">
+          <input
+            type="text"
+            id="search-input"
+            value={searchQuery}
+            placeholder="Cari judul..."
+            class="h-[36px] w-48 sm:w-60 rounded-[6px] border border-border bg-surface pl-3 pr-8 font-body text-xs text-heading placeholder:text-muted/60"
+          />
+          <button
+            type="button"
+            id="clear-search-btn"
+            class:list={["absolute right-2.5 top-2.5 text-xs text-muted hover:text-heading cursor-pointer", searchQuery ? "" : "hidden"]}
+            title="Hapus pencarian"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabel Berita -->
+    <div
+      class="overflow-x-auto rounded-[8px] border border-border bg-surface"
+      id="news-table-wrapper"
+      data-is-superadmin={currentUser?.role === 'super_admin' ? "true" : "false"}
+    >
+      <table class="w-full text-left font-body text-xs">
+        <thead class="border-b-2 border-border bg-surface-subtle text-[11px] font-bold uppercase tracking-wider text-heading/75">
+          <tr class="*:px-4 *:py-3.5 *:last:text-right">
+            <th class="w-16">Thumbnail</th>
+            <th>Judul Berita</th>
+            <th>Kategori</th>
+            <th>Status</th>
+            <th>Pembaca</th>
+            <th>Tanggal</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-border text-body" id="news-tbody">
+          {articleList.length === 0 ? (
+            <tr>
+              <td colspan="7" class="px-5 py-10 text-center text-muted">
+                {currentStatus === 'trash' ? 'Tempat sampah kosong.' : 'Tidak ada berita yang sesuai dengan filter.'}
+              </td>
+            </tr>
+          ) : (
+            articleList.map((item) => (
+              <tr class="transition-colors odd:bg-surface even:bg-surface-subtle hover:bg-primary-light/35 *:px-4 *:py-3 *:last:text-right" id={`row-${item.id}`}>
+                <td class="w-16">
+                  <a
+                    href={`/admin/berita/edit/${item.id}`}
+                    class="block w-12 h-9 rounded-[4px] overflow-hidden bg-surface-subtle border border-border shrink-0 shadow-2xs group"
+                    title="Sunting Berita"
+                  >
+                    {item.coverImage ? (
+                      <img
+                        src={item.coverImage}
+                        alt=""
+                        class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div class="w-full h-full flex items-center justify-center text-muted/60 text-xs">
+                        📰
+                      </div>
+                    )}
+                  </a>
+                </td>
+                <td class="font-medium text-heading max-w-sm">
+                  <a
+                    href={`/admin/berita/edit/${item.id}`}
+                    class="truncate font-semibold text-heading hover:text-primary transition-colors block hover:underline"
+                    title="Sunting Berita"
+                  >
+                    {item.title}
+                  </a>
+                </td>
+                <td>
+                  <span class="inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold bg-surface-subtle text-primary border border-border">
+                    {item.categoryName || 'Umum'}
+                  </span>
+                </td>
+                <td>
+                  <span class:list={[
+                    "rounded-full px-2 py-0.5 text-[10px] font-semibold text-white",
+                    item.deletedAt ? "bg-error" :
+                    item.status === 'published' ? "bg-success" : "bg-warning"
+                  ]}>
+                    {item.deletedAt ? 'Di Sampah' : item.status === 'published' ? 'Terbit' : 'Draf'}
+                  </span>
+                </td>
+                <td class="font-mono text-muted">{item.viewCount || 0}</td>
+                <td class="font-mono text-muted text-[11px]">
+                  {item.publishedAt ? new Date(item.publishedAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}
+                </td>
+                <td>
+                  <div class="flex items-center justify-end gap-1 *:inline-flex *:h-8 *:w-8 *:items-center *:justify-center *:rounded-[6px] *:transition-colors">
+                    {!item.deletedAt ? (
+                      <>
+                        {item.status === 'published' ? (
+                          <a
+                            href={`/berita/${item.slug}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="text-muted hover:bg-surface-subtle hover:text-primary"
+                            title="Lihat Berita Publik"
+                            aria-label="Lihat Berita Publik"
+                          >
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                          </a>
+                        ) : (
+                          <button
+                            type="button"
+                            data-id={item.id}
+                            class="preview-btn text-muted hover:bg-warning-light hover:text-warning cursor-pointer"
+                            title="Pratinjau Draf"
+                            aria-label="Pratinjau Draf"
+                          >
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                          </button>
+                        )}
+                        <a
+                          href={`/admin/berita/edit/${item.id}`}
+                          class="text-muted hover:bg-surface-subtle hover:text-heading"
+                          title="Sunting Berita"
+                          aria-label="Sunting Berita"
+                        >
+                          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </a>
+                        <button
+                          type="button"
+                          data-id={item.id}
+                          class="trash-btn text-muted hover:bg-error-light hover:text-error cursor-pointer"
+                          title="Pindahkan ke Sampah"
+                          aria-label="Pindahkan ke Sampah"
+                        >
+                          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          data-id={item.id}
+                          class="restore-btn text-muted hover:bg-accent-light hover:text-accent cursor-pointer"
+                          title="Pulihkan dari Sampah"
+                          aria-label="Pulihkan dari Sampah"
+                        >
+                          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                        </button>
+                        {currentUser?.role === 'super_admin' && (
+                          <button
+                            type="button"
+                            data-id={item.id}
+                            class="force-delete-btn text-muted hover:bg-error-light hover:text-error cursor-pointer"
+                            title="Hapus Permanen"
+                            aria-label="Hapus Permanen"
+                          >
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+
+      <!-- Container Pagination -->
+      <div id="news-pagination-container">
+        {totalFiltered > 0 && (
+          <div class="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-border px-5 py-3.5 bg-surface text-xs text-muted">
+            <div>
+              Menampilkan <span class="font-semibold text-heading">{Math.min((validPage - 1) * pageSize + 1, totalFiltered)}</span>–<span class="font-semibold text-heading">{Math.min(validPage * pageSize, totalFiltered)}</span> dari <span class="font-semibold text-heading">{totalFiltered}</span> berita
+            </div>
+
+            {totalPages > 1 && (
+              <div class="flex items-center gap-1.5 *:inline-flex *:h-[32px] *:items-center *:justify-center *:rounded-[6px] *:font-medium *:transition-colors *:text-xs">
+                <button
+                  type="button"
+                  data-page={validPage - 1}
+                  class:list={[
+                    "pagination-btn border border-border px-3",
+                    validPage <= 1 ? "pointer-events-none opacity-40 bg-surface-subtle text-muted" : "bg-surface text-heading hover:bg-surface-subtle cursor-pointer"
+                  ]}
+                  disabled={validPage <= 1}
+                >
+                  Sebelumnya
+                </button>
+
+                <div class="flex items-center gap-1 *:inline-flex *:h-[32px] *:min-w-[32px] *:px-2 *:items-center *:justify-center *:rounded-[6px] *:font-medium *:transition-colors *:text-xs *:cursor-pointer">
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => {
+                    if (
+                      pageNum === 1 ||
+                      pageNum === totalPages ||
+                      (pageNum >= validPage - 1 && pageNum <= validPage + 1)
+                    ) {
+                      return (
+                        <button
+                          type="button"
+                          data-page={pageNum}
+                          class:list={[
+                            "pagination-btn",
+                            pageNum === validPage
+                              ? "bg-primary text-white font-semibold shadow-xs"
+                              : "border border-border bg-surface text-heading hover:bg-surface-subtle"
+                          ]}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    }
+                    if (pageNum === validPage - 2 || pageNum === validPage + 2) {
+                      return <span class="px-1 text-muted">...</span>;
+                    }
+                    return null;
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  data-page={validPage + 1}
+                  class:list={[
+                    "pagination-btn border border-border px-3",
+                    validPage >= totalPages ? "pointer-events-none opacity-40 bg-surface-subtle text-muted" : "bg-surface text-heading hover:bg-surface-subtle cursor-pointer"
+                  ]}
+                  disabled={validPage >= totalPages}
+                >
+                  Selanjutnya
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+
+  <!-- Raw Dataset untuk Zero-Load Client Navigation -->
+  <script id="articles-json" type="application/json" set:html={JSON.stringify(allArticles)}></script>
+
+  <script is:inline>
+    (function () {
+      var dataEl = document.getElementById('articles-json');
+      if (!dataEl) return;
+
+      var articlesData = [];
+      try {
+        articlesData = JSON.parse(dataEl.textContent || '[]');
+      } catch (err) {
+        articlesData = [];
+      }
+
+      var tableWrapper = document.getElementById('news-table-wrapper');
+      var tbody = document.getElementById('news-tbody');
+      var paginationContainer = document.getElementById('news-pagination-container');
+      var tabButtons = document.querySelectorAll('.status-tab-btn');
+      var categorySelect = document.getElementById('category-filter');
+      var searchInput = document.getElementById('search-input');
+      var clearSearchBtn = document.getElementById('clear-search-btn');
+
+      var countAllEl = document.getElementById('count-all');
+      var countPublishedEl = document.getElementById('count-published');
+      var countDraftEl = document.getElementById('count-draft');
+      var countTrashEl = document.getElementById('count-trash');
+
+      var isSuperAdmin = tableWrapper ? tableWrapper.getAttribute('data-is-superadmin') === 'true' : false;
+
+      // Inisialisasi state dari URL saat ini
+      var urlParams = new URLSearchParams(window.location.search);
+      var currentStatus = urlParams.get('status') || 'all';
+      var currentCategory = urlParams.get('kategori') || '';
+      var searchQuery = urlParams.get('q') || '';
+      var currentPage = Math.max(1, parseInt(urlParams.get('page') || '1', 10) || 1);
+      var pageSize = 10;
+
+      function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+
+      function updateCounts() {
+        var total = 0;
+        var published = 0;
+        var draft = 0;
+        var trash = 0;
+
+        for (var i = 0; i < articlesData.length; i++) {
+          var a = articlesData[i];
+          if (a.deletedAt) {
+            trash++;
+          } else {
+            total++;
+            if (a.status === 'published') published++;
+            if (a.status === 'draft') draft++;
+          }
+        }
+
+        if (countAllEl) countAllEl.textContent = String(total);
+        if (countPublishedEl) countPublishedEl.textContent = String(published);
+        if (countDraftEl) countDraftEl.textContent = String(draft);
+        if (countTrashEl) countTrashEl.textContent = String(trash);
+      }
+
+      function updateTabButtonsUi(status) {
+        tabButtons.forEach(function (btn) {
+          var s = btn.getAttribute('data-status');
+          var isActive = s === status;
+          btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+
+          if (isActive) {
+            if (s === 'trash') {
+              btn.className = 'status-tab-btn bg-error font-semibold text-white';
+            } else {
+              btn.className = 'status-tab-btn bg-primary font-semibold text-white';
+            }
+          } else {
+            if (s === 'trash') {
+              btn.className = 'status-tab-btn font-medium text-muted hover:text-error';
+            } else {
+              btn.className = 'status-tab-btn font-medium text-muted hover:text-heading';
+            }
+          }
+        });
+      }
+
+      function syncUrl() {
+        var params = new URLSearchParams();
+        if (currentStatus && currentStatus !== 'all') params.set('status', currentStatus);
+        if (currentCategory) params.set('kategori', currentCategory);
+        if (searchQuery) params.set('q', searchQuery);
+        if (currentPage > 1) params.set('page', String(currentPage));
+        var qs = params.toString();
+        var newUrl = '/admin/berita' + (qs ? '?' + qs : '');
+        window.history.pushState(null, '', newUrl);
+      }
+
+      function renderPaginationButtons(validPage, totalPages) {
+        var html = '';
+        for (var pageNum = 1; pageNum <= totalPages; pageNum++) {
+          if (
+            pageNum === 1 ||
+            pageNum === totalPages ||
+            (pageNum >= validPage - 1 && pageNum <= validPage + 1)
+          ) {
+            var isActive = pageNum === validPage;
+            var classes = isActive
+              ? 'pagination-btn bg-primary text-white font-semibold shadow-xs'
+              : 'pagination-btn border border-border bg-surface text-heading hover:bg-surface-subtle';
+            html += '<button type="button" data-page="' + pageNum + '" class="' + classes + '">' + pageNum + '</button>';
+          } else if (pageNum === validPage - 2 || pageNum === validPage + 2) {
+            html += '<span class="px-1 text-muted">...</span>';
+          }
+        }
+        return html;
+      }
+
+      function render() {
+        if (!tbody || !paginationContainer) return;
+
+        // Filter data di memori secara instan (0ms)
+        var filtered = articlesData.filter(function (a) {
+          if (currentStatus === 'trash') {
+            if (!a.deletedAt) return false;
+          } else {
+            if (a.deletedAt) return false;
+            if (currentStatus === 'published' && a.status !== 'published') return false;
+            if (currentStatus === 'draft' && a.status !== 'draft') return false;
+          }
+          if (currentCategory && String(a.categoryId) !== currentCategory) return false;
+          if (searchQuery && !a.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+          return true;
+        });
+
+        var totalFiltered = filtered.length;
+        var totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
+        var validPage = Math.min(currentPage, totalPages);
+        var offset = (validPage - 1) * pageSize;
+        var list = filtered.slice(offset, offset + pageSize);
+
+        // Render Tbody
+        if (list.length === 0) {
+          var emptyText = currentStatus === 'trash' ? 'Tempat sampah kosong.' : 'Tidak ada berita yang sesuai dengan filter.';
+          tbody.innerHTML = '<tr><td colspan="7" class="px-5 py-10 text-center text-muted">' + emptyText + '</td></tr>';
+        } else {
+          var rowsHtml = '';
+          for (var i = 0; i < list.length; i++) {
+            var item = list[i];
+            var dateStr = '-';
+            if (item.publishedAt) {
+              try {
+                dateStr = new Date(item.publishedAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+              } catch (e) {
+                dateStr = '-';
+              }
+            }
+
+            var statusBadgeClass = item.deletedAt
+              ? 'bg-error text-white font-semibold'
+              : item.status === 'published'
+              ? 'bg-success text-white font-semibold'
+              : 'bg-warning text-white font-semibold';
+
+            var statusLabel = item.deletedAt ? 'Di Sampah' : item.status === 'published' ? 'Terbit' : 'Draf';
+
+            var actionButtons = '';
+            if (!item.deletedAt) {
+              if (item.status === 'published') {
+                actionButtons +=
+                  '<a href="/berita/' + escapeHtml(item.slug) + '" target="_blank" rel="noopener noreferrer" class="text-muted hover:bg-surface-subtle hover:text-primary" title="Lihat Berita Publik" aria-label="Lihat Berita Publik">' +
+                  '<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>' +
+                  '</a>';
+              } else {
+                actionButtons +=
+                  '<button type="button" data-id="' + item.id + '" class="preview-btn text-muted hover:bg-warning-light hover:text-warning cursor-pointer" title="Pratinjau Draf" aria-label="Pratinjau Draf">' +
+                  '<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>' +
+                  '</button>';
+              }
+
+              actionButtons +=
+                '<a href="/admin/berita/edit/' + item.id + '" class="text-muted hover:bg-surface-subtle hover:text-heading" title="Sunting Berita" aria-label="Sunting Berita">' +
+                '<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>' +
+                '</a>' +
+                '<button type="button" data-id="' + item.id + '" class="trash-btn text-muted hover:bg-error-light hover:text-error cursor-pointer" title="Pindahkan ke Sampah" aria-label="Pindahkan ke Sampah">' +
+                '<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>' +
+                '</button>';
+            } else {
+              actionButtons +=
+                '<button type="button" data-id="' + item.id + '" class="restore-btn text-muted hover:bg-accent-light hover:text-accent cursor-pointer" title="Pulihkan dari Sampah" aria-label="Pulihkan dari Sampah">' +
+                '<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>' +
+                '</button>';
+
+              if (isSuperAdmin) {
+                actionButtons +=
+                  '<button type="button" data-id="' + item.id + '" class="force-delete-btn text-muted hover:bg-error-light hover:text-error cursor-pointer" title="Hapus Permanen" aria-label="Hapus Permanen">' +
+                  '<svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>' +
+                  '</button>';
+              }
+            }
+
+            var thumbHtml = '';
+            if (item.coverImage) {
+              thumbHtml =
+                '<a href="/admin/berita/edit/' + item.id + '" class="block w-12 h-9 rounded-[4px] overflow-hidden bg-surface-subtle border border-border shrink-0 shadow-2xs group" title="Sunting Berita">' +
+                '<img src="' + escapeHtml(item.coverImage) + '" alt="" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" loading="lazy" />' +
+                '</a>';
+            } else {
+              thumbHtml =
+                '<a href="/admin/berita/edit/' + item.id + '" class="block w-12 h-9 rounded-[4px] overflow-hidden bg-surface-subtle border border-border shrink-0 shadow-2xs flex items-center justify-center text-muted/60 text-xs" title="Sunting Berita">' +
+                '📰' +
+                '</a>';
+            }
+
+            rowsHtml +=
+              '<tr class="transition-colors odd:bg-surface even:bg-surface-subtle hover:bg-primary-light/35 *:px-4 *:py-3 *:last:text-right" id="row-' + item.id + '">' +
+              '<td class="w-16">' + thumbHtml + '</td>' +
+              '<td class="font-medium text-heading max-w-sm">' +
+              '<a href="/admin/berita/edit/' + item.id + '" class="truncate font-semibold text-heading hover:text-primary transition-colors block hover:underline" title="Sunting Berita">' +
+              escapeHtml(item.title) +
+              '</a>' +
+              '</td>' +
+              '<td>' +
+              '<span class="inline-flex items-center rounded px-2 py-0.5 text-[10px] font-semibold bg-surface-subtle text-primary border border-border">' +
+              escapeHtml(item.categoryName || 'Umum') +
+              '</span>' +
+              '</td>' +
+              '<td>' +
+              '<span class="rounded-full px-2 py-0.5 text-[10px] ' + statusBadgeClass + '">' +
+              statusLabel +
+              '</span>' +
+              '</td>' +
+              '<td class="font-mono text-muted">' + (item.viewCount || 0) + '</td>' +
+              '<td class="font-mono text-muted text-[11px]">' + dateStr + '</td>' +
+              '<td>' +
+              '<div class="flex items-center justify-end gap-1 *:inline-flex *:h-8 *:w-8 *:items-center *:justify-center *:rounded-[6px] *:transition-colors">' +
+              actionButtons +
+              '</div>' +
+              '</td>' +
+              '</tr>';
+          }
+          tbody.innerHTML = rowsHtml;
+        }
+
+        // Render Pagination Container
+        if (totalFiltered === 0) {
+          paginationContainer.innerHTML = '';
+        } else {
+          var fromIdx = Math.min((validPage - 1) * pageSize + 1, totalFiltered);
+          var toIdx = Math.min(validPage * pageSize, totalFiltered);
+          var pagHtml =
+            '<div class="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-border px-5 py-3.5 bg-surface text-xs text-muted">' +
+            '<div>' +
+            'Menampilkan <span class="font-semibold text-heading">' + fromIdx + '</span>–<span class="font-semibold text-heading">' + toIdx + '</span> dari <span class="font-semibold text-heading">' + totalFiltered + '</span> berita' +
+            '</div>';
+
+          if (totalPages > 1) {
+            pagHtml +=
+              '<div class="flex items-center gap-1.5 *:inline-flex *:h-[32px] *:items-center *:justify-center *:rounded-[6px] *:font-medium *:transition-colors *:text-xs">' +
+              '<button type="button" data-page="' + (validPage - 1) + '" class="pagination-btn border border-border px-3 ' +
+              (validPage <= 1 ? 'pointer-events-none opacity-40 bg-surface-subtle text-muted' : 'bg-surface text-heading hover:bg-surface-subtle cursor-pointer') +
+              '" ' + (validPage <= 1 ? 'disabled' : '') + '>Sebelumnya</button>' +
+              '<div class="flex items-center gap-1 *:inline-flex *:h-[32px] *:min-w-[32px] *:px-2 *:items-center *:justify-center *:rounded-[6px] *:font-medium *:transition-colors *:text-xs *:cursor-pointer">' +
+              renderPaginationButtons(validPage, totalPages) +
+              '</div>' +
+              '<button type="button" data-page="' + (validPage + 1) + '" class="pagination-btn border border-border px-3 ' +
+              (validPage >= totalPages ? 'pointer-events-none opacity-40 bg-surface-subtle text-muted' : 'bg-surface text-heading hover:bg-surface-subtle cursor-pointer') +
+              '" ' + (validPage >= totalPages ? 'disabled' : '') + '>Selanjutnya</button>' +
+              '</div>';
+          }
+          pagHtml += '</div>';
+          paginationContainer.innerHTML = pagHtml;
+        }
+      }
+
+      // Event listener klik Status Tabs (Zero Load / 0ms)
+      tabButtons.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var targetStatus = btn.getAttribute('data-status') || 'all';
+          if (targetStatus === currentStatus) return;
+
+          currentStatus = targetStatus;
+          currentPage = 1;
+          updateTabButtonsUi(currentStatus);
+          syncUrl();
+          render();
+        });
+      });
+
+      // Filter Kategori (0ms)
+      if (categorySelect) {
+        categorySelect.addEventListener('change', function () {
+          currentCategory = categorySelect.value;
+          currentPage = 1;
+          syncUrl();
+          render();
+        });
+      }
+
+      // Pencarian (Debounce 150ms / 0ms)
+      var searchDebounceTimer = null;
+      if (searchInput) {
+        searchInput.addEventListener('input', function (e) {
+          var val = e.target.value;
+          if (clearSearchBtn) clearSearchBtn.classList.toggle('hidden', !val);
+
+          clearTimeout(searchDebounceTimer);
+          searchDebounceTimer = setTimeout(function () {
+            searchQuery = val.trim();
+            currentPage = 1;
+            syncUrl();
+            render();
+          }, 150);
+        });
+      }
+
+      // Tombol Hapus Pencarian (✕)
+      if (clearSearchBtn && searchInput) {
+        clearSearchBtn.addEventListener('click', function () {
+          searchInput.value = '';
+          searchQuery = '';
+          clearSearchBtn.classList.add('hidden');
+          currentPage = 1;
+          syncUrl();
+          render();
+        });
+      }
+
+      // Browser Back & Forward Navigation (popstate)
+      window.addEventListener('popstate', function () {
+        var params = new URLSearchParams(window.location.search);
+        currentStatus = params.get('status') || 'all';
+        currentCategory = params.get('kategori') || '';
+        searchQuery = params.get('q') || '';
+        currentPage = Math.max(1, parseInt(params.get('page') || '1', 10) || 1);
+
+        if (categorySelect) categorySelect.value = currentCategory;
+        if (searchInput) searchInput.value = searchQuery;
+        if (clearSearchBtn) clearSearchBtn.classList.toggle('hidden', !searchQuery);
+
+        updateTabButtonsUi(currentStatus);
+        render();
+      });
+
+      // Event Delegation untuk Aksi Baris & Pagination
+      if (tableWrapper) {
+        tableWrapper.addEventListener('click', async function (e) {
+          var target = e.target;
+
+          // Pratinjau draf
+          var previewBtn = target.closest('.preview-btn');
+          if (previewBtn) {
+            var pId = previewBtn.getAttribute('data-id');
+            try {
+              var pRes = await fetch('/api/admin/articles/' + pId + '/preview-token');
+              var pData = await pRes.json();
+              if (pData.success && pData.previewUrl) {
+                window.open(pData.previewUrl, '_blank');
+              } else {
+                alert(pData.error || 'Gagal membuat tautan pratinjau');
+              }
+            } catch (err) {
+              alert('Terjadi kesalahan jaringan');
+            }
+            return;
+          }
+
+          // Pindahkan ke Sampah (Soft Delete)
+          var trashBtn = target.closest('.trash-btn');
+          if (trashBtn) {
+            var tId = Number(trashBtn.getAttribute('data-id'));
+            var confirmedTrash = await window.confirmDialog({
+              title: 'Pindahkan ke Sampah',
+              message: 'Pindahkan artikel ini ke Sampah? Artikel tidak akan tampil di publik namun masih bisa dipulihkan.',
+              confirmText: 'Pindahkan ke Sampah',
+              cancelText: 'Batal',
+              type: 'warning',
+            });
+            if (!confirmedTrash) return;
+
+            try {
+              var tRes = await fetch('/api/admin/articles/' + tId, { method: 'DELETE' });
+              var tData = await tRes.json();
+              if (tData.success) {
+                var foundTrash = articlesData.find(function (a) { return a.id === tId; });
+                if (foundTrash) foundTrash.deletedAt = new Date().toISOString();
+                updateCounts();
+                render();
+                window.showToast('Artikel berhasil dipindahkan ke sampah.', 'success');
+              } else {
+                window.showToast(tData.error || 'Gagal memindahkan artikel', 'error');
+              }
+            } catch (err) {
+              window.showToast('Terjadi kesalahan jaringan', 'error');
+            }
+            return;
+          }
+
+          // Pulihkan dari Sampah (Restore)
+          var restoreBtn = target.closest('.restore-btn');
+          if (restoreBtn) {
+            var rId = Number(restoreBtn.getAttribute('data-id'));
+            try {
+              var rRes = await fetch('/api/admin/articles/' + rId + '/restore', { method: 'POST' });
+              var rData = await rRes.json();
+              if (rData.success) {
+                var foundRestore = articlesData.find(function (a) { return a.id === rId; });
+                if (foundRestore) foundRestore.deletedAt = null;
+                updateCounts();
+                render();
+                window.showToast('Artikel berhasil dipulihkan.', 'success');
+              } else {
+                window.showToast(rData.error || 'Gagal memulihkan artikel', 'error');
+              }
+            } catch (err) {
+              window.showToast('Terjadi kesalahan jaringan', 'error');
+            }
+            return;
+          }
+
+          // Hapus Permanen (Super Admin Only)
+          var forceDeleteBtn = target.closest('.force-delete-btn');
+          if (forceDeleteBtn) {
+            var fId = Number(forceDeleteBtn.getAttribute('data-id'));
+            var confirmedForce = await window.confirmDialog({
+              title: 'Hapus Permanen Artikel',
+              message: 'PERINGATAN: Apakah Anda yakin ingin MENGHAPUS PERMANEN artikel ini?\nTindakan ini tidak dapat dibatalkan.',
+              confirmText: 'Ya, Hapus Permanen',
+              cancelText: 'Batal',
+              type: 'danger',
+            });
+            if (!confirmedForce) return;
+
+            try {
+              var fRes = await fetch('/api/admin/articles/' + fId + '?force=true', { method: 'DELETE' });
+              var fData = await fRes.json();
+              if (fData.success) {
+                var fIdx = articlesData.findIndex(function (a) { return a.id === fId; });
+                if (fIdx !== -1) articlesData.splice(fIdx, 1);
+                updateCounts();
+                render();
+                window.showToast('Artikel dihapus secara permanen.', 'success');
+              } else {
+                window.showToast(fData.error || 'Gagal menghapus permanen', 'error');
+              }
+            } catch (err) {
+              window.showToast('Terjadi kesalahan jaringan', 'error');
+            }
+            return;
+          }
+
+          // Tombol Pagination
+          var paginationBtn = target.closest('.pagination-btn');
+          if (paginationBtn && !paginationBtn.disabled) {
+            var targetPage = Number(paginationBtn.getAttribute('data-page'));
+            if (targetPage && targetPage !== currentPage) {
+              currentPage = targetPage;
+              syncUrl();
+              render();
+            }
+            return;
+          }
+        });
+      }
+    })();
+  </script>
+</AdminLayout>
+

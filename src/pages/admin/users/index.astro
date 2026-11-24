@@ -1,0 +1,590 @@
+---
+import AdminLayout from "../../../layouts/AdminLayout.astro";
+import Icon from "../../../components/Icon.astro";
+import { db, users } from "../../../db";
+import { desc } from "drizzle-orm";
+
+export const prerender = false;
+
+// Pastikan hanya super_admin yang dapat merender halaman ini
+const currentUser = Astro.locals.user;
+if (!currentUser || currentUser.role !== "super_admin") {
+  return Astro.redirect("/admin?error=unauthorized_role");
+}
+
+const usersList = await db
+  .select({
+    id: users.id,
+    name: users.name,
+    email: users.email,
+    role: users.role,
+    isActive: users.isActive,
+    createdAt: users.createdAt,
+  })
+  .from(users)
+  .orderBy(desc(users.createdAt));
+---
+
+<AdminLayout title="Manajemen Pengguna & Staf" activeNav="users">
+  <div class="space-y-8 max-w-6xl">
+    <div class="pb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <div class="flex items-center gap-2 mb-1">
+          <h1 class="font-display text-2xl font-bold tracking-tight text-heading">
+            Manajemen Pengguna & Staf CMS
+          </h1>
+        </div>
+        <p class="font-body text-xs text-muted">
+          Kelola kredensial akun staf, pengaturan peran otorisasi & reset kata
+          sandi.
+        </p>
+      </div>
+      <button
+        id="open-modal-btn"
+        class="inline-flex h-[36px] items-center justify-center gap-1.5 rounded-[6px] bg-primary px-4 text-xs font-semibold text-white transition-all hover:bg-primary-hover shadow-xs shrink-0 cursor-pointer"
+      >
+        <Icon name="plus" class="h-4 w-4" />
+        <span>Tambah Akun Staf</span>
+      </button>
+    </div>
+
+    <!-- Tabel Staf -->
+    <div class="rounded-[8px] border border-border bg-surface overflow-hidden shadow-xs">
+      <div class="p-4 flex items-center justify-between bg-surface">
+        <h2 class="font-display text-sm font-bold text-heading">
+          Daftar Akun Terdaftar ({usersList.length})
+        </h2>
+        <span class="text-[11px] text-muted font-mono">
+          Password Hash: PBKDF2 SHA-512
+        </span>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left font-body text-xs">
+          <thead class="bg-surface-subtle text-[11px] font-semibold text-muted uppercase">
+            <tr>
+              <th class="py-3 px-4">Nama Staf</th>
+              <th class="py-3 px-4">Email Dinas</th>
+              <th class="py-3 px-4">Peran (Role)</th>
+              <th class="py-3 px-4">Status Akun</th>
+              <th class="py-3 px-4">Dibuat Pada</th>
+              <th class="py-3 px-4 text-right">Tindakan</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-border">
+            {usersList.map((item) => {
+              const isSelf = currentUser.id === item.id;
+
+              return (
+                <tr
+                  class="hover:bg-surface-subtle transition-colors"
+                  id={`row-${item.id}`}
+                >
+                  <td class="py-3 px-4">
+                    <div class="flex items-center gap-2">
+                      <p class="font-bold text-heading">{item.name}</p>
+                      {isSelf && (
+                        <span class="rounded bg-primary px-1.5 py-0.5 text-[9px] font-semibold text-white">
+                          Anda
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td class="py-3 px-4 font-mono text-[11px] text-heading">
+                    {item.email}
+                  </td>
+                  <td class="py-3 px-4">
+                    <span
+                      class:list={[
+                        "rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wider",
+                        item.role === "super_admin"
+                          ? "bg-primary-light text-primary border border-primary/20"
+                          : "bg-surface-subtle text-heading border border-border",
+                      ]}
+                    >
+                      {item.role === "super_admin" ? "Super Admin" : "Editor"}
+                    </span>
+                  </td>
+                  <td class="py-3 px-4">
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={item.isActive ? "true" : "false"}
+                      disabled={isSelf}
+                      class:list={[
+                        "toggle-status-btn relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out",
+                        isSelf
+                          ? "cursor-not-allowed opacity-50"
+                          : "cursor-pointer",
+                        item.isActive ? "bg-primary" : "bg-border",
+                      ]}
+                      data-id={item.id}
+                      data-active={item.isActive ? "true" : "false"}
+                      title={
+                        isSelf
+                          ? "Akun Anda sendiri tidak dapat dinonaktifkan"
+                          : item.isActive
+                            ? "Aktif (Klik untuk menonaktifkan)"
+                            : "Nonaktif (Klik untuk mengaktifkan)"
+                      }
+                      aria-label={
+                        item.isActive
+                          ? "Nonaktifkan status akun"
+                          : "Aktifkan status akun"
+                      }
+                    >
+                      <span class="sr-only">
+                        {item.isActive ? "Aktif" : "Nonaktif"}
+                      </span>
+                      <span
+                        aria-hidden="true"
+                        class:list={[
+                          "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out",
+                          item.isActive ? "translate-x-4" : "translate-x-0",
+                        ]}
+                      />
+                    </button>
+                  </td>
+                  <td class="py-3 px-4 font-mono text-[11px] text-muted">
+                    {item.createdAt?.slice(0, 10)}
+                  </td>
+                  <td class="py-3 px-4 text-right whitespace-nowrap">
+                    <div class="inline-flex items-center gap-1.5 *:inline-flex *:h-7 *:w-7 *:items-center *:justify-center *:rounded-[6px] *:border *:transition-colors *:cursor-pointer">
+                      <button
+                        type="button"
+                        class="edit-btn border-border bg-surface text-muted hover:text-primary hover:border-primary/40 hover:bg-surface-subtle shadow-2xs"
+                        data-item={JSON.stringify(item)}
+                        title="Edit data"
+                        aria-label="Edit akun staf"
+                      >
+                        <Icon
+                          name="edit"
+                          class="h-3.5 w-3.5 pointer-events-none"
+                        />
+                      </button>
+                      {!isSelf && (
+                        <button
+                          type="button"
+                          class="delete-btn border-border bg-surface text-muted hover:text-error hover:border-error/40 hover:bg-error-light shadow-2xs"
+                          data-id={item.id}
+                          data-name={item.name}
+                          title="Hapus data"
+                          aria-label="Hapus akun staf"
+                        >
+                          <Icon
+                            name="trash"
+                            class="h-3.5 w-3.5 pointer-events-none"
+                          />
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Modal Form (Create / Edit) -->
+    <div
+      id="modal-backdrop"
+      class="fixed inset-0 bg-heading/40 backdrop-blur-xs z-50 hidden flex items-center justify-center p-4"
+    >
+      <div class="rounded-[8px] border border-border bg-surface p-6 shadow-xl max-w-md w-full space-y-4">
+        <div class="flex items-center justify-between pb-2">
+          <h3
+            id="modal-title"
+            class="font-display text-sm font-bold text-heading"
+          >
+            Tambah Akun Staf Baru
+          </h3>
+          <button
+            id="close-modal-btn"
+            class="text-muted hover:text-heading cursor-pointer"
+            type="button"
+            aria-label="Tutup modal"
+          >
+            <Icon name="close" class="h-5 w-5" />
+          </button>
+        </div>
+
+        <form id="user-form" class="space-y-4">
+          <input type="hidden" id="edit-id" name="id" value="" />
+
+          <div class="space-y-1">
+            <label
+              for="name"
+              class="block font-body text-xs font-semibold text-heading"
+            >
+              Nama Lengkap Staf <span class="text-error">*</span>
+            </label>
+            <input
+              id="name"
+              name="name"
+              type="text"
+              required
+              placeholder="Contoh: Budi Santoso, S.Kom."
+              class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading transition-colors"
+            />
+          </div>
+
+          <div class="space-y-1">
+            <label
+              for="email"
+              class="block font-body text-xs font-semibold text-heading"
+            >
+              Email Dinas <span class="text-error">*</span>
+            </label>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              required
+              placeholder="nama@sman1unggulan.sch.id"
+              class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading font-mono transition-colors"
+            />
+          </div>
+
+          <div class="space-y-1">
+            <label
+              for="password"
+              id="label-password"
+              class="block font-body text-xs font-semibold text-heading"
+            >
+              Kata Sandi <span class="text-error">*</span>
+            </label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              minlength="8"
+              placeholder="Minimal 8 karakter"
+              class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading font-mono transition-colors"
+            />
+            <p id="password-hint" class="hidden text-[10px] text-muted">
+              Biarkan kosong jika tidak ingin mengubah kata sandi (minimal 8
+              karakter jika diisi).
+            </p>
+          </div>
+
+          <div class="space-y-1">
+            <label
+              for="role"
+              class="block font-body text-xs font-semibold text-heading"
+            >
+              Peran Akses <span class="text-error">*</span>
+            </label>
+            <select
+              id="role"
+              name="role"
+              class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading transition-colors"
+            >
+              <option value="editor">Editor Konten</option>
+              <option value="super_admin">Super Administrator</option>
+            </select>
+          </div>
+
+          <div class="flex items-center justify-end gap-2 pt-3">
+            <button
+              type="button"
+              id="cancel-btn"
+              class="h-[36px] rounded-[6px] border border-border bg-surface px-4 text-xs font-medium text-muted hover:bg-surface-subtle cursor-pointer"
+            >
+              Batal
+            </button>
+            <button
+              type="submit"
+              id="save-btn"
+              class="inline-flex h-[36px] items-center justify-center gap-2 rounded-[6px] bg-primary px-4 text-xs font-semibold text-white transition-all hover:bg-primary-hover shadow-xs cursor-pointer disabled:opacity-50"
+            >
+              <Icon
+                id="save-btn-icon-save"
+                name="save"
+                class="h-3.5 w-3.5 text-white"
+              />
+              <svg
+                id="save-btn-spinner"
+                class="hidden h-3.5 w-3.5 animate-spin text-white"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  class="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  stroke-width="4"
+                ></circle>
+                <path
+                  class="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                ></path>
+              </svg>
+              <Icon
+                id="save-btn-check"
+                name="check"
+                class="hidden h-3.5 w-3.5 text-white"
+              />
+              <span id="save-btn-label">Simpan Akun Staf</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const modal = document.getElementById("modal-backdrop") as HTMLDivElement;
+    const openBtn = document.getElementById(
+      "open-modal-btn",
+    ) as HTMLButtonElement;
+    const closeBtn = document.getElementById(
+      "close-modal-btn",
+    ) as HTMLButtonElement;
+    const cancelBtn = document.getElementById(
+      "cancel-btn",
+    ) as HTMLButtonElement;
+    const form = document.getElementById("user-form") as HTMLFormElement;
+    const modalTitle = document.getElementById(
+      "modal-title",
+    ) as HTMLHeadingElement;
+
+    const editIdInput = document.getElementById("edit-id") as HTMLInputElement;
+    const nameInput = document.getElementById("name") as HTMLInputElement;
+    const emailInput = document.getElementById("email") as HTMLInputElement;
+    const passwordInput = document.getElementById(
+      "password",
+    ) as HTMLInputElement;
+    const passwordHint = document.getElementById(
+      "password-hint",
+    ) as HTMLParagraphElement;
+    const roleSelect = document.getElementById("role") as HTMLSelectElement;
+
+    const saveBtn = document.getElementById("save-btn") as HTMLButtonElement;
+    const saveIcon = document.getElementById(
+      "save-btn-icon-save",
+    ) as HTMLElement | null;
+    const saveSpinner = document.getElementById(
+      "save-btn-spinner",
+    ) as HTMLElement | null;
+    const saveCheck = document.getElementById(
+      "save-btn-check",
+    ) as HTMLElement | null;
+    const saveLabel = document.getElementById(
+      "save-btn-label",
+    ) as HTMLSpanElement | null;
+
+    let currentEditIsActive = true;
+
+    function setSaveButtonState(state: "idle" | "loading" | "success") {
+      if (!saveBtn) return;
+      if (state === "loading") {
+        saveBtn.disabled = true;
+        saveIcon?.classList.add("hidden");
+        saveSpinner?.classList.remove("hidden");
+        saveCheck?.classList.add("hidden");
+        if (saveLabel) saveLabel.innerText = "Menyimpan...";
+      } else if (state === "success") {
+        saveBtn.disabled = true;
+        saveIcon?.classList.add("hidden");
+        saveSpinner?.classList.add("hidden");
+        saveCheck?.classList.remove("hidden");
+        if (saveLabel) saveLabel.innerText = "Tersimpan";
+      } else {
+        saveBtn.disabled = false;
+        saveSpinner?.classList.add("hidden");
+        saveCheck?.classList.add("hidden");
+        saveIcon?.classList.remove("hidden");
+        if (saveLabel) saveLabel.innerText = "Simpan Akun Staf";
+      }
+    }
+
+    function resetForm() {
+      editIdInput.value = "";
+      form.reset();
+      emailInput.disabled = false;
+      passwordInput.required = true;
+      passwordHint.classList.add("hidden");
+      currentEditIsActive = true;
+      modalTitle.innerText = "Tambah Akun Staf Baru";
+      setSaveButtonState("idle");
+    }
+
+    openBtn?.addEventListener("click", () => {
+      resetForm();
+      modal.classList.remove("hidden");
+    });
+
+    closeBtn?.addEventListener("click", () => modal.classList.add("hidden"));
+    cancelBtn?.addEventListener("click", () => modal.classList.add("hidden"));
+
+    // Handle Status Toggle Switch
+    document.querySelectorAll(".toggle-status-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const targetBtn = btn as HTMLButtonElement;
+        const id = targetBtn.dataset.id;
+        if (!id || targetBtn.disabled) return;
+
+        const currentActive = targetBtn.dataset.active === "true";
+        const newActive = !currentActive;
+        const knob = targetBtn.querySelector('span[aria-hidden="true"]');
+        const srText = targetBtn.querySelector(".sr-only");
+
+        targetBtn.disabled = true;
+        targetBtn.classList.toggle("bg-primary", newActive);
+        targetBtn.classList.toggle("bg-border", !newActive);
+        targetBtn.setAttribute("aria-checked", newActive ? "true" : "false");
+        targetBtn.dataset.active = newActive ? "true" : "false";
+        if (knob) {
+          knob.classList.toggle("translate-x-4", newActive);
+          knob.classList.toggle("translate-x-0", !newActive);
+        }
+        if (srText) srText.textContent = newActive ? "Aktif" : "Nonaktif";
+        targetBtn.title = newActive
+          ? "Aktif (Klik untuk menonaktifkan)"
+          : "Nonaktif (Klik untuk mengaktifkan)";
+
+        try {
+          const res = await fetch(`/api/admin/users/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ isActive: newActive }),
+          });
+          const result = await res.json();
+          if (!result.success) {
+            throw new Error(result.error || "Gagal mengubah status");
+          }
+        } catch (err: any) {
+          targetBtn.classList.toggle("bg-primary", currentActive);
+          targetBtn.classList.toggle("bg-border", !currentActive);
+          targetBtn.setAttribute(
+            "aria-checked",
+            currentActive ? "true" : "false",
+          );
+          targetBtn.dataset.active = currentActive ? "true" : "false";
+          if (knob) {
+            knob.classList.toggle("translate-x-4", currentActive);
+            knob.classList.toggle("translate-x-0", !currentActive);
+          }
+          if (srText) srText.textContent = currentActive ? "Aktif" : "Nonaktif";
+          targetBtn.title = currentActive
+            ? "Aktif (Klik untuk menonaktifkan)"
+            : "Nonaktif (Klik untuk mengaktifkan)";
+          alert(err.message || "Gagal mengubah status pengguna.");
+        } finally {
+          targetBtn.disabled = false;
+        }
+      });
+    });
+
+    // Handle Edit
+    document.querySelectorAll(".edit-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const itemStr = (btn as HTMLElement).dataset.item;
+        if (!itemStr) return;
+        const item = JSON.parse(itemStr);
+
+        editIdInput.value = item.id;
+        nameInput.value = item.name || "";
+        emailInput.value = item.email || "";
+        emailInput.disabled = true; // Email dinas tidak diubah langsung
+        passwordInput.value = "";
+        passwordInput.required = false;
+        passwordHint.classList.remove("hidden");
+        roleSelect.value = item.role || "editor";
+        currentEditIsActive = Boolean(item.isActive);
+        setSaveButtonState("idle");
+
+        modalTitle.innerText = `Edit Akun: ${item.name}`;
+        modal.classList.remove("hidden");
+      });
+    });
+
+    // Handle Delete
+    document.querySelectorAll(".delete-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = (btn as HTMLElement).dataset.id;
+        const name = (btn as HTMLElement).dataset.name;
+        const confirmed = await (window as any).confirmDialog({
+          title: "Hapus Akun Staf",
+          message: `Hapus akun staf "${name}" secara permanen?\nSesi aktif pengguna ini akan terputus dan akses dicabut.`,
+          confirmText: "Ya, Hapus Akun",
+          cancelText: "Batal",
+          type: "danger",
+        });
+        if (!confirmed) return;
+
+        try {
+          const res = await fetch(`/api/admin/users/${id}`, {
+            method: "DELETE",
+          });
+          const result = await res.json();
+          if (result.success) {
+            document.getElementById(`row-${id}`)?.remove();
+            (window as any).showToast("Akun staf berhasil dihapus.", "success");
+          } else {
+            (window as any).showToast(
+              result.error || "Gagal menghapus pengguna",
+              "error",
+            );
+          }
+        } catch {
+          (window as any).showToast("Gagal menghubungi server.", "error");
+        }
+      });
+    });
+
+    // Handle Form Submit
+    form?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const id = editIdInput.value;
+      const isEdit = Boolean(id);
+      const url = isEdit ? `/api/admin/users/${id}` : "/api/admin/users";
+      const method = isEdit ? "PUT" : "POST";
+
+      const payload: any = {
+        name: nameInput.value,
+        role: roleSelect.value,
+        isActive: isEdit ? currentEditIsActive : true,
+      };
+
+      if (!isEdit) {
+        payload.email = emailInput.value;
+        payload.password = passwordInput.value;
+      } else if (passwordInput.value) {
+        payload.password = passwordInput.value;
+      }
+
+      setSaveButtonState("loading");
+
+      try {
+        const res = await fetch(url, {
+          method,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          setSaveButtonState("success");
+          setTimeout(() => {
+            modal.classList.add("hidden");
+            window.location.reload();
+          }, 800);
+        } else {
+          setSaveButtonState("idle");
+          alert(data.error || "Gagal menyimpan akun pengguna.");
+        }
+      } catch {
+        setSaveButtonState("idle");
+        alert("Terjadi kesalahan jaringan.");
+      }
+    });
+  </script>
+</AdminLayout>

@@ -1,0 +1,666 @@
+---
+import AdminLayout from '../../layouts/AdminLayout.astro';
+import Icon from '../../components/Icon.astro';
+import Pagination from '../../components/Pagination.astro';
+import { db, auditLogs } from '../../db';
+import { desc, sql } from 'drizzle-orm';
+
+export const prerender = false;
+
+// Pastikan hanya super_admin yang dapat mengakses audit trail
+const currentUser = Astro.locals.user;
+if (!currentUser || currentUser.role !== 'super_admin') {
+  return Astro.redirect('/admin?error=unauthorized_role');
+}
+
+// Ambil riwayat audit logs (maks 1000 rekaman terbaru untuk responsivitas filter instan di browser)
+const logsList = await db
+  .select()
+  .from(auditLogs)
+  .orderBy(desc(auditLogs.createdAt))
+  .limit(1000);
+
+// Hitung metrik ringkas
+const totalLogs = logsList.length;
+const todayStr = new Date().toISOString().slice(0, 10);
+const todayLogsCount = logsList.filter(l => l.createdAt && l.createdAt.startsWith(todayStr)).length;
+
+// Himpunan aktor / email unik
+const uniqueUsers = Array.from(
+  new Set(logsList.map(l => l.userEmail || 'Sistem'))
+).sort();
+
+// Himpunan tindakan unik
+const uniqueActions = Array.from(
+  new Set(logsList.map(l => l.action))
+).sort();
+
+// Himpunan objek unik
+const uniqueEntities = Array.from(
+  new Set(logsList.map(l => l.entity))
+).sort();
+---
+
+<AdminLayout title="Audit Trail Keamanan" activeNav="logs">
+  <div class="space-y-6 max-w-7xl">
+    <!-- 1. Header Halaman -->
+    <div class="pb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div>
+        <h1 class="font-display text-2xl font-bold tracking-tight text-heading">
+          Audit Trail & Rekam Jejak Keamanan
+        </h1>
+        <p class="mt-1 font-body text-xs text-muted">
+          Pantau riwayat aktivitas autentikasi, mutasi data, dan perubahan konfigurasi portal sekolah secara transparan.
+        </p>
+      </div>
+
+      <div class="flex items-center gap-2 shrink-0">
+        <button
+          type="button"
+          id="export-csv-btn"
+          class="inline-flex h-9 items-center justify-center gap-2 rounded-[6px] border border-border bg-surface px-3.5 text-xs font-semibold text-heading hover:bg-surface-subtle transition-colors shadow-xs cursor-pointer"
+        >
+          <Icon name="download" class="h-4 w-4 text-muted" />
+          <span>Ekspor CSV</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 2. Ringkasan Status Angka (3 Metrik Ringkas - Multi-Color Solid KPI) -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 *:rounded-[8px] *:border *:p-4 *:shadow-xs">
+      <div class="bg-primary border-primary text-primary-foreground">
+        <span class="text-[11px] font-semibold text-primary-foreground uppercase tracking-wider block">Total Aktivitas Tersimpan</span>
+        <p class="font-display text-2xl font-bold text-primary-foreground mt-1">
+          {totalLogs.toLocaleString('id-ID')}
+        </p>
+        <span class="text-[11px] text-primary-foreground/80">Rekam jejak sistem</span>
+      </div>
+
+      <div class="bg-success border-success text-white">
+        <span class="text-[11px] font-semibold text-white uppercase tracking-wider block">Aktivitas Hari Ini</span>
+        <p class="font-display text-2xl font-bold text-white mt-1">
+          {todayLogsCount.toLocaleString('id-ID')}
+        </p>
+        <span class="text-[11px] text-white/80 font-mono">{todayStr}</span>
+      </div>
+
+      <div class="bg-warning border-warning text-white">
+        <span class="text-[11px] font-semibold text-white uppercase tracking-wider block">Pelaku / Aktor Terdata</span>
+        <p class="font-display text-2xl font-bold text-white mt-1">
+          {uniqueUsers.length}
+        </p>
+        <span class="text-[11px] text-white/80 truncate block max-w-[220px]" title={uniqueUsers.join(', ')}>
+          Administrator & Sistem
+        </span>
+      </div>
+    </div>
+
+    <!-- 3. Panel Filter & Pencarian -->
+    <div class="rounded-[8px] border border-border bg-surface p-4 shadow-xs space-y-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        <!-- Input Pencarian -->
+        <div class="lg:col-span-2 relative">
+          <input
+            type="text"
+            id="search-input"
+            placeholder="Cari aktivitas, email, atau objek..."
+            class="h-[38px] w-full rounded-[6px] border border-border bg-surface pl-9 pr-3 font-body text-xs text-heading placeholder:text-muted/60 transition-colors"
+          />
+          <Icon name="search" class="h-4 w-4 text-muted absolute left-3 top-2.5 pointer-events-none" />
+        </div>
+
+        <!-- Filter Tindakan -->
+        <div>
+          <select
+            id="action-filter"
+            class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading transition-colors"
+          >
+            <option value="">Semua Tindakan</option>
+            {uniqueActions.map((act) => (
+              <option value={act}>{act}</option>
+            ))}
+          </select>
+        </div>
+
+        <!-- Filter Objek / Entitas -->
+        <div>
+          <select
+            id="entity-filter"
+            class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading transition-colors"
+          >
+            <option value="">Semua Objek</option>
+            {uniqueEntities.map((ent) => (
+              <option value={ent}>{ent}</option>
+            ))}
+          </select>
+        </div>
+
+        <!-- Filter Rentang Waktu -->
+        <div>
+          <select
+            id="date-filter"
+            class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading transition-colors"
+          >
+            <option value="all">Semua Waktu</option>
+            <option value="today">Hari Ini</option>
+            <option value="7days">7 Hari Terakhir</option>
+            <option value="30days">30 Hari Terakhir</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Baris Status Filter & Tombol Reset -->
+      <div class="flex items-center justify-between pt-1 text-xs">
+        <div class="flex items-center gap-3">
+          <div class="flex items-center gap-1.5">
+            <span class="text-muted">Hasil pencarian:</span>
+            <span id="filtered-count" class="font-bold text-heading font-mono">{totalLogs}</span>
+            <span class="text-muted">aktivitas</span>
+          </div>
+          <span class="text-border">|</span>
+          <div class="flex items-center gap-1.5">
+            <span class="text-muted">Per halaman:</span>
+            <select
+              id="page-size-select"
+              class="h-6 rounded-[4px] border border-border bg-surface px-1.5 text-xs font-mono text-heading"
+            >
+              <option value="25" selected>25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          id="reset-filter-btn"
+          class="text-xs font-semibold text-primary hover:underline cursor-pointer"
+        >
+          Reset Filter
+        </button>
+      </div>
+    </div>
+
+    <!-- 4. Tabel 5 Kolom Saja -->
+    <div class="rounded-[8px] border border-border bg-surface overflow-hidden shadow-xs">
+      <div class="overflow-x-auto">
+        <table class="w-full text-left font-body text-xs">
+          <thead class="border-b border-border bg-surface-subtle/60 text-[11px] font-semibold uppercase tracking-wider text-muted">
+            <tr>
+              <th class="py-3 px-4 w-[180px]">Waktu</th>
+              <th class="py-3 px-4 w-[200px]">Pengguna</th>
+              <th class="py-3 px-4 w-[110px]">Tindakan</th>
+              <th class="py-3 px-4 w-[160px]">Objek</th>
+              <th class="py-3 px-4 min-w-[280px]">Aktivitas</th>
+            </tr>
+          </thead>
+          <tbody id="logs-tbody" class="divide-y divide-border">
+            <!-- Diisi secara dinamis oleh JavaScript -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- State Kosong jika Filter Tidak Cocok -->
+      <div id="empty-state" class="hidden py-12 text-center text-muted">
+        <Icon name="search" class="h-8 w-8 mx-auto text-muted/60 mb-2" />
+        <p class="font-semibold text-heading text-xs">Tidak ada aktivitas yang cocok</p>
+        <p class="text-[11px] mt-0.5">Coba sesuaikan kata kunci atau bersihkan kriteria filter Anda.</p>
+      </div>
+
+      <!-- 5. Pagination Terpusat -->
+      <Pagination
+        id="logs-pagination-container"
+        currentPage={1}
+        totalPages={Math.max(1, Math.ceil(totalLogs / 25))}
+        totalItems={totalLogs}
+        pageSize={25}
+        itemLabel="aktivitas"
+      />
+    </div>
+  </div>
+
+  <!-- 6. Slide-Over Drawer Detail Aktivitas -->
+  <div id="drawer-backdrop" class="fixed inset-0 bg-heading/40 backdrop-blur-xs z-50 hidden transition-opacity">
+    <div class="fixed inset-y-0 right-0 max-w-lg w-full bg-surface border-l border-border shadow-2xl flex flex-col h-full transform transition-transform duration-200">
+      <!-- Header Drawer -->
+      <div class="p-5 flex items-center justify-between bg-surface-subtle">
+        <div class="flex items-center gap-2.5">
+          <span id="drawer-action-badge" class="font-mono text-[10px] font-bold uppercase px-2 py-0.5 rounded-[4px]">
+            ACTION
+          </span>
+          <h2 id="drawer-entity-title" class="font-display text-sm font-bold text-heading">
+            Detail Objek
+          </h2>
+        </div>
+        <button
+          type="button"
+          id="close-drawer-btn"
+          class="p-1.5 rounded-[6px] text-muted hover:text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+          title="Tutup (Esc)"
+        >
+          <Icon name="close" class="h-5 w-5" />
+        </button>
+      </div>
+
+      <!-- Konten Drawer -->
+      <div class="p-5 space-y-4 overflow-y-auto flex-1 font-body text-xs">
+        <div class="space-y-1">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-muted">Waktu Kejadian</span>
+          <p id="drawer-time" class="font-mono text-heading font-medium">-</p>
+        </div>
+
+        <div class="space-y-1">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-muted">Pelaku / Pengguna</span>
+          <p id="drawer-user" class="font-mono text-heading font-medium break-all">-</p>
+        </div>
+
+        <div class="space-y-1">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-muted">Alamat IP</span>
+          <p id="drawer-ip" class="font-mono text-muted">-</p>
+        </div>
+
+        <div class="space-y-1">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-muted">Objek & ID Entitas</span>
+          <p id="drawer-entity-id" class="font-mono text-heading break-all">-</p>
+        </div>
+
+        <div class="space-y-1 pt-2">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-muted">Ringkasan Aktivitas</span>
+          <div id="drawer-details" class="p-3 rounded-[6px] border border-border bg-surface-subtle/80 text-heading leading-relaxed font-body">
+            -
+          </div>
+        </div>
+
+        <div class="p-3 rounded-[6px] border border-border bg-surface-subtle text-[11px] text-muted space-y-1">
+          <p class="font-semibold text-heading">Integritas Audit Trail:</p>
+          <p class="leading-normal">
+            Catatan audit ini bersifat kekal (immutable) dan disimpan otomatis pada level transaksi database untuk audit akuntabilitas sekolah.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Simpan Data Mentah ke Script Aman JSON -->
+  <script id="raw-logs-data" type="application/json" set:html={JSON.stringify(logsList)}></script>
+
+  <script>
+    import { renderClientPaginationBar } from '../../utils/pagination';
+
+    // Kamus nama objek manusiawi untuk menggantikan istilah teknis mentah
+    const entityLabels: Record<string, string> = {
+      setting: 'Pengaturan Sekolah',
+      settings: 'Pengaturan Sekolah',
+      article: 'Berita & Artikel',
+      articles: 'Berita & Artikel',
+      teacher: 'Direktori Pendidik',
+      teachers: 'Direktori Pendidik',
+      agenda: 'Agenda Kegiatan',
+      agendas: 'Agenda Kegiatan',
+      announcement: 'Banner Pengumuman',
+      announcements: 'Banner Pengumuman',
+      document: 'Repositori Dokumen',
+      documents: 'Repositori Dokumen',
+      gallery: 'Galeri Media',
+      galleries: 'Galeri Media',
+      media: 'Pustaka Media',
+      registration: 'Pendaftaran Siswa',
+      registrations: 'Pendaftaran Siswa',
+      ppdb_config: 'Konfigurasi PPDB',
+      navigation: 'Navigasi Website',
+      navigation_item: 'Navigasi Website',
+      user: 'Pengguna & Staf',
+      users: 'Pengguna & Staf',
+      database: 'Basis Data',
+      graduation: 'Pengumuman Kelulusan',
+      bkk: 'BKK & Industri',
+      mahad: "Ma'had & Tahfidz",
+      student_alumni: 'Prestasi & Alumni',
+    };
+
+    function getEntityHumanLabel(rawKey?: string) {
+      if (!rawKey) return 'Sistem';
+      const k = String(rawKey).toLowerCase().trim();
+      return entityLabels[k] || rawKey;
+    }
+
+    // Warna Badge Tindakan Solid Kontras (Token Semantik)
+    function getActionBadgeStyle(action?: string) {
+      const act = String(action || '').toUpperCase();
+      if (act.includes('CREATE')) {
+        return 'bg-success text-white';
+      }
+      if (act.includes('UPDATE')) {
+        return 'bg-primary text-white';
+      }
+      if (act.includes('DELETE')) {
+        return 'bg-error text-white';
+      }
+      if (act.includes('LOGIN')) {
+        return 'bg-primary-light text-primary border border-primary/20';
+      }
+      if (act.includes('LOGOUT')) {
+        return 'bg-surface-subtle text-heading border border-border';
+      }
+      return 'bg-muted text-white';
+    }
+
+    // Format tanggal WIB ringkas
+    function formatDateTimeWib(isoString?: string) {
+      if (!isoString) return '-';
+      try {
+        const d = new Date(isoString);
+        if (isNaN(d.getTime())) return isoString;
+        const datePart = d.toLocaleDateString('id-ID', {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+        });
+        const timePart = d.toLocaleTimeString('id-ID', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+        });
+        return `${datePart}, ${timePart} WIB`;
+      } catch {
+        return isoString;
+      }
+    }
+
+    // Parse data mentah
+    let allLogs: any[] = [];
+    try {
+      const dataScript = document.getElementById('raw-logs-data');
+      if (dataScript && dataScript.textContent) {
+        allLogs = JSON.parse(dataScript.textContent);
+      }
+    } catch {
+      allLogs = [];
+    }
+
+    // Elemen DOM
+    const searchInput = document.getElementById('search-input') as HTMLInputElement | null;
+    const actionFilter = document.getElementById('action-filter') as HTMLSelectElement | null;
+    const entityFilter = document.getElementById('entity-filter') as HTMLSelectElement | null;
+    const dateFilter = document.getElementById('date-filter') as HTMLSelectElement | null;
+    const filteredCount = document.getElementById('filtered-count');
+    const resetFilterBtn = document.getElementById('reset-filter-btn');
+    const logsTbody = document.getElementById('logs-tbody');
+    const emptyState = document.getElementById('empty-state');
+    const paginationContainer = document.getElementById('logs-pagination-container');
+    const pageSizeSelect = document.getElementById('page-size-select') as HTMLSelectElement | null;
+
+    // Drawer Elemen
+    const drawerBackdrop = document.getElementById('drawer-backdrop');
+    const closeDrawerBtn = document.getElementById('close-drawer-btn');
+    const drawerActionBadge = document.getElementById('drawer-action-badge');
+    const drawerEntityTitle = document.getElementById('drawer-entity-title');
+    const drawerTime = document.getElementById('drawer-time');
+    const drawerUser = document.getElementById('drawer-user');
+    const drawerIp = document.getElementById('drawer-ip');
+    const drawerEntityId = document.getElementById('drawer-entity-id');
+    const drawerDetails = document.getElementById('drawer-details');
+    const exportCsvBtn = document.getElementById('export-csv-btn');
+
+    let currentPage = 1;
+    let pageSize = 25;
+    let filteredLogs = [...allLogs];
+
+    function applyFilters() {
+      const q = (searchInput?.value || '').toLowerCase().trim();
+      const action = actionFilter?.value || '';
+      const entity = entityFilter?.value || '';
+      const dateRange = dateFilter?.value || 'all';
+
+      const now = new Date();
+      let minDate: Date | null = null;
+
+      if (dateRange === 'today') {
+        minDate = new Date();
+        minDate.setHours(0, 0, 0, 0);
+      } else if (dateRange === '7days') {
+        minDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      } else if (dateRange === '30days') {
+        minDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      }
+
+      filteredLogs = allLogs.filter((log) => {
+        // Filter Kata Kunci
+        if (q) {
+          const matchEmail = (log.userEmail || '').toLowerCase().includes(q);
+          const matchDetails = (log.details || '').toLowerCase().includes(q);
+          const matchEntity = (log.entity || '').toLowerCase().includes(q);
+          const matchAction = (log.action || '').toLowerCase().includes(q);
+          const matchHuman = getEntityHumanLabel(log.entity).toLowerCase().includes(q);
+          if (!matchEmail && !matchDetails && !matchEntity && !matchAction && !matchHuman) {
+            return false;
+          }
+        }
+
+        // Filter Action
+        if (action && log.action !== action) {
+          return false;
+        }
+
+        // Filter Entity
+        if (entity && log.entity !== entity) {
+          return false;
+        }
+
+        // Filter Date
+        if (minDate && log.createdAt) {
+          const logDate = new Date(log.createdAt);
+          if (!isNaN(logDate.getTime()) && logDate < minDate) {
+            return false;
+          }
+        }
+
+        return true;
+      });
+
+      currentPage = 1;
+      renderTable();
+    }
+
+    function renderTable() {
+      if (filteredCount) {
+        filteredCount.textContent = String(filteredLogs.length);
+      }
+
+      const totalItems = filteredLogs.length;
+      const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+
+      if (currentPage > totalPages) currentPage = totalPages;
+      if (currentPage < 1) currentPage = 1;
+
+      const startIndex = (currentPage - 1) * pageSize;
+      const endIndex = Math.min(startIndex + pageSize, totalItems);
+      const pageItems = filteredLogs.slice(startIndex, endIndex);
+
+      // Render Pagination Bar Terpusat (Zero-Load)
+      renderClientPaginationBar({
+        container: paginationContainer,
+        currentPage,
+        totalPages,
+        totalItems,
+        pageSize,
+        itemLabel: 'aktivitas',
+      });
+
+      if (totalItems === 0) {
+        if (logsTbody) logsTbody.innerHTML = '';
+        if (emptyState) emptyState.classList.remove('hidden');
+        return;
+      }
+
+      if (emptyState) emptyState.classList.add('hidden');
+
+      if (!logsTbody) return;
+
+      logsTbody.innerHTML = pageItems
+        .map((log) => {
+          const timeFormatted = formatDateTimeWib(log.createdAt);
+          const badgeClass = getActionBadgeStyle(log.action);
+          const humanEntity = getEntityHumanLabel(log.entity);
+          const userDisplay = log.userEmail || 'Sistem';
+
+          return `
+            <tr class="log-row hover:bg-surface-subtle transition-colors cursor-pointer group" data-log-id="${log.id}">
+              <td class="py-3 px-4 font-mono text-muted text-[11px] whitespace-nowrap">
+                ${timeFormatted}
+              </td>
+              <td class="py-3 px-4 font-medium text-heading">
+                <span class="block truncate max-w-[190px]" title="${userDisplay}">${userDisplay}</span>
+              </td>
+              <td class="py-3 px-4">
+                <span class="inline-block rounded-[4px] px-2 py-0.5 text-[9px] font-mono font-bold uppercase tracking-wider ${badgeClass}">
+                  ${log.action}
+                </span>
+              </td>
+              <td class="py-3 px-4">
+                <span class="font-semibold text-heading block truncate max-w-[150px]" title="${humanEntity}">
+                  ${humanEntity}
+                </span>
+              </td>
+              <td class="py-3 px-4">
+                <div class="flex items-center justify-between gap-3">
+                  <p class="text-muted text-xs line-clamp-2 max-w-xl leading-relaxed">
+                    ${log.details || '-'}
+                  </p>
+                  <span class="text-primary text-[11px] font-semibold opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                    Lihat detail &rarr;
+                  </span>
+                </div>
+              </td>
+            </tr>
+          `;
+        })
+        .join('');
+
+      // Pasang click listener ke setiap baris
+      document.querySelectorAll('.log-row').forEach((row) => {
+        row.addEventListener('click', () => {
+          const logId = Number(row.getAttribute('data-log-id'));
+          const logData = allLogs.find((l) => l.id === logId);
+          if (logData) openDrawer(logData);
+        });
+      });
+    }
+
+    // Event delegation tombol pagination
+    paginationContainer?.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest('.pagination-btn') as HTMLButtonElement | null;
+      if (!btn || btn.disabled) return;
+      const targetPage = parseInt(btn.dataset.page || '', 10);
+      if (!isNaN(targetPage) && targetPage >= 1) {
+        currentPage = targetPage;
+        renderTable();
+      }
+    });
+
+    // Buka Drawer Detail
+    function openDrawer(log: any) {
+      if (!drawerBackdrop) return;
+
+      if (drawerActionBadge) {
+        drawerActionBadge.textContent = log.action;
+        drawerActionBadge.className = `font-mono text-[10px] font-bold uppercase px-2 py-0.5 rounded-[4px] ${getActionBadgeStyle(log.action)}`;
+      }
+      if (drawerEntityTitle) {
+        drawerEntityTitle.textContent = getEntityHumanLabel(log.entity);
+      }
+      if (drawerTime) {
+        drawerTime.textContent = formatDateTimeWib(log.createdAt);
+      }
+      if (drawerUser) {
+        drawerUser.textContent = log.userEmail || 'Sistem (Proses Otomatis)';
+      }
+      if (drawerIp) {
+        drawerIp.textContent = log.ipAddress || '127.0.0.1';
+      }
+      if (drawerEntityId) {
+        drawerEntityId.textContent = `${log.entity} [ID: ${log.entityId || '-'}]`;
+      }
+      if (drawerDetails) {
+        drawerDetails.textContent = log.details || 'Tidak ada catatan tambahan.';
+      }
+
+      drawerBackdrop.classList.remove('hidden');
+    }
+
+    function closeDrawer() {
+      if (drawerBackdrop) {
+        drawerBackdrop.classList.add('hidden');
+      }
+    }
+
+    closeDrawerBtn?.addEventListener('click', closeDrawer);
+    drawerBackdrop?.addEventListener('click', (e) => {
+      if (e.target === drawerBackdrop) closeDrawer();
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && drawerBackdrop && !drawerBackdrop.classList.contains('hidden')) {
+        closeDrawer();
+      }
+    });
+
+    // Event Listeners Filter
+    searchInput?.addEventListener('input', applyFilters);
+    actionFilter?.addEventListener('change', applyFilters);
+    entityFilter?.addEventListener('change', applyFilters);
+    dateFilter?.addEventListener('change', applyFilters);
+
+    resetFilterBtn?.addEventListener('click', () => {
+      if (searchInput) searchInput.value = '';
+      if (actionFilter) actionFilter.value = '';
+      if (entityFilter) entityFilter.value = '';
+      if (dateFilter) dateFilter.value = 'all';
+      applyFilters();
+    });
+
+    pageSizeSelect?.addEventListener('change', () => {
+      pageSize = Number(pageSizeSelect?.value) || 25;
+      currentPage = 1;
+      renderTable();
+    });
+
+    // Ekspor CSV dari Data yang Sedang Tampil
+    exportCsvBtn?.addEventListener('click', () => {
+      if (filteredLogs.length === 0) {
+        alert('Tidak ada data yang dapat diekspor.');
+        return;
+      }
+
+      const headers = ['ID', 'Waktu', 'Pengguna', 'Tindakan', 'Objek', 'ID Entitas', 'Alamat IP', 'Ringkasan Aktivitas'];
+      const csvRows = [headers.join(',')];
+
+      filteredLogs.forEach((log) => {
+        const row = [
+          log.id,
+          `"${formatDateTimeWib(log.createdAt)}"`,
+          `"${(log.userEmail || 'Sistem').replace(/"/g, '""')}"`,
+          `"${log.action}"`,
+          `"${getEntityHumanLabel(log.entity)}"`,
+          `"${log.entityId || ''}"`,
+          `"${log.ipAddress || ''}"`,
+          `"${(log.details || '').replace(/"/g, '""')}"`,
+        ];
+        csvRows.push(row.join(','));
+      });
+
+      const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + encodeURIComponent(csvRows.join('\n'));
+      const downloadAnchor = document.createElement('a');
+      const filename = `audit-trail-${new Date().toISOString().slice(0, 10)}.csv`;
+      downloadAnchor.setAttribute('href', csvContent);
+      downloadAnchor.setAttribute('download', filename);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      document.body.removeChild(downloadAnchor);
+    });
+
+    // Inisialisasi awal tabel
+    renderTable();
+  </script>
+</AdminLayout>
+

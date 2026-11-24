@@ -1,0 +1,332 @@
+---
+import { db, settings } from "../db";
+import Icon from "./Icon.astro";
+import { getSettingsMap } from "../utils/settingsCache";
+
+const year = new Date().getFullYear();
+const schoolSettings = await getSettingsMap();
+
+const schoolName = schoolSettings["school_name"] || "SMAN 1 UNGGULAN";
+const npsn = schoolSettings["npsn"] || "20101234";
+const accreditation = schoolSettings["accreditation"] || "A (Unggul)";
+const address =
+  schoolSettings["address"] || "Jl. Pendidikan No. 45, Kota Pendidikan";
+const phone = schoolSettings["phone"] || "(021) 555-0199";
+const email = schoolSettings["email"] || "info@sman1unggulan.sch.id";
+const logoUrl = schoolSettings["logo_url"] || "";
+const operationalHours =
+  schoolSettings["operational_hours"] || "Senin – Jumat: 07.00 – 16.00 WIB";
+const admissionsLabel =
+  schoolSettings["admissions_label"] || schoolSettings["ppdb_label"] || "PPDB";
+
+// Media Sosial
+const socialWhatsapp = schoolSettings["social_whatsapp"] || "";
+const socialInstagram = schoolSettings["social_instagram"] || "";
+const socialYoutube = schoolSettings["social_youtube"] || "";
+const socialFacebook = schoolSettings["social_facebook"] || "";
+const socialTwitter = schoolSettings["social_twitter"] || "";
+const socialTiktok = schoolSettings["social_tiktok"] || "";
+---
+
+<footer class="mt-auto bg-primary">
+  <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+    <!-- Footer Grid: 4 Kolom Berimbang -->
+    <div class="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-12">
+      <!-- Kolom 1: Info Sekolah & Media Sosial (5 cols) -->
+      <div class="sm:col-span-2 lg:col-span-5 space-y-4">
+        <a
+          href="/"
+          class="inline-flex items-center gap-2.5 text-white hover:text-secondary transition-colors rounded-[4px]"
+          aria-label={`Beranda ${schoolName}`}
+        >
+          {
+            logoUrl ? (
+              <img
+                src={logoUrl}
+                alt={schoolName}
+                width="32"
+                height="32"
+                class="h-8 w-8 object-contain rounded-[6px] shrink-0"
+              />
+            ) : (
+              <div class="flex h-8 w-8 items-center justify-center rounded-[6px] bg-primary font-display font-bold text-white text-xs shrink-0">
+                {schoolName.charAt(0) || "S"}
+              </div>
+            )
+          }
+          <span
+            class="font-display text-base font-bold uppercase tracking-tight"
+            >{schoolName}</span
+          >
+        </a>
+
+        <div
+          class="space-y-1.5 font-body text-[13px] text-white/80 *:leading-snug"
+        >
+          <p>{address}</p>
+          <p>
+            Email: <a
+              href={`mailto:${email}`}
+              class="text-white/80 hover:text-white hover:underline transition-colors">{email}</a
+            >
+            <br /> Telp: <a
+              href={`tel:${phone.replace(/[^0-9+]/g, "")}`}
+              class="text-white/80 hover:text-white hover:underline transition-colors">{phone}</a
+            >
+          </p>
+        </div>
+
+        <!-- Social Media: Minimalist Monochrome Icons -->
+        <div
+          class="flex flex-wrap items-center gap-2 pt-1 *:inline-flex *:h-8 *:w-8 *:items-center *:justify-center *:rounded-[6px] *:border *:border-border *:bg-surface *:transition-all *:duration-200"
+          aria-label="Media Sosial"
+        >
+          {
+            socialWhatsapp && (
+              <a
+                href={
+                  socialWhatsapp.startsWith("http")
+                    ? socialWhatsapp
+                    : `https://wa.me/${socialWhatsapp.replace(/[^0-9]/g, "")}`
+                }
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-[#25D366] hover:-translate-y-0.5 hover:border-[#25D366] hover:bg-[#25D366] hover:text-surface"
+                aria-label="WhatsApp"
+                title="WhatsApp"
+              >
+                <Icon name="whatsapp" class="h-4 w-4 fill-current" />
+              </a>
+            )
+          }
+          {
+            socialInstagram && (
+              <a
+                href={
+                  socialInstagram.startsWith("http")
+                    ? socialInstagram
+                    : `https://instagram.com/${socialInstagram.replace("@", "")}`
+                }
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-[#E4405F] hover:-translate-y-0.5 hover:border-[#E4405F] hover:bg-[#E4405F] hover:text-surface"
+                aria-label="Instagram"
+                title="Instagram"
+              >
+                <Icon name="instagram" class="h-4 w-4 fill-current" />
+              </a>
+            )
+          }
+          {
+            socialYoutube && (
+              <a
+                href={socialYoutube}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-[#FF0000] hover:-translate-y-0.5 hover:border-[#FF0000] hover:bg-[#FF0000] hover:text-surface"
+                aria-label="YouTube"
+                title="YouTube"
+              >
+                <Icon name="youtube" class="h-4 w-4 fill-current" />
+              </a>
+            )
+          }
+          {
+            socialFacebook && (
+              <a
+                href={socialFacebook}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-[#1877F2] hover:-translate-y-0.5 hover:border-[#1877F2] hover:bg-[#1877F2] hover:text-surface"
+                aria-label="Facebook"
+                title="Facebook"
+              >
+                <Icon name="facebook" class="h-4 w-4 fill-current" />
+              </a>
+            )
+          }
+          {
+            socialTwitter && (
+              <a
+                href={
+                  socialTwitter.startsWith("http")
+                    ? socialTwitter
+                    : `https://x.com/${socialTwitter.replace("@", "")}`
+                }
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-heading hover:-translate-y-0.5 hover:border-heading hover:bg-heading hover:text-surface"
+                aria-label="X (Twitter)"
+                title="X (Twitter)"
+              >
+                <Icon name="x" class="h-4 w-4 fill-current" />
+              </a>
+            )
+          }
+          {
+            socialTiktok && (
+              <a
+                href={
+                  socialTiktok.startsWith("http")
+                    ? socialTiktok
+                    : `https://tiktok.com/@${socialTiktok.replace("@", "")}`
+                }
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-heading hover:-translate-y-0.5 hover:border-[#000000] hover:bg-[#000000] hover:text-secondary dark:hover:border-white dark:hover:bg-white dark:hover:text-black"
+                aria-label="TikTok"
+                title="TikTok"
+              >
+                <Icon name="tiktok" class="h-4 w-4 fill-current" />
+              </a>
+            )
+          }
+        </div>
+      </div>
+
+      <!-- Kolom 2: Navigasi Utama (2 cols) -->
+      <div class="lg:col-span-2">
+        <h4
+          class="font-display text-xs font-semibold uppercase tracking-wider text-white"
+        >
+          Navigasi
+        </h4>
+        <ul class="mt-3.5 space-y-2.5 font-body text-[13px] text-white/75">
+          <li>
+            <a href="/profil" class="hover:text-secondary transition-colors"
+              >Visi, Misi & Profil</a
+            >
+          </li>
+          <li>
+            <a href="/berita" class="hover:text-secondary transition-colors"
+              >Berita & Informasi</a
+            >
+          </li>
+          <li>
+            <a href="/agenda" class="hover:text-secondary transition-colors"
+              >Kalender Akademik</a
+            >
+          </li>
+          <li>
+            <a href="/direktori" class="hover:text-secondary transition-colors"
+              >Direktori Pengajar</a
+            >
+          </li>
+          <li>
+            <a href="/dokumen" class="hover:text-secondary transition-colors"
+              >Pusat Unduhan Dokumen</a
+            >
+          </li>
+        </ul>
+      </div>
+
+      <!-- Kolom 3: Layanan & Kesiswaan (3 cols) -->
+      <div class="lg:col-span-3">
+        <h4
+          class="font-display text-xs font-semibold uppercase tracking-wider text-white"
+        >
+          Layanan Siswa
+        </h4>
+        <ul class="mt-3.5 space-y-2.5 font-body text-[13px] text-white/75">
+          <li>
+            <a
+              href="/pendaftaran"
+              class="hover:text-secondary transition-colors"
+              >Informasi Seleksi {admissionsLabel}</a
+            >
+          </li>
+          <li>
+            <a href="/kelulusan" class="hover:text-secondary transition-colors"
+              >Pengumuman Kelulusan</a
+            >
+          </li>
+          <li>
+            <a href="/alumni" class="hover:text-secondary transition-colors"
+              >Tracer Study Alumni</a
+            >
+          </li>
+          <li>
+            <a href="/osis" class="hover:text-secondary transition-colors"
+              >Organisasi Siswa ({
+                schoolSettings["student_org_label"] || "OSIS"
+              })</a
+            >
+          </li>
+          <li>
+            <a href="/kontak" class="hover:text-secondary transition-colors"
+              >Pusat Bantuan & Pengaduan</a
+            >
+          </li>
+        </ul>
+      </div>
+
+      <!-- Kolom 4: Transparansi & Legalitas (2 cols) -->
+      <div class="lg:col-span-2">
+        <h4
+          class="font-display text-xs font-semibold uppercase tracking-wider text-white"
+        >
+          Transparansi
+        </h4>
+        <ul class="mt-3.5 space-y-2.5 font-body text-[13px] text-white/75">
+          <li>
+            <a
+              href="/kebijakan-privasi"
+              class="hover:text-secondary transition-colors"
+              >Kebijakan Privasi</a
+            >
+          </li>
+          <li>
+            <a
+              href="/syarat-ketentuan"
+              class="hover:text-secondary transition-colors"
+              >Syarat & Ketentuan</a
+            >
+          </li>
+          <li>
+            <a href="/kontak" class="hover:text-secondary transition-colors"
+              >Layanan Aspirasi</a
+            >
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Sub-footer: Hak Cipta & Informasi Legal -->
+    <div
+      class="mt-12 pt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between font-body text-xs text-white/75"
+    >
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <p>
+          &copy; <span id="footer-year">{year}</span>
+          {" "}
+          <a
+            href="/"
+            class="text-secondary hover:text-surface transition-colors"
+            >{schoolName}</a
+          >. Hak Cipta Dilindungi Undang-Undang.
+        </p>
+      </div>
+      <div
+        class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-white/75"
+      >
+        <a
+          href="/kebijakan-privasi"
+          class="hover:text-secondary transition-colors">Privacy Policy</a
+        >
+        <span>·</span>
+        <a
+          href="/syarat-ketentuan"
+          class="hover:text-secondary transition-colors">Terms & Conditions</a
+        >
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script is:inline>
+  // Ensure year updates automatically on client-side even on cached/static builds
+  const footerYear = document.getElementById("footer-year");
+  if (footerYear) {
+    footerYear.textContent = new Date().getFullYear().toString();
+  }
+</script>

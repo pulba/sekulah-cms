@@ -1,0 +1,256 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import Breadcrumb from "../components/Breadcrumb.astro";
+import Icon from "../components/Icon.astro";
+import { db, mahadPrograms, settings } from "../db";
+import { eq, desc, asc, and } from "drizzle-orm";
+
+export const prerender = false;
+
+const allSettings = await db.select().from(settings);
+const settingMap = allSettings.reduce(
+  (acc, curr) => {
+    acc[curr.key] = curr.value;
+    return acc;
+  },
+  {} as Record<string, string>,
+);
+
+const schoolName = settingMap["school_name"] || "Madrasah Aliyah Unggulan";
+const currentFilter = Astro.url.searchParams.get("kategori") || "all";
+
+// Ambil program ma'had aktif
+const conditions: any[] = [eq(mahadPrograms.isActive, true)];
+if (currentFilter && currentFilter !== "all") {
+  conditions.push(eq(mahadPrograms.category, currentFilter));
+}
+
+const programs = await db
+  .select()
+  .from(mahadPrograms)
+  .where(and(...conditions))
+  .orderBy(asc(mahadPrograms.orderNumber), desc(mahadPrograms.id));
+
+const allActive = await db
+  .select()
+  .from(mahadPrograms)
+  .where(eq(mahadPrograms.isActive, true));
+
+const tahfidzCount = allActive.filter((i) => i.category === "Tahfidz").length;
+const kitabCount = allActive.filter(
+  (i) => i.category === "Kajian Kitab",
+).length;
+const asramaCount = allActive.filter((i) => i.category === "Keasramaan").length;
+---
+
+<Layout
+  title={`Ma'had & Program Tahfidz — ${schoolName}`}
+  description={`Pusat pendidikan kepesantrenan, pembinaan karakter Islami, target hafalan Al-Qur'an (Tahfidz), kajian kitab kuning, dan asrama santri ${schoolName}.`}
+>
+  <Header currentPath="/mahad" />
+
+  <main class="flex-1 py-8 sm:py-12 bg-background">
+    <div class="mx-auto max-w-7xl px-3.5 sm:px-6 lg:px-8 space-y-8 sm:space-y-10">
+      <!-- Breadcrumb -->
+      <Breadcrumb
+        class="mb-0"
+        items={[
+          { label: "Beranda", href: "/" },
+          { label: "Keagamaan" },
+          { label: "Ma'had & Tahfidz" },
+        ]}
+      />
+
+      <!-- Hero Section -->
+      <section class="rounded-[12px] border border-border bg-surface p-6 sm:p-8 mt-5 shadow-xs">
+        <div class="space-y-4 max-w-3xl">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="rounded-[4px] bg-primary text-white px-2.5 py-1.5 font-body text-xs font-semibold uppercase tracking-wider">
+              Kepesantrenan & Ma'had
+            </span>
+          </div>
+
+          <h1 class="font-display text-2xl sm:text-4xl font-bold tracking-tight text-heading leading-tight">
+            Ma'had & Pembinaan Santri Berkarakter Qur'ani
+          </h1>
+
+          <p class="font-body text-xs sm:text-base text-body leading-relaxed">
+            Menyelenggarakan sistem pembinaan komprehensif 24 jam yang memadukan
+            keunggulan sains akademik madrasah dengan kedalaman spiritual
+            kepesantrenan, tahfidz Al-Qur'an bersanad, dan kajian kitab turots.
+          </p>
+
+          <div class="grid grid-cols-3 gap-3 sm:gap-6 pt-2 max-w-md *:rounded-[8px] *:border *:border-border *:bg-surface-subtle *:p-3">
+            <div>
+              <span class="block text-[11px] text-muted font-body">
+                Halaqah Tahfidz
+              </span>
+              <strong class="font-display text-xl text-heading font-bold">
+                {tahfidzCount}
+              </strong>
+            </div>
+            <div>
+              <span class="block text-[11px] text-muted font-body">
+                Kajian Kitab Kuning
+              </span>
+              <strong class="font-display text-xl text-heading font-bold">
+                {kitabCount}
+              </strong>
+            </div>
+            <div>
+              <span class="block text-[11px] text-muted font-body">
+                Program Asrama
+              </span>
+              <strong class="font-display text-xl text-heading font-bold">
+                {asramaCount}
+              </strong>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Filter Kategori Tabs -->
+      <div class="flex flex-wrap items-center gap-2 *:rounded-[6px] *:px-3.5 *:py-1.5 *:font-body *:text-xs *:font-semibold *:transition-all">
+        <a
+          href="/mahad"
+          class:list={[
+            currentFilter === "all"
+              ? "bg-primary text-white shadow-xs"
+              : "border border-border bg-surface text-muted hover:bg-surface-subtle hover:text-heading",
+          ]}
+        >
+          Semua Program ({allActive.length})
+        </a>
+        <a
+          href="/mahad?kategori=Tahfidz"
+          class:list={[
+            currentFilter === "Tahfidz"
+              ? "bg-primary text-white shadow-xs"
+              : "border border-border bg-surface text-muted hover:bg-surface-subtle hover:text-heading",
+          ]}
+        >
+          Tahfidz Al-Qur'an ({tahfidzCount})
+        </a>
+        <a
+          href="/mahad?kategori=Kajian Kitab"
+          class:list={[
+            currentFilter === "Kajian Kitab"
+              ? "bg-primary text-white shadow-xs"
+              : "border border-border bg-surface text-muted hover:bg-surface-subtle hover:text-heading",
+          ]}
+        >
+          Kajian Kitab Kuning ({kitabCount})
+        </a>
+        <a
+          href="/mahad?kategori=Keasramaan"
+          class:list={[
+            currentFilter === "Keasramaan"
+              ? "bg-primary text-white shadow-xs"
+              : "border border-border bg-surface text-muted hover:bg-surface-subtle hover:text-heading",
+          ]}
+        >
+          Pembinaan Asrama ({asramaCount})
+        </a>
+      </div>
+
+      <!-- Programs Grid -->
+      {programs.length === 0 ? (
+        <div class="rounded-[10px] border border-border bg-surface p-12 text-center text-muted shadow-xs">
+          <p class="font-semibold text-heading text-sm">
+            Belum ada program terpublikasi untuk kategori ini
+          </p>
+          <p class="text-xs mt-1">
+            Silakan periksa kembali secara berkala atau hubungi pengasuh Ma'had
+            madrasah.
+          </p>
+        </div>
+      ) : (
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {programs.map((item) => (
+            <div class="rounded-[10px] border border-border bg-surface p-5 shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:border-border-hover hover:shadow-(--shadow-hover) flex flex-col justify-between space-y-4 group">
+              <div class="space-y-3">
+                <div class="flex items-start justify-between gap-3">
+                  <span class="rounded-[4px] bg-primary-light border border-primary/20 px-2.5 py-0.5 text-[11px] font-semibold text-primary uppercase tracking-wider">
+                    {item.category}
+                  </span>
+                  {item.schedule && (
+                    <span class="inline-flex items-center gap-1 font-mono text-[11px] text-muted">
+                      <Icon name="clock" class="h-3 w-3 text-muted shrink-0" />
+                      <span>{item.schedule}</span>
+                    </span>
+                  )}
+                </div>
+
+                {item.imageUrl && (
+                  <div class="aspect-[16/9] w-full overflow-hidden rounded-[8px] border border-border bg-surface-subtle">
+                    <img
+                      src={item.imageUrl}
+                      alt={item.name}
+                      loading="lazy"
+                      decoding="async"
+                      class="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <h3 class="font-display text-base font-bold text-heading group-hover:text-primary transition-colors leading-snug">
+                    {item.name}
+                  </h3>
+                  {item.mentor && (
+                    <p class="inline-flex items-center gap-1.5 font-body text-xs text-muted mt-1">
+                      <Icon name="user" class="h-3 w-3 text-muted shrink-0" />
+                      <span>
+                        Pembina:{" "}
+                        <strong class="text-heading font-medium">
+                          {item.mentor}
+                        </strong>
+                      </span>
+                    </p>
+                  )}
+                </div>
+
+                {item.target && (
+                  <div class="bg-surface-subtle p-3 rounded-[6px] border border-border/60 space-y-1">
+                    <span class="font-semibold text-heading block text-[11px]">
+                      Target Capaian:
+                    </span>
+                    <p class="font-body text-xs text-body font-medium">
+                      {item.target}
+                    </p>
+                  </div>
+                )}
+
+                {item.description && (
+                  <p class="font-body text-xs text-muted leading-relaxed line-clamp-3">
+                    {item.description}
+                  </p>
+                )}
+              </div>
+
+              <div class="pt-2 flex items-center justify-between text-xs text-muted">
+                <span>
+                  Status:{" "}
+                  <strong class="text-success-text font-medium">
+                    Berjalan
+                  </strong>
+                </span>
+                <span class="inline-flex items-center gap-1 text-primary font-medium group-hover:text-primary-hover hover:underline cursor-pointer transition-colors">
+                  <span>Lihat Kurikulum</span>
+                  <Icon
+                    name="chevron-right"
+                    class="h-3 w-3 shrink-0 transition-transform group-hover:translate-x-0.5"
+                  />
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  </main>
+
+  <Footer />
+</Layout>

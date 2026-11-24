@@ -1,0 +1,155 @@
+---
+export interface Props {
+  currentPage?: number;
+  totalPages?: number;
+  totalItems?: number;
+  pageSize?: number;
+  itemLabel?: string;
+  getPageUrl?: (page: number) => string;
+  id?: string;
+  class?: string;
+}
+
+const {
+  currentPage = 1,
+  totalPages = 1,
+  totalItems = 0,
+  pageSize = 10,
+  itemLabel = "data",
+  getPageUrl,
+  id,
+  class: className = "",
+} = Astro.props;
+
+const validPage = Math.max(1, Math.min(currentPage, totalPages || 1));
+const fromIdx = totalItems > 0 ? (validPage - 1) * pageSize + 1 : 0;
+const toIdx = totalItems > 0 ? Math.min(validPage * pageSize, totalItems) : 0;
+const isLinkMode = typeof getPageUrl === "function";
+
+// Windowing nomor halaman (1 ... current-1, current, current+1 ... totalPages)
+const pageNumbers: (number | "...")[] = [];
+for (let i = 1; i <= totalPages; i++) {
+  if (i === 1 || i === totalPages || (i >= validPage - 1 && i <= validPage + 1)) {
+    pageNumbers.push(i);
+  } else if (i === validPage - 2 || i === validPage + 2) {
+    pageNumbers.push("...");
+  }
+}
+---
+
+<div
+  id={id}
+  class={`pagination-component flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 bg-surface-subtle/40 text-xs text-muted ${className}`}
+  data-current-page={validPage}
+  data-total-pages={totalPages}
+  data-total-items={totalItems}
+  data-page-size={pageSize}
+  data-item-label={itemLabel}
+>
+  <div class="pagination-info">
+    {totalItems > 0 ? (
+      <>
+        Menampilkan <span class="font-semibold text-heading pagination-from">{fromIdx}</span>–<span class="font-semibold text-heading pagination-to">{toIdx}</span> dari <span class="font-semibold text-heading pagination-total">{totalItems}</span> {itemLabel}
+      </>
+    ) : (
+      <span>Tidak ada {itemLabel} untuk ditampilkan</span>
+    )}
+  </div>
+
+  {totalPages > 1 && (
+    <div class="pagination-nav flex items-center gap-1.5 *:inline-flex *:h-[30px] *:items-center *:justify-center *:rounded-[6px] *:font-medium *:transition-colors *:text-xs">
+      <!-- Tombol Sebelumnya -->
+      {isLinkMode ? (
+        <a
+          href={validPage > 1 ? getPageUrl!(validPage - 1) : undefined}
+          class:list={[
+            "pagination-prev border border-border px-2.5",
+            validPage <= 1 ? "pointer-events-none opacity-40 bg-surface-subtle text-muted" : "bg-surface text-heading hover:bg-surface-subtle cursor-pointer"
+          ]}
+          aria-disabled={validPage <= 1}
+        >
+          Sebelumnya
+        </a>
+      ) : (
+        <button
+          type="button"
+          data-page={validPage - 1}
+          class:list={[
+            "pagination-btn pagination-prev border border-border px-2.5",
+            validPage <= 1 ? "pointer-events-none opacity-40 bg-surface-subtle text-muted" : "bg-surface text-heading hover:bg-surface-subtle cursor-pointer"
+          ]}
+          disabled={validPage <= 1}
+        >
+          Sebelumnya
+        </button>
+      )}
+
+      <!-- Nomor Halaman -->
+      <div class="pagination-pages flex items-center gap-1 *:inline-flex *:h-[30px] *:min-w-[30px] *:px-2 *:items-center *:justify-center *:rounded-[6px] *:font-medium *:transition-colors *:text-xs *:cursor-pointer">
+        {pageNumbers.map((p) => {
+          if (p === "...") {
+            return <span class="px-1 text-muted text-xs select-none">...</span>;
+          }
+          const isActive = p === validPage;
+          if (isLinkMode) {
+            return (
+              <a
+                href={getPageUrl!(p)}
+                class:list={[
+                  "pagination-page-link",
+                  isActive
+                    ? "bg-primary text-white font-semibold shadow-xs"
+                    : "border border-border bg-surface text-heading hover:bg-surface-subtle"
+                ]}
+                aria-current={isActive ? "page" : undefined}
+              >
+                {p}
+              </a>
+            );
+          }
+          return (
+            <button
+              type="button"
+              data-page={p}
+              class:list={[
+                "pagination-btn pagination-page-btn",
+                isActive
+                  ? "bg-primary text-white font-semibold shadow-xs"
+                  : "border border-border bg-surface text-heading hover:bg-surface-subtle"
+              ]}
+              aria-current={isActive ? "page" : undefined}
+            >
+              {p}
+            </button>
+          );
+        })}
+      </div>
+
+      <!-- Tombol Selanjutnya -->
+      {isLinkMode ? (
+        <a
+          href={validPage < totalPages ? getPageUrl!(validPage + 1) : undefined}
+          class:list={[
+            "pagination-next border border-border px-2.5",
+            validPage >= totalPages ? "pointer-events-none opacity-40 bg-surface-subtle text-muted" : "bg-surface text-heading hover:bg-surface-subtle cursor-pointer"
+          ]}
+          aria-disabled={validPage >= totalPages}
+        >
+          Selanjutnya
+        </a>
+      ) : (
+        <button
+          type="button"
+          data-page={validPage + 1}
+          class:list={[
+            "pagination-btn pagination-next border border-border px-2.5",
+            validPage >= totalPages ? "pointer-events-none opacity-40 bg-surface-subtle text-muted" : "bg-surface text-heading hover:bg-surface-subtle cursor-pointer"
+          ]}
+          disabled={validPage >= totalPages}
+        >
+          Selanjutnya
+        </button>
+      )}
+    </div>
+  )}
+</div>

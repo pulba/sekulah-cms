@@ -1,0 +1,2414 @@
+---
+export const prerender = false;
+import Layout from "../layouts/Layout.astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import Icon from "../components/Icon.astro";
+import { db, settings } from "../db";
+import {
+  getDefaultPpdbConfig,
+  resolvePpdbPortal,
+  getWibDateString,
+  type PpdbFullConfig,
+  type FormStep,
+  type FormField,
+  type RequiredDocument,
+  type RegistrationWave,
+} from "../utils/ppdbConfigDefaults";
+
+// 1. Ambil data profil sekolah dan konfigurasi PPDB dari basis data
+const allSettings = await db.select().from(settings);
+const schoolInfo = allSettings.reduce(
+  (acc, curr) => {
+    acc[curr.key] = curr.value;
+    return acc;
+  },
+  {} as Record<string, string>,
+);
+
+const schoolName = schoolInfo["school_name"] || "SMAN 1 Unggulan";
+const schoolType = (
+  schoolInfo["school_type"] ||
+  schoolInfo["school_level"] ||
+  "SMA"
+).toUpperCase();
+const schoolStatus = schoolInfo["school_status"] || "Negeri";
+const boardingAvailable = schoolInfo["boarding_available"] === "true";
+
+// 2. Parse konfigurasi dinamis PPDB
+let formConfig: PpdbFullConfig;
+const rawConfig = schoolInfo["ppdb_form_config"];
+
+if (rawConfig) {
+  try {
+    formConfig = JSON.parse(rawConfig);
+    if (
+      !formConfig ||
+      !Array.isArray(formConfig.steps) ||
+      formConfig.steps.length === 0
+    ) {
+      formConfig = getDefaultPpdbConfig(
+        schoolType,
+        schoolName,
+        boardingAvailable,
+      );
+    }
+  } catch {
+    formConfig = getDefaultPpdbConfig(
+      schoolType,
+      schoolName,
+      boardingAvailable,
+    );
+  }
+} else {
+  formConfig = getDefaultPpdbConfig(schoolType, schoolName, boardingAvailable);
+}
+
+// Pastikan gelombang (waves) terinisialisasi
+if (
+  !formConfig.waves ||
+  !Array.isArray(formConfig.waves) ||
+  formConfig.waves.length === 0
+) {
+  const def = getDefaultPpdbConfig(schoolType, schoolName, boardingAvailable);
+  formConfig.waves = def.waves;
+  formConfig.activeWave = def.activeWave || "Gelombang 1";
+}
+
+// 3. Evaluasi Status Portal dan Gelombang Aktif di Server (Asia/Jakarta WIB)
+const portalResolution = resolvePpdbPortal(formConfig, new Date());
+const effectiveStatus = portalResolution.effectiveStatus; // 'opened' | 'upcoming' | 'closed'
+const activeWave = portalResolution.activeWave;
+const nextWave = portalResolution.nextWave;
+const allDisplayWaves = portalResolution.allWaves;
+
+const ppdbYear =
+  formConfig.academicYear || schoolInfo["ppdb_year"] || "2026/2027";
+const admissionsLabel =
+  schoolInfo["admissions_label"] ||
+  schoolInfo["ppdb_label"] ||
+  (["MA", "MTS", "MI"].includes(schoolType) ? "PPDBM" : "PPDB");
+const ppdbAnnouncement = schoolInfo["ppdb_announcement"] || "";
+const ppdbHelpdeskWa =
+  schoolInfo["ppdb_helpdesk_wa"] ||
+  schoolInfo["social_whatsapp"] ||
+  "0812-3456-7890";
+
+const isMadrasah = ["MA", "MTS", "MI"].includes(schoolType);
+const isVocational = schoolType === "SMK";
+
+function formatTanggalIndo(dateStr?: string) {
+  if (!dateStr) return "—";
+  try {
+    const parts = dateStr.split("-");
+    if (parts.length === 3) {
+      const d = new Date(
+        Number(parts[0]),
+        Number(parts[1]) - 1,
+        Number(parts[2]),
+      );
+      return d.toLocaleDateString("id-ID", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+    }
+    return dateStr;
+  } catch {
+    return dateStr;
+  }
+}
+
+const defaultAdmissionsTitle =
+  admissionsLabel.toUpperCase() === "PSB"
+    ? boardingAvailable
+      ? "PENERIMAAN SANTRI & SISWA BARU"
+      : "PENERIMAAN SISWA BARU"
+    : admissionsLabel.toUpperCase() === "SPMB"
+      ? "SISTEM PENERIMAAN SISWA BARU"
+      : admissionsLabel.toUpperCase() === "PPDBM"
+        ? "PENERIMAAN PESERTA DIDIK BARU MADRASAH"
+        : admissionsLabel.toUpperCase() === "PPDB"
+          ? "PENERIMAAN PESERTA DIDIK BARU"
+          : `PENDAFTARAN SISWA BARU (${admissionsLabel})`;
+
+const admissionsTitle = (
+  schoolInfo["admissions_title"] ||
+  (formConfig as any).admissionsTitle ||
+  defaultAdmissionsTitle
+).trim();
+const admissionsSubtitle = (
+  schoolInfo["admissions_subtitle"] ||
+  (formConfig as any).admissionsSubtitle ||
+  `Wujudkan masa depanmu bersama kami. Daftarkan dirimu secara online untuk tahun ajaran ${ppdbYear}.`
+).trim();
+
+// Helper untuk filter field yang valid dirender di server
+function shouldRenderField(field: FormField) {
+  if (!field.isActive) return false;
+  if (
+    field.conditionalRule === "if_boarding" &&
+    (!formConfig.services.boardingEnabledInPpdb || !boardingAvailable)
+  ) {
+    return false;
+  }
+  if (field.conditionalRule === "if_smk" && !isVocational) return false;
+  if (field.conditionalRule === "if_ma" && !isMadrasah) return false;
+  return true;
+}
+
+// Helper untuk filter dokumen yang valid dirender di server
+function shouldRenderDocument(doc: RequiredDocument) {
+  if (doc.conditionalRule === "if_smk" && !isVocational) return false;
+  return true;
+}
+---
+
+<Layout
+  title={`${admissionsTitle} (${admissionsLabel}) ${ppdbYear} — ${schoolName}`}
+  description={`Formulir pendaftaran daring ${admissionsTitle.toLowerCase()} tahun ajaran ${ppdbYear} ${schoolName}.`}
+>
+  <Header currentPath="/pendaftaran" />
+
+  <main class="flex-1 py-10 sm:py-14 bg-background font-body text-body">
+    <div class="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
+      <!-- Judul Utama Halaman Sesuai Pengaturan Institusi -->
+      <div class="text-center mb-8 sm:mb-10">
+        <div class="inline-flex items-center gap-2 rounded-[4px] border border-primary/25 bg-primary px-3 py-1 font-body text-xs md:text-md font-semibold text-white mb-2.5">
+          <span>
+            {admissionsLabel} {schoolName}
+          </span>
+        </div>
+        <h1 class="font-display text-xl sm:text-2xl lg:text-3xl font-extrabold uppercase tracking-tight text-heading">
+          {admissionsTitle} {ppdbYear}
+        </h1>
+        <p class="mt-1.5 text-xs text-muted font-body max-w-xl mx-auto">
+          {admissionsSubtitle}
+        </p>
+
+        {ppdbAnnouncement && (
+          <div class="mt-3 inline-block rounded-md border border-primary/20 bg-primary-light px-4 py-2 text-xs text-heading">
+            <span class="font-semibold text-primary">Informasi:</span>{" "}
+            {ppdbAnnouncement}
+          </div>
+        )}
+      </div>
+
+      <!-- KONDISI 1: PENDAFTARAN DITUTUP -->
+      {effectiveStatus === "closed" && (
+        <div class="rounded-[12px] border border-border bg-surface p-8 sm:p-12 text-center space-y-5 max-w-xl mx-auto shadow-xs">
+          <div class="h-12 w-12 rounded-full bg-surface-subtle border border-border text-muted mx-auto flex items-center justify-center">
+            <Icon name="lock" class="h-6 w-6 text-muted" />
+          </div>
+          <div class="space-y-1.5">
+            <h2 class="font-display text-lg font-bold text-heading">
+              Pendaftaran Saat Ini Ditutup
+            </h2>
+            <p class="text-xs text-muted leading-relaxed">
+              {portalResolution.reason ||
+                `Masa ${admissionsTitle.toLowerCase()} (${admissionsLabel}) tahun ajaran ${ppdbYear} telah berakhir atau dinonaktifkan sementara oleh pihak sekolah.`}
+            </p>
+          </div>
+          <div class="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <a
+              href="/cek-status"
+              class="w-full sm:w-auto inline-flex h-10 items-center justify-center gap-2 rounded-[4px] bg-primary px-6 text-xs font-semibold text-white hover:bg-primary-hover hover:shadow-(--shadow-hover) transition-all cursor-pointer shadow-xs"
+            >
+              <span>Cek Status Pendaftaran Anda</span>
+            </a>
+            <a
+              href={`https://wa.me/${ppdbHelpdeskWa.replace(/[^0-9]/g, "")}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="w-full sm:w-auto inline-flex h-10 items-center justify-center gap-2 rounded-[4px] border border-border bg-surface px-5 text-xs font-semibold text-heading hover:bg-surface-subtle hover:border-border-hover transition-colors cursor-pointer"
+            >
+              <span>Hubungi Posko Helpdesk WhatsApp</span>
+            </a>
+            <a
+              href="/"
+              class="w-full sm:w-auto inline-flex h-10 items-center justify-center gap-2 rounded-[4px] border border-border bg-surface px-5 text-xs font-semibold text-muted hover:text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+            >
+              <span>Kembali ke Beranda</span>
+            </a>
+          </div>
+        </div>
+      )}
+
+      <!-- KONDISI 2: SEGERA DIBUKA (COUNTDOWN & JADWAL) -->
+      {effectiveStatus === "upcoming" && (
+        <div class="rounded-[12px] border border-border bg-surface p-6 sm:p-10 shadow-xs max-w-3xl mx-auto space-y-8">
+          <!-- Status Banner -->
+          <div class="text-center space-y-2.5">
+            <div class="inline-flex items-center gap-1.5 rounded-[4px] border border-warning/30 bg-warning-light px-3 py-1 font-body text-xs font-semibold text-warning-text">
+              <span>Masa Sosialisasi &amp; Countdown</span>
+            </div>
+            <h2 class="font-display text-2xl sm:text-3xl font-extrabold text-heading tracking-tight">
+              Pendaftaran Segera Dibuka
+            </h2>
+            <p class="text-xs sm:text-sm text-muted font-body max-w-xl mx-auto leading-relaxed">
+              {nextWave ? (
+                <span>
+                  <strong class="text-heading font-semibold">
+                    {nextWave.name}
+                  </strong>{" "}
+                  dijadwalkan mulai dibuka pada{" "}
+                  <strong class="text-primary font-semibold">
+                    {formatTanggalIndo(nextWave.startDate)}
+                  </strong>{" "}
+                  pukul 00.00.00 WIB.
+                </span>
+              ) : (
+                <span>
+                  Periode pendaftaran calon siswa baru berikutnya akan segera
+                  dibuka. Pantau hitung mundur di bawah.
+                </span>
+              )}
+            </p>
+          </div>
+
+          <!-- Countdown Timer Display Box -->
+          <div
+            class="countdown-container rounded-[10px] border border-border bg-surface-subtle p-5 sm:p-6"
+            data-target-date={
+              nextWave ? `${nextWave.startDate}T00:00:00+07:00` : ""
+            }
+          >
+            <div class="grid grid-cols-4 gap-2 sm:gap-4 text-center">
+              <div class="rounded-[8px] border border-border bg-surface p-3 sm:p-4">
+                <div
+                  id="countdown-days"
+                  class="font-mono text-2xl sm:text-4xl font-extrabold text-primary"
+                >
+                  00
+                </div>
+                <span class="font-body text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-muted mt-1 block">
+                  Hari
+                </span>
+              </div>
+              <div class="rounded-[8px] border border-border bg-surface p-3 sm:p-4">
+                <div
+                  id="countdown-hours"
+                  class="font-mono text-2xl sm:text-4xl font-extrabold text-primary"
+                >
+                  00
+                </div>
+                <span class="font-body text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-muted mt-1 block">
+                  Jam
+                </span>
+              </div>
+              <div class="rounded-[8px] border border-border bg-surface p-3 sm:p-4">
+                <div
+                  id="countdown-minutes"
+                  class="font-mono text-2xl sm:text-4xl font-extrabold text-primary"
+                >
+                  00
+                </div>
+                <span class="font-body text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-muted mt-1 block">
+                  Menit
+                </span>
+              </div>
+              <div class="rounded-[8px] border border-border bg-surface p-3 sm:p-4">
+                <div
+                  id="countdown-seconds"
+                  class="font-mono text-2xl sm:text-4xl font-extrabold text-primary"
+                >
+                  00
+                </div>
+                <span class="font-body text-[10px] sm:text-xs font-semibold uppercase tracking-wider text-muted mt-1 block">
+                  Detik
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card Formulir Belum Tersedia -->
+          <div class="rounded-[10px] border border-border bg-surface p-4 flex items-start gap-3.5">
+            <div class="h-9 w-9 rounded-full bg-surface-subtle border border-border flex items-center justify-center shrink-0 text-muted">
+              <Icon name="info" class="h-4 w-4 text-muted" />
+            </div>
+            <div class="space-y-1 text-xs">
+              <h3 class="font-display font-bold text-heading">
+                Formulir Belum Tersedia
+              </h3>
+              <p class="text-muted leading-relaxed">
+                Calon siswa dapat melihat informasi sekolah, persyaratan, dan
+                jadwal gelombang di bawah ini. Pengiriman formulir online akan
+                aktif secara otomatis pada hari pembukaan.
+              </p>
+            </div>
+          </div>
+
+          <!-- Jadwal Lengkap Gelombang -->
+          <div class="space-y-3 pt-2">
+            <h3 class="font-display text-xs font-bold uppercase tracking-wider text-heading">
+              Jadwal Gelombang Pendaftaran ({ppdbYear})
+            </h3>
+            <div class="overflow-x-auto rounded-[8px] border border-border bg-surface">
+              <table class="w-full text-left font-body text-xs">
+                <thead class="border-b border-border bg-surface-subtle text-[11px] font-semibold uppercase tracking-wider text-muted">
+                  <tr>
+                    <th class="py-2.5 px-3">Gelombang</th>
+                    <th class="py-2.5 px-3">Periode Pendaftaran</th>
+                    <th class="py-2.5 px-3">Benefit</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-border">
+                  {allDisplayWaves.map((w) => (
+                    <tr
+                      class={
+                        w.name === nextWave?.name ? "bg-primary-light" : ""
+                      }
+                    >
+                      <td class="py-2.5 px-3 font-semibold text-heading">
+                        {w.name}
+                        {w.name === nextWave?.name && (
+                          <span class="ml-1.5 rounded-[4px] bg-primary text-white px-1.5 py-0.5 text-[9px] font-semibold">
+                            Berikutnya
+                          </span>
+                        )}
+                      </td>
+                      <td class="py-2.5 px-3 text-body font-mono text-[11px]">
+                        {formatTanggalIndo(w.startDate)} s.d.{" "}
+                        {formatTanggalIndo(w.endDate)} (23:59:59 WIB)
+                      </td>
+                      <td class="py-2.5 px-3 text-muted">
+                        {w.benefit || w.description || "Ketentuan baku sekolah"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Tombol Helpdesk -->
+          <div class="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div class="text-xs text-muted">
+              Butuh konsultasi seputar persyaratan pendaftaran?
+            </div>
+            <a
+              href={`https://wa.me/${ppdbHelpdeskWa.replace(/[^0-9]/g, "")}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              class="inline-flex h-9 items-center justify-center gap-2 rounded-[4px] bg-primary px-5 text-xs font-semibold text-white hover:bg-primary-hover hover:shadow-(--shadow-hover) transition-all shadow-xs"
+            >
+              <Icon name="whatsapp" class="h-4 w-4" />
+              <span>Hubungi Helpdesk WhatsApp</span>
+            </a>
+          </div>
+        </div>
+      )}
+
+      <!-- KONDISI 3: BUKA PENDAFTARAN (FORM AKTIF & HERO GELOMBANG) -->
+      {effectiveStatus === "opened" && (
+        <>
+          <!-- Hero Card Informasi Gelombang Aktif -->
+          <div class="mb-8 shadow-xs relative overflow-hidden">
+            <!-- Grid 3 Info: Nama Gelombang, Tanggal Dibuka, Batas Pendaftaran, Benefit -->
+            <div class="grid grid-cols-1 sm:grid-cols-4 *:p-4 md:*:p-6 text-xs">
+              <div class="bg-primary/80">
+                <h2 class="font-display text-xl md:text-2xl font-bold text-white">
+                  {activeWave?.name || "Gelombang 1"}
+                </h2>
+                <p class="text-xs text-white font-body mt-0.5">
+                  {activeWave?.description || "Jalur Prestasi / Early Bird"}
+                </p>
+              </div>
+              <div class="bg-surface p-3 space-y-1">
+                <span class="text-muted block text-[11px] uppercase tracking-wider font-semibold">
+                  Tanggal Dibuka:
+                </span>
+                <strong class="font-display text-sm font-bold text-heading block">
+                  {formatTanggalIndo(activeWave?.startDate)}
+                </strong>
+                <span class="text-[11px] text-muted">Pukul 00.00.00 WIB</span>
+              </div>
+
+              <div class="bg-primary p-3 space-y-1">
+                <span class="text-white block text-[11px] uppercase tracking-wider font-semibold">
+                  Batas Pendaftaran:
+                </span>
+                <strong class="font-display text-sm font-bold text-white block">
+                  {formatTanggalIndo(activeWave?.endDate)}
+                </strong>
+                <span class="text-[11px] text-white">
+                  Hingga pukul 23.59.59 WIB
+                </span>
+              </div>
+
+              <div class="bg-surface p-3 space-y-1">
+                <span class="text-muted block text-[11px] uppercase tracking-wider font-semibold">
+                  Benefit {activeWave?.name || "Gelombang 1"}:
+                </span>
+                <p class="font-body text-xs text-heading font-medium leading-relaxed">
+                  {activeWave?.benefit ||
+                    "Pendaftaran gelombang awal sesuai ketentuan sekolah."}
+                </p>
+              </div>
+            </div>
+          </div>
+          <!-- Stepper / Multi-Step Progress Indicator (7 Langkah Dinamis) -->
+          <nav
+            class="mb-10 sm:mb-12 overflow-x-auto pb-4 no-scrollbar"
+            aria-label="Progress Tahapan"
+          >
+            <div class="min-w-[680px] max-w-4xl mx-auto relative px-4">
+              <!-- Connective Progress Line -->
+              <div class="absolute top-5 left-10 right-10 h-[2px] bg-border -z-0">
+                <div
+                  id="stepper-progress-bar"
+                  class="h-full bg-primary transition-all duration-300 w-[0%]"
+                ></div>
+              </div>
+
+              <!-- Step Items -->
+              <div class="flex items-start justify-between relative z-10">
+                {formConfig.steps.map((st) => (
+                  <div
+                    class="step-indicator flex flex-col items-center cursor-pointer group"
+                    data-step={st.step}
+                  >
+                    <div
+                      class={`step-circle h-10 w-10 rounded-full flex items-center justify-center font-display text-sm font-semibold transition-all duration-200 ${
+                        st.step === 1
+                          ? "bg-primary text-white shadow-xs font-bold"
+                          : "bg-surface border border-border text-muted group-hover:border-heading/40"
+                      }`}
+                    >
+                      {st.step}
+                    </div>
+                    <span
+                      class={`step-label mt-2 text-xs transition-colors ${
+                        st.step === 1
+                          ? "font-semibold text-primary pb-1 border-b-2 border-primary"
+                          : "font-medium text-muted"
+                      }`}
+                    >
+                      {st.title}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </nav>
+
+          <!-- Section Title Label Sesuai Desain Acuan -->
+          <div class="mb-4 px-1 flex items-center justify-between">
+            <h2
+              id="current-step-title"
+              class="font-display text-sm sm:text-base font-bold uppercase tracking-wider text-primary"
+            >
+              PENDAFTARAN
+            </h2>
+            <span
+              id="current-step-badge"
+              class="text-[11px] font-mono text-muted bg-surface-subtle px-2.5 py-1 rounded border border-border"
+            >
+              Langkah 1 dari 7
+            </span>
+          </div>
+
+          <!-- Main Form Container Card -->
+          <form
+            id="admission-wizard-form"
+            class="rounded-[16px] overflow-hidden border border-border bg-surface p-6 sm:p-10 shadow-(--shadow-hairline)"
+          >
+            <input
+              type="hidden"
+              name="wave"
+              value={activeWave?.name || formConfig.activeWave || "Gelombang 1"}
+            />
+
+            <!-- Render Step 1 sampai Step 5 Secara Dinamis dari Form Builder -->
+            {formConfig.steps.slice(0, 5).map((st) => {
+              const activeFields = st.fields
+                .filter(shouldRenderField)
+                .sort((a, b) => a.order - b.order);
+              return (
+                <div
+                  id={`step-pane-${st.step}`}
+                  class={`step-pane space-y-6 ${st.step === 1 ? "" : "hidden"}`}
+                >
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {activeFields.map((field) => {
+                      const isConditionalTahfidz =
+                        field.conditionalRule === "if_tahfidz";
+                      const isConditionalPrestasi =
+                        field.conditionalRule === "if_prestasi";
+                      const conditionalAttr = isConditionalTahfidz
+                        ? "if_tahfidz"
+                        : isConditionalPrestasi
+                          ? "if_prestasi"
+                          : undefined;
+
+                      // Dropdown Opsi Khusus
+                      let selectOptions = field.options || [];
+                      if (field.id === "admission_path") {
+                        selectOptions = formConfig.paths
+                          .filter((p) => p.isActive)
+                          .map((p) => p.name);
+                        if (selectOptions.length === 0)
+                          selectOptions = ["Umum", "Reguler"];
+                      } else if (
+                        field.id === "major_choice_1" ||
+                        field.id === "major_choice_2"
+                      ) {
+                        if (
+                          formConfig.services.majors &&
+                          formConfig.services.majors.length > 0
+                        ) {
+                          selectOptions = formConfig.services.majors;
+                        }
+                      }
+
+                      // Type Select
+                      if (field.type === "select") {
+                        return (
+                          <div
+                            class={`space-y-1.5 ${conditionalAttr ? "conditional-field hidden" : ""}`}
+                            data-conditional={conditionalAttr}
+                          >
+                            <label
+                              for={field.id}
+                              class="block font-body text-xs sm:text-sm font-medium text-heading"
+                            >
+                              {field.label}{" "}
+                              {field.required && (
+                                <span class="text-error font-bold">*</span>
+                              )}
+                            </label>
+                            <div class="relative">
+                              <select
+                                id={field.id}
+                                name={field.id}
+                                required={field.required}
+                                data-originally-required={
+                                  field.required ? "true" : "false"
+                                }
+                                class="h-[46px] w-full rounded-[8px] border border-border bg-surface px-4 pr-10 text-xs sm:text-sm text-heading appearance-none transition-colors"
+                              >
+                                {selectOptions.map((opt, idx) => (
+                                  <option value={opt} selected={idx === 0}>
+                                    {opt}
+                                  </option>
+                                ))}
+                              </select>
+                              <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3.5 text-muted">
+                                <Icon name="chevron-down" class="h-4 w-4" />
+                              </div>
+                            </div>
+                            {field.helpText && (
+                              <span class="text-[11px] text-muted block">
+                                {field.helpText}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      }
+
+                      // Type Textarea
+                      if (field.type === "textarea") {
+                        return (
+                          <div
+                            class={`space-y-1.5 md:col-span-2 ${conditionalAttr ? "conditional-field hidden" : ""}`}
+                            data-conditional={conditionalAttr}
+                          >
+                            <label
+                              for={field.id}
+                              class="block font-body text-xs sm:text-sm font-medium text-heading"
+                            >
+                              {field.label}{" "}
+                              {field.required && (
+                                <span class="text-error font-bold">*</span>
+                              )}
+                            </label>
+                            <textarea
+                              id={field.id}
+                              name={field.id}
+                              rows="3"
+                              required={field.required}
+                              data-originally-required={
+                                field.required ? "true" : "false"
+                              }
+                              placeholder={field.placeholder || ""}
+                              class="w-full rounded-[8px] border border-border bg-surface p-3 text-xs sm:text-sm text-heading transition-colors"
+                            ></textarea>
+                            {field.helpText && (
+                              <span class="text-[11px] text-muted block">
+                                {field.helpText}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      }
+
+                      // Type Checkbox (Layanan Asrama dsb)
+                      if (field.type === "checkbox") {
+                        return (
+                          <div
+                            class={`md:col-span-2 p-3.5 rounded-[8px] border border-secondary/30 bg-secondary-light flex items-start gap-3 ${
+                              conditionalAttr ? "conditional-field hidden" : ""
+                            }`}
+                            data-conditional={conditionalAttr}
+                          >
+                            <input
+                              type="checkbox"
+                              id={field.id}
+                              name={field.id}
+                              value="true"
+                              class="mt-0.5 rounded border-border text-primary cursor-pointer"
+                            />
+                            <div>
+                              <label
+                                for={field.id}
+                                class="font-display text-xs sm:text-sm font-bold text-heading cursor-pointer"
+                              >
+                                {field.label}
+                              </label>
+                              {field.helpText && (
+                                <p class="text-[11px] text-muted leading-relaxed mt-0.5">
+                                  {field.helpText}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // Type Date
+                      if (field.type === "date") {
+                        return (
+                          <div
+                            class={`space-y-1.5 ${conditionalAttr ? "conditional-field hidden" : ""}`}
+                            data-conditional={conditionalAttr}
+                          >
+                            <label
+                              for={field.id}
+                              class="block font-body text-xs sm:text-sm font-medium text-heading"
+                            >
+                              {field.label}{" "}
+                              {field.required && (
+                                <span class="text-error font-bold">*</span>
+                              )}
+                            </label>
+                            <input
+                              type="date"
+                              id={field.id}
+                              name={field.id}
+                              required={field.required}
+                              data-originally-required={
+                                field.required ? "true" : "false"
+                              }
+                              class="h-[46px] w-full rounded-[8px] border border-border bg-surface px-4 text-xs sm:text-sm text-heading font-mono transition-colors"
+                            />
+                            {field.helpText && (
+                              <span class="text-[11px] text-muted block">
+                                {field.helpText}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      }
+
+                      // Type Text, Number, Tel, Email
+                      return (
+                        <div
+                          class={`space-y-1.5 ${conditionalAttr ? "conditional-field hidden" : ""}`}
+                          data-conditional={conditionalAttr}
+                        >
+                          <label
+                            for={field.id}
+                            class="block font-body text-xs sm:text-sm font-medium text-heading"
+                          >
+                            {field.label}{" "}
+                            {field.required && (
+                              <span class="text-error font-bold">*</span>
+                            )}
+                          </label>
+                          <input
+                            type={field.type}
+                            id={field.id}
+                            name={field.id}
+                            required={field.required}
+                            data-originally-required={
+                              field.required ? "true" : "false"
+                            }
+                            placeholder={field.placeholder || ""}
+                            pattern={
+                              field.validationRule === "exact_16_digits"
+                                ? "[0-9]{16}"
+                                : field.validationRule === "exact_10_digits"
+                                  ? "[0-9]{10}"
+                                  : undefined
+                            }
+                            maxlength={
+                              field.validationRule === "exact_16_digits"
+                                ? 16
+                                : field.validationRule === "exact_10_digits"
+                                  ? 10
+                                  : undefined
+                            }
+                            class="h-[46px] w-full rounded-[8px] border border-border bg-surface px-4 text-xs sm:text-sm text-heading transition-colors"
+                          />
+                          {field.helpText && (
+                            <span class="text-[11px] text-muted block">
+                              {field.helpText}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+
+            <!-- STEP 6: DOKUMEN (PERSYARATAN BERKAS)                     -->
+
+            <div id="step-pane-6" class="step-pane space-y-6 hidden">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {formConfig.documents
+                  .filter(shouldRenderDocument)
+                  .map((doc) => {
+                    const isConditionalTahfidz =
+                      doc.conditionalRule === "if_tahfidz";
+                    const isConditionalPrestasi =
+                      doc.conditionalRule === "if_prestasi";
+                    const conditionalAttr = isConditionalTahfidz
+                      ? "if_tahfidz"
+                      : isConditionalPrestasi
+                        ? "if_prestasi"
+                        : undefined;
+
+                    return (
+                      <div
+                        class={`space-y-1.5 p-4 rounded-[10px] border border-border bg-surface-subtle ${
+                          conditionalAttr ? "conditional-doc hidden" : ""
+                        }`}
+                        data-doc-rule={conditionalAttr}
+                      >
+                        <label
+                          for={doc.id}
+                          class="block font-body text-xs sm:text-sm font-medium text-heading"
+                        >
+                          {doc.name}{" "}
+                          {doc.required && (
+                            <span class="text-error font-bold">*</span>
+                          )}
+                        </label>
+                        <input
+                          type="file"
+                          id={doc.id}
+                          name={doc.id}
+                          accept={doc.acceptedFormats.join(",")}
+                          required={doc.required}
+                          data-originally-required={
+                            doc.required ? "true" : "false"
+                          }
+                          class="doc-file-input block w-full text-xs text-muted file:mr-4 file:py-2.5 file:px-4 file:rounded-[6px] file:border-0 file:text-xs file:font-semibold file:bg-surface file:border file:border-border file:text-heading hover:file:bg-surface-subtle cursor-pointer"
+                        />
+                        <div
+                          id={`feedback-${doc.id}`}
+                          class="hidden items-center gap-1.5 pt-1 text-[11px] font-medium text-success-text"
+                        >
+                          <span class="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full bg-success-light text-success-text text-[9px] font-bold">
+                            &check;
+                          </span>
+                          <span id={`feedback-text-${doc.id}`}></span>
+                        </div>
+                        <span class="text-[11px] text-muted block leading-relaxed mt-1">
+                          {doc.description} &bull; Format{" "}
+                          {doc.acceptedFormats.join(" / ").toUpperCase()}, maks.{" "}
+                          {doc.maxSizeMb} MB
+                        </span>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+
+            <!-- STEP 7: KONFIRMASI & VERIFIKASI SEBELUM KIRIM            -->
+
+            <div id="step-pane-7" class="step-pane space-y-6 hidden">
+              <div class="rounded-[8px] border border-border bg-surface-subtle p-5 space-y-4">
+                <h3 class="font-display text-sm font-bold text-heading">
+                  Ringkasan Data Formulir Pendaftaran
+                </h3>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div class="p-2.5 rounded bg-surface border border-border">
+                    <span class="text-muted block text-[11px]">
+                      Gelombang Pendaftaran:
+                    </span>
+                    <strong class="text-primary font-bold">
+                      {formConfig.activeWave || "Gelombang 1"}
+                    </strong>
+                  </div>
+                  <div class="p-2.5 rounded bg-surface border border-border">
+                    <span class="text-muted block text-[11px]">
+                      Jenis & Jalur:
+                    </span>
+                    <strong id="summary-path" class="text-heading font-medium">
+                      -
+                    </strong>
+                  </div>
+                  <div class="p-2.5 rounded bg-surface border border-border">
+                    <span class="text-muted block text-[11px]">
+                      NIK / NISN Calon Siswa:
+                    </span>
+                    <strong
+                      id="summary-identity"
+                      class="text-heading font-mono"
+                    >
+                      -
+                    </strong>
+                  </div>
+                  <div class="p-2.5 rounded bg-surface border border-border">
+                    <span class="text-muted block text-[11px]">
+                      Nama Calon Siswa:
+                    </span>
+                    <strong id="summary-name" class="text-heading font-medium">
+                      -
+                    </strong>
+                  </div>
+                  <div class="p-2.5 rounded bg-surface border border-border">
+                    <span class="text-muted block text-[11px]">
+                      Sekolah Asal:
+                    </span>
+                    <strong
+                      id="summary-school"
+                      class="text-heading font-medium"
+                    >
+                      -
+                    </strong>
+                  </div>
+                  <div class="p-2.5 rounded bg-surface border border-border">
+                    <span class="text-muted block text-[11px]">
+                      Nama Orang Tua (Ayah / Ibu):
+                    </span>
+                    <strong
+                      id="summary-parents"
+                      class="text-heading font-medium"
+                    >
+                      -
+                    </strong>
+                  </div>
+                  <div class="p-2.5 rounded bg-surface border border-border">
+                    <span class="text-muted block text-[11px]">
+                      Kontak WhatsApp Siswa:
+                    </span>
+                    <strong id="summary-contact" class="text-heading font-mono">
+                      -
+                    </strong>
+                  </div>
+                  <div class="sm:col-span-2 p-2.5 rounded bg-surface border border-border space-y-1.5">
+                    <span class="text-muted block text-[11px] font-semibold">
+                      Berkas Dokumen Persyaratan yang Disiapkan:
+                    </span>
+                    <div
+                      id="summary-docs-list"
+                      class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]"
+                    >
+                      <!-- Diisi dinamis oleh script updateSummary -->
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Banner Pesan Error Pengiriman Formulir -->
+              <div
+                id="submit-error-banner"
+                class="hidden rounded-[8px] p-4 text-xs font-semibold bg-error-light text-error-text border border-error/30 space-y-1"
+              ></div>
+
+              <!-- Status Kelengkapan Formulir (Validasi Menyeluruh Sebelum Kirim) -->
+              <div
+                id="form-readiness-banner"
+                class="p-3.5 rounded-[8px] text-xs font-medium border border-border bg-surface-subtle flex items-start gap-2.5"
+              >
+                <span id="readiness-icon" class="text-sm font-bold mt-0.5">
+                  ℹ️
+                </span>
+                <div id="readiness-text" class="text-muted leading-relaxed">
+                  Memeriksa kelengkapan pengisian seluruh tahapan formulir...
+                </div>
+              </div>
+
+              <!-- Pakta Integritas / Pernyataan Keabsahan Data -->
+              <div class="p-4 rounded-[8px] border border-border bg-surface flex items-start gap-3 text-xs">
+                <input
+                  type="checkbox"
+                  id="agreement"
+                  name="agreement"
+                  required
+                  class="mt-1 rounded border-border text-primary cursor-pointer"
+                />
+                <label
+                  for="agreement"
+                  class="text-muted leading-relaxed cursor-pointer select-none"
+                >
+                  Saya menyatakan dengan sesungguhnya bahwa seluruh data dan
+                  dokumen yang saya isikan pada formulir{" "}
+                  {admissionsTitle.toLowerCase()} ini adalah{" "}
+                  <strong class="text-heading">
+                    benar, absah, dan dapat dipertanggungjawabkan secara hukum
+                  </strong>
+                  . Apabila di kemudian hari ditemukan pemalsuan data, saya
+                  bersedia menerima sanksi pembatalan kelulusan.
+                </label>
+              </div>
+            </div>
+
+            <!-- Tombol Aksi Navigasi Bawah (Bottom Navigation Wizard 7 Langkah) -->
+            <div class="mt-8 pt-2 flex items-center justify-between gap-4">
+              <!-- Tombol Sebelumnya (Hanya muncul jika Step > 1) -->
+              <button
+                type="button"
+                id="btn-prev-step"
+                class="hidden h-10 items-center justify-center gap-2 rounded-[4px] border border-border bg-surface px-5 font-body text-xs sm:text-sm font-medium text-heading transition-all duration-200 hover:-translate-y-0.5 hover:border-border-hover hover:bg-surface-subtle cursor-pointer shadow-xs"
+              >
+                <Icon name="chevron-left" class="h-4 w-4" />
+                <span>Sebelumnya</span>
+              </button>
+
+              <div class="ml-auto flex items-center gap-3">
+                <!-- Tombol Selanjutnya (Step 1 s.d. 6) -->
+                <button
+                  type="button"
+                  id="btn-next-step"
+                  class="inline-flex h-10 items-center justify-center gap-2 rounded-[4px] bg-primary px-6 font-body text-xs sm:text-sm font-medium text-white shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary-hover hover:shadow-(--shadow-hover) cursor-pointer"
+                >
+                  <span>Selanjutnya</span>
+                  <Icon name="chevron-right" class="h-4 w-4" />
+                </button>
+
+                <!-- Tombol Kirim Pendaftaran (HANYA MUNCUL DI LANGKAH 7 / KONFIRMASI) -->
+                <button
+                  type="submit"
+                  id="btn-submit-form"
+                  disabled
+                  class="hidden h-10 items-center justify-center gap-2 rounded-[4px] bg-primary px-7 font-body text-xs sm:text-sm font-medium text-white shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary-hover hover:shadow-(--shadow-hover) cursor-pointer disabled:pointer-events-none disabled:opacity-50"
+                >
+                  <span id="btn-submit-label">Kirim Pendaftaran</span>
+                </button>
+              </div>
+            </div>
+          </form>
+
+          <!-- BAGIAN CEK STATUS PENDAFTARAN (DI BAWAH FORMULIR PPDB)   -->
+
+          <section id="section-cek-status" class="mt-16 space-y-6 scroll-mt-10">
+            <div class="text-center space-y-1.5">
+              <span class="font-body text-[11px] font-semibold uppercase tracking-wider text-muted block">
+                SUDAH MENDAFTAR SEBELUMNYA?
+              </span>
+              <h2 class="font-display text-xl sm:text-2xl font-bold tracking-tight text-heading">
+                Cek Status Pendaftaran &amp; Hasil Seleksi
+              </h2>
+              <p class="text-xs text-muted font-body max-w-xl mx-auto leading-relaxed">
+                Masukkan nomor registrasi dan kode akses verifikasi dari bukti
+                pendaftaran Anda untuk memantau status verifikasi berkas dan
+                pengumuman seleksi.
+              </p>
+            </div>
+
+            <!-- Form Input Cek Status -->
+            <div class="rounded-[10px] border border-border bg-surface p-6 sm:p-8 shadow-xs max-w-2xl mx-auto">
+              <form id="form-check-status-inline" class="space-y-4">
+                <div class="space-y-1.5">
+                  <label
+                    for="inline-input-reg"
+                    class="block font-body text-xs sm:text-sm font-medium text-heading"
+                  >
+                    Nomor Registrasi Pendaftaran{" "}
+                    <span class="text-error font-bold">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="inline-input-reg"
+                    name="registrationNumber"
+                    required
+                    placeholder="Contoh: REG-2026-619488"
+                    class="h-10 w-full rounded-[4px] border border-border bg-surface px-3.5 font-mono text-xs sm:text-sm text-heading placeholder:text-muted/60 transition-colors uppercase focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  <span class="text-[11px] text-muted block">
+                    Tercantum pada formulir bukti pendaftaran daring yang telah
+                    Anda kirimkan.
+                  </span>
+                </div>
+
+                <div class="space-y-1.5">
+                  <label
+                    for="inline-input-code"
+                    class="block font-body text-xs sm:text-sm font-medium text-heading"
+                  >
+                    Kode Akses Verifikasi{" "}
+                    <span class="text-error font-bold">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="inline-input-code"
+                    name="verificationCode"
+                    required
+                    maxlength="10"
+                    placeholder="Contoh: KOD-8A2F"
+                    class="h-10 w-full rounded-[4px] border border-border bg-surface px-3.5 font-mono text-xs sm:text-sm text-heading placeholder:text-muted/60 transition-colors uppercase focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  <span class="text-[11px] text-muted block">
+                    Kode keamanan 6 karakter yang tertera saat pendaftaran Anda
+                    berhasil.
+                  </span>
+                </div>
+
+                <!-- Banner Pesan Error Pencarian -->
+                <div
+                  id="inline-error-banner"
+                  class="hidden rounded-[6px] border border-error/30 bg-error-light p-3 text-xs font-medium text-error-text"
+                ></div>
+
+                <div class="pt-1 flex items-center justify-end gap-3">
+                  <button
+                    type="submit"
+                    id="inline-btn-submit-check"
+                    class="inline-flex h-10 items-center justify-center gap-2 rounded-[4px] bg-primary px-6 font-body text-xs sm:text-sm font-medium text-white shadow-xs transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary-hover hover:shadow-(--shadow-hover) cursor-pointer disabled:pointer-events-none disabled:opacity-50"
+                  >
+                    <span>Periksa Status</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <!-- Hasil Pengecekan Status Inline (Muncul setelah klik) -->
+            <div
+              id="inline-result-container"
+              class="hidden space-y-5 max-w-3xl mx-auto"
+            >
+              <!-- Card Profil Pendaftar -->
+              <div class="rounded-[10px] border border-border bg-surface p-5 sm:p-6 shadow-xs space-y-4">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <span class="text-[11px] font-semibold uppercase tracking-wider text-muted block">
+                      Data Terverifikasi Resmi
+                    </span>
+                    <h3
+                      id="inline-res-student-name"
+                      class="font-display text-lg sm:text-xl font-bold text-heading mt-0.5"
+                    >
+                      -
+                    </h3>
+                  </div>
+                  <div class="text-left sm:text-right font-mono space-y-1">
+                    <div>
+                      <span class="text-[10px] text-muted block">
+                        No. Registrasi:
+                      </span>
+                      <strong
+                        id="inline-res-reg-number"
+                        class="text-sm font-bold text-primary block"
+                      >
+                        -
+                      </strong>
+                    </div>
+                    <div>
+                      <span class="text-[10px] text-muted block">
+                        Kode Akses Verifikasi:
+                      </span>
+                      <strong
+                        id="inline-res-ver-code"
+                        class="text-xs font-bold text-warning-text bg-warning-light border border-warning/30 px-2 py-0.5 rounded-[4px] inline-block"
+                      >
+                        -
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+                  <div class="p-2.5 rounded-[6px] bg-surface-subtle border border-border">
+                    <span class="text-muted block text-[11px]">
+                      Jalur Pendaftaran:
+                    </span>
+                    <strong
+                      id="inline-res-admission-path"
+                      class="text-heading font-medium"
+                    >
+                      -
+                    </strong>
+                  </div>
+                  <div class="p-2.5 rounded-[6px] bg-surface-subtle border border-border">
+                    <span class="text-muted block text-[11px]">Gelombang:</span>
+                    <strong
+                      id="inline-res-wave"
+                      class="text-heading font-medium"
+                    >
+                      -
+                    </strong>
+                  </div>
+                  <div class="p-2.5 rounded-[6px] bg-surface-subtle border border-border">
+                    <span class="text-muted block text-[11px]">
+                      Tahun Ajaran:
+                    </span>
+                    <strong
+                      id="inline-res-academic-year"
+                      class="text-heading font-medium"
+                    >
+                      {ppdbYear}
+                    </strong>
+                  </div>
+                  <div class="p-2.5 rounded-[6px] bg-surface-subtle border border-border">
+                    <span class="text-muted block text-[11px]">
+                      Waktu Kirim:
+                    </span>
+                    <strong
+                      id="inline-res-submitted-at"
+                      class="text-heading font-medium"
+                    >
+                      -
+                    </strong>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Grid 3 Status Terpisah -->
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-3.5 text-xs">
+                <!-- Status 1: Pendaftaran -->
+                <div class="rounded-[10px] border border-border bg-surface p-4 flex flex-col justify-between space-y-3 shadow-xs">
+                  <div>
+                    <span class="text-[10px] font-semibold uppercase tracking-wider text-muted block">
+                      Tahap 1
+                    </span>
+                    <h4 class="font-display font-bold text-sm text-heading mt-0.5">
+                      Status Pendaftaran
+                    </h4>
+                    <p class="text-[11px] text-muted leading-relaxed mt-1">
+                      Penerimaan formulir daring pada sistem basis data sekolah.
+                    </p>
+                  </div>
+                  <div>
+                    <span
+                      id="inline-badge-registration"
+                      class="inline-flex items-center px-2 py-0.5 rounded-[4px] text-[11px] font-semibold bg-success-light text-success-text border border-success/30"
+                    >
+                      Formulir Terkirim
+                    </span>
+                  </div>
+                </div>
+
+                <!-- Status 2: Verifikasi Berkas -->
+                <div class="rounded-[10px] border border-border bg-surface p-4 flex flex-col justify-between space-y-3 shadow-xs">
+                  <div>
+                    <span class="text-[10px] font-semibold uppercase tracking-wider text-muted block">
+                      Tahap 2
+                    </span>
+                    <h4 class="font-display font-bold text-sm text-heading mt-0.5">
+                      Verifikasi Berkas
+                    </h4>
+                    <p class="text-[11px] text-muted leading-relaxed mt-1">
+                      Pemeriksaan keabsahan dokumen persyaratan oleh panitia.
+                    </p>
+                  </div>
+                  <div class="space-y-1.5">
+                    <span
+                      id="inline-badge-verification"
+                      class="inline-flex items-center px-2 py-0.5 rounded-[4px] text-[11px] font-semibold bg-warning-light text-warning-text border border-warning/30"
+                    >
+                      Menunggu Verifikasi
+                    </span>
+                    <div
+                      id="inline-revision-notice"
+                      class="hidden p-2 rounded-[4px] bg-warning-light border border-warning/40 text-[10px] text-warning-text leading-snug"
+                    >
+                      <strong>Catatan Perbaikan:</strong>
+                      <span id="inline-revision-text">-</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Status 3: Hasil Seleksi -->
+                <div class="rounded-[10px] border border-border bg-surface p-4 flex flex-col justify-between space-y-3 shadow-xs">
+                  <div>
+                    <span class="text-[10px] font-semibold uppercase tracking-wider text-muted block">
+                      Tahap 3
+                    </span>
+                    <h4 class="font-display font-bold text-sm text-heading mt-0.5">
+                      Hasil Seleksi
+                    </h4>
+                    <p class="text-[11px] text-muted leading-relaxed mt-1">
+                      Keputusan resmi penerimaan siswa baru sesuai kuota.
+                    </p>
+                  </div>
+                  <div class="space-y-1">
+                    <span
+                      id="inline-badge-selection"
+                      class="inline-flex items-center px-2 py-0.5 rounded-[4px] text-[11px] font-semibold bg-surface-subtle text-body border border-border"
+                    >
+                      Belum Diumumkan
+                    </span>
+                    <div
+                      id="inline-schedule-notice"
+                      class="text-[10px] text-muted block"
+                    >
+                      Rilis: <strong id="inline-schedule-date">-</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Petunjuk Langkah Lanjutan -->
+              <div class="rounded-[10px] border border-border bg-surface-subtle p-4 flex items-start gap-3">
+                <div class="h-8 w-8 rounded-full bg-surface border border-border flex items-center justify-center shrink-0 text-primary">
+                  <Icon name="info" class="h-4 w-4 text-primary shrink-0" />
+                </div>
+                <div class="space-y-0.5 text-xs">
+                  <h4
+                    id="inline-next-title"
+                    class="font-display font-bold text-heading"
+                  >
+                    Petunjuk Langkah Berikutnya
+                  </h4>
+                  <p
+                    id="inline-next-desc"
+                    class="text-muted leading-relaxed text-[11px]"
+                  >
+                    Berkas pendaftaran Anda saat ini dalam antrean verifikasi
+                    oleh panitia {admissionsLabel}.
+                  </p>
+                </div>
+              </div>
+
+              <!-- Tombol Aksi Bawah -->
+              <div class="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
+                <button
+                  type="button"
+                  id="inline-btn-print-status"
+                  class="w-full sm:w-auto inline-flex h-9 items-center justify-center gap-2 rounded-[4px] bg-primary px-4 text-xs font-semibold text-white hover:bg-primary-hover hover:shadow-(--shadow-hover) shadow-xs cursor-pointer transition-all"
+                >
+                  <Icon name="printer" class="h-4 w-4" />
+                  <span>
+                    Cetak Lembar Formulir &amp; Bukti Pendaftaran (A4)
+                  </span>
+                </button>
+
+                <a
+                  href={`https://wa.me/${ppdbHelpdeskWa.replace(/[^0-9]/g, "")}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="w-full sm:w-auto inline-flex h-9 items-center justify-center gap-2 rounded-[4px] border border-border bg-surface px-4 text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+                >
+                  <Icon name="whatsapp" class="h-4 w-4 text-[#25D366]" />
+                  <span>Hubungi Helpdesk WhatsApp</span>
+                </a>
+              </div>
+            </div>
+          </section>
+
+          <!-- Modal Dialog Sukses Pendaftaran -->
+          <div
+            id="success-modal"
+            class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4"
+          >
+            <div class="max-w-lg w-full rounded-[12px] border border-border bg-surface p-6 sm:p-7 space-y-4 text-center shadow-2xl">
+              <!-- Ikon Sukses Proporsional -->
+              <div class="h-11 w-11 rounded-full bg-accent-light border border-accent/20 text-accent-text mx-auto flex items-center justify-center text-xl font-bold">
+                <Icon name="check" class="h-5 w-5 text-accent" />
+              </div>
+
+              <!-- Judul & Keterangan Ringkas -->
+              <div class="space-y-1">
+                <h3 class="font-display text-lg sm:text-xl font-bold text-heading">
+                  Pendaftaran Berhasil!
+                </h3>
+                <p class="text-xs text-muted leading-relaxed">
+                  Formulir pendaftaran daring Anda telah tersimpan resmi pada
+                  sistem {admissionsLabel} {schoolName}.
+                </p>
+              </div>
+
+              <!-- Blok Utama: Kredensial Pendaftaran & Tombol Salin -->
+              <div class="rounded-[8px] border border-border bg-surface-subtle p-3 sm:p-4 space-y-3 text-left">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <!-- Nomor Registrasi -->
+                  <div class="p-2.5 rounded-[6px] bg-surface border border-border flex flex-col justify-between space-y-1">
+                    <span class="text-[10px] font-semibold uppercase tracking-wider text-muted">
+                      Nomor Registrasi
+                    </span>
+                    <div class="flex items-center justify-between gap-2">
+                      <strong
+                        id="modal-reg-number"
+                        class="font-mono text-sm sm:text-base font-bold text-heading tracking-tight"
+                      >
+                        -
+                      </strong>
+                      <button
+                        type="button"
+                        id="btn-copy-modal-reg"
+                        class="inline-flex items-center gap-1 h-6 px-2 rounded-[4px] border border-border bg-surface text-[11px] font-medium text-muted hover:text-heading hover:bg-surface-subtle cursor-pointer transition-colors shadow-2xs shrink-0"
+                        title="Salin Nomor Registrasi"
+                      >
+                        Salin
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Kode Akses Verifikasi -->
+                  <div class="p-2.5 rounded-[6px] bg-surface border border-border flex flex-col justify-between space-y-1">
+                    <span class="text-[10px] font-semibold uppercase tracking-wider text-muted">
+                      Kode Akses
+                    </span>
+                    <div class="flex items-center justify-between gap-2">
+                      <strong
+                        id="modal-ver-code"
+                        class="font-mono text-sm sm:text-base font-bold text-heading tracking-tight"
+                      >
+                        -
+                      </strong>
+                      <button
+                        type="button"
+                        id="btn-copy-modal-code"
+                        class="inline-flex items-center gap-1 h-6 px-2 rounded-[4px] border border-border bg-surface text-[11px] font-medium text-muted hover:text-heading hover:bg-surface-subtle cursor-pointer transition-colors shadow-2xs shrink-0"
+                        title="Salin Kode Akses"
+                      >
+                        Salin
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Informasi Sekunder -->
+                <div class="pt-2 grid grid-cols-3 gap-2 text-[11px]">
+                  <div>
+                    <span class="text-[10px] text-muted block">
+                      Nama Pendaftar:
+                    </span>
+                    <strong
+                      id="modal-student-name"
+                      class="text-heading font-medium truncate block"
+                    >
+                      -
+                    </strong>
+                  </div>
+                  <div>
+                    <span class="text-[10px] text-muted block">
+                      Jalur Masuk:
+                    </span>
+                    <strong
+                      id="modal-path-name"
+                      class="text-heading font-medium truncate block"
+                    >
+                      -
+                    </strong>
+                  </div>
+                  <div>
+                    <span class="text-[10px] text-muted block">Gelombang:</span>
+                    <strong class="text-heading font-medium block">
+                      {formConfig.activeWave || "Gelombang 1"}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Panel Informasi Netral & Ringkas -->
+              <div class="rounded-[6px] p-2.5 bg-surface-subtle border border-border text-muted text-[11px] text-left flex items-center gap-2">
+                <Icon name="info" class="h-4 w-4 text-muted shrink-0" />
+                <span>
+                  Simpan nomor registrasi dan kode akses untuk mengecek status
+                  pendaftaran Anda.
+                </span>
+              </div>
+
+              <!-- Tombol Aksi Berhierarki Jelas -->
+              <div class="space-y-2 pt-1">
+                <div class="flex flex-col sm:flex-row items-center justify-center gap-2">
+                  <a
+                    href="#section-cek-status"
+                    onclick="document.getElementById('success-modal')?.classList.add('hidden');"
+                    class="w-full sm:flex-1 inline-flex h-9 items-center justify-center gap-1.5 rounded-[4px] bg-primary px-4 text-xs font-semibold text-white hover:bg-primary-hover shadow-xs cursor-pointer transition-colors"
+                  >
+                    <span>Lihat Status Pendaftaran</span>
+                    <Icon name="chevron-down" class="h-3.5 w-3.5" />
+                  </a>
+                  <button
+                    type="button"
+                    id="btn-modal-print-proof"
+                    class="w-full sm:w-auto inline-flex h-9 items-center justify-center gap-1.5 rounded-[4px] border border-border bg-surface px-4 text-xs font-semibold text-heading hover:bg-surface-subtle cursor-pointer transition-colors"
+                  >
+                    <Icon name="printer" class="h-4 w-4 text-muted" />
+                    <span>Cetak Formulir A4</span>
+                  </button>
+                </div>
+                <div>
+                  <a
+                    href="/"
+                    class="inline-block text-xs font-medium text-muted hover:text-heading transition-colors py-0.5 cursor-pointer"
+                  >
+                    Kembali ke Beranda
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  </main>
+
+  <Footer />
+</Layout>
+
+<script
+  is:inline
+  define:vars={{
+    formStepTitles: formConfig.steps.reduce(
+      (acc, s) => ({ ...acc, [s.step]: s.title }),
+      {},
+    ),
+  }}
+>
+  function initAdmissionPage() {
+    const form = document.getElementById("admission-wizard-form");
+    if (!form || form.dataset.wizardInitialized === "true") return;
+    form.dataset.wizardInitialized = "true";
+
+    let currentStep = 1;
+    const totalSteps = 7;
+
+    const stepTitles = formStepTitles || {
+      1: "PENDAFTARAN",
+      2: "DATA PRIBADI",
+      3: "DATA AYAH",
+      4: "DATA IBU",
+      5: "KONTAK",
+      6: "DOKUMEN",
+      7: "KONFIRMASI",
+    };
+
+    const form = document.getElementById("admission-wizard-form");
+    const currentStepTitle = document.getElementById("current-step-title");
+    const currentStepBadge = document.getElementById("current-step-badge");
+    const progressBar = document.getElementById("stepper-progress-bar");
+    const stepIndicators = document.querySelectorAll(".step-indicator");
+    const btnPrev = document.getElementById("btn-prev-step");
+    const btnNext = document.getElementById("btn-next-step");
+    const btnSubmit = document.getElementById("btn-submit-form");
+    const submitLabel = document.getElementById("btn-submit-label");
+    const agreementCheckbox = document.getElementById("agreement");
+    const successModal = document.getElementById("success-modal");
+    const errorBanner = document.getElementById("submit-error-banner");
+    const pathSelect = document.getElementById("admission_path");
+
+    // Summary Elements in Step 7
+    const summaryPath = document.getElementById("summary-path");
+    const summaryIdentity = document.getElementById("summary-identity");
+    const summaryName = document.getElementById("summary-name");
+    const summarySchool = document.getElementById("summary-school");
+    const summaryParents = document.getElementById("summary-parents");
+    const summaryContact = document.getElementById("summary-contact");
+
+    // Handle Conditional Field Display based on Admission Path
+    function handlePathConditions() {
+      const selectedVal = (pathSelect?.value || "").toLowerCase();
+      const isTahfidz =
+        selectedVal.includes("tahfidz") || selectedVal.includes("al-qur");
+      const isPrestasi =
+        selectedVal.includes("prestasi") ||
+        selectedVal.includes("kejuaraan") ||
+        selectedVal.includes("lks");
+
+      // Toggle conditional fields
+      document
+        .querySelectorAll('[data-conditional="if_tahfidz"]')
+        .forEach((el) => {
+          const inp = el.querySelector("input, select, textarea");
+          if (isTahfidz) {
+            el.classList.remove("hidden");
+            if (inp && inp.getAttribute("data-originally-required") === "true")
+              inp.required = true;
+          } else {
+            el.classList.add("hidden");
+            if (inp) inp.required = false;
+          }
+        });
+
+      document
+        .querySelectorAll('[data-conditional="if_prestasi"]')
+        .forEach((el) => {
+          const inp = el.querySelector("input, select, textarea");
+          if (isPrestasi) {
+            el.classList.remove("hidden");
+            if (inp && inp.getAttribute("data-originally-required") === "true")
+              inp.required = true;
+          } else {
+            el.classList.add("hidden");
+            if (inp) inp.required = false;
+          }
+        });
+
+      // Toggle conditional documents
+      document
+        .querySelectorAll('[data-doc-rule="if_tahfidz"]')
+        .forEach((el) => {
+          const fileInp = el.querySelector('input[type="file"]');
+          if (isTahfidz) {
+            el.classList.remove("hidden");
+          } else {
+            el.classList.add("hidden");
+            if (fileInp) {
+              fileInp.value = "";
+              fileInp.required = false;
+            }
+          }
+        });
+
+      document
+        .querySelectorAll('[data-doc-rule="if_prestasi"]')
+        .forEach((el) => {
+          const fileInp = el.querySelector('input[type="file"]');
+          if (isPrestasi) {
+            el.classList.remove("hidden");
+          } else {
+            el.classList.add("hidden");
+            if (fileInp) {
+              fileInp.value = "";
+              fileInp.required = false;
+            }
+          }
+        });
+    }
+
+    pathSelect?.addEventListener("change", handlePathConditions);
+    handlePathConditions();
+
+    function renderStep(step) {
+      currentStep = step;
+
+      // 1. Update Title Label & Step Badge
+      if (currentStepTitle) {
+        currentStepTitle.textContent = (
+          stepTitles[step] || "TAHAPAN"
+        ).toUpperCase();
+      }
+      if (currentStepBadge) {
+        currentStepBadge.textContent = `Langkah ${step} dari ${totalSteps}`;
+      }
+
+      // 2. Update Progress Bar
+      if (progressBar) {
+        const percent = ((step - 1) / (totalSteps - 1)) * 100;
+        progressBar.style.width = `${percent}%`;
+      }
+
+      // 3. Update Stepper Badges
+      stepIndicators.forEach((el) => {
+        const stepNum = parseInt(el.getAttribute("data-step") || "1", 10);
+        const circle = el.querySelector(".step-circle");
+        const label = el.querySelector(".step-label");
+
+        if (stepNum === step) {
+          // Current Active
+          if (circle) {
+            circle.className =
+              "step-circle h-10 w-10 rounded-full flex items-center justify-center font-display text-sm font-bold transition-all duration-200 bg-primary text-white shadow-xs";
+          }
+          if (label) {
+            label.className =
+              "step-label mt-2 text-xs font-semibold text-primary pb-1 border-b-2 border-primary transition-colors";
+          }
+        } else if (stepNum < step) {
+          // Completed
+          if (circle) {
+            circle.className =
+              "step-circle h-10 w-10 rounded-full flex items-center justify-center font-display text-sm font-bold transition-all duration-200 bg-primary-light text-primary border border-primary/20";
+          }
+          if (label) {
+            label.className =
+              "step-label mt-2 text-xs font-medium text-heading transition-colors";
+          }
+        } else {
+          // Pending
+          if (circle) {
+            circle.className =
+              "step-circle h-10 w-10 rounded-full flex items-center justify-center font-display text-sm font-semibold transition-all duration-200 bg-surface border border-border text-muted";
+          }
+          if (label) {
+            label.className =
+              "step-label mt-2 text-xs font-medium text-muted transition-colors";
+          }
+        }
+      });
+
+      // 4. Toggle Step Panes
+      for (let i = 1; i <= totalSteps; i++) {
+        const pane = document.getElementById(`step-pane-${i}`);
+        if (pane) {
+          if (i === step) {
+            pane.classList.remove("hidden");
+          } else {
+            pane.classList.add("hidden");
+          }
+        }
+      }
+
+      // 5. Toggle Navigation Buttons (Sesuai Rumus Wizard 7 Langkah)
+      const isFirstStep = step === 1;
+      const isLastStep = step === totalSteps;
+
+      const showPrevious = !isFirstStep;
+      const showNext = !isLastStep;
+      const showSubmit = isLastStep;
+
+      if (btnPrev) {
+        btnPrev.classList.toggle("hidden", !showPrevious);
+        btnPrev.classList.toggle("inline-flex", showPrevious);
+      }
+      if (btnNext) {
+        btnNext.classList.toggle("hidden", !showNext);
+        btnNext.classList.toggle("inline-flex", showNext);
+      }
+      if (btnSubmit) {
+        btnSubmit.classList.toggle("hidden", !showSubmit);
+        btnSubmit.classList.toggle("inline-flex", showSubmit);
+      }
+
+      if (isLastStep) {
+        updateSummary();
+        checkFormReadiness();
+      }
+
+      // Scroll to top of form card smoothly jika bukan initial render
+      if (step > 1) {
+        form?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }
+
+    function updateSummary() {
+      const regType = document.getElementById("reg_type")?.value || "Baru";
+      const path = document.getElementById("admission_path")?.value || "Umum";
+      const nik = document.getElementById("nik")?.value || "-";
+      const nisn = document.getElementById("nisn")?.value || "-";
+      const name = document.getElementById("full_name")?.value || "-";
+      const school = document.getElementById("prev_school")?.value || "-";
+      const father = document.getElementById("father_name")?.value || "-";
+      const mother = document.getElementById("mother_name")?.value || "-";
+      const phone = document.getElementById("phone_student")?.value || "-";
+
+      if (summaryPath) summaryPath.textContent = `${regType} / ${path}`;
+      if (summaryIdentity)
+        summaryIdentity.textContent = `NIK: ${nik} | NISN: ${nisn}`;
+      if (summaryName) summaryName.textContent = name;
+      if (summarySchool) summarySchool.textContent = school;
+      if (summaryParents) summaryParents.textContent = `${father} & ${mother}`;
+      if (summaryContact) summaryContact.textContent = phone;
+
+      // Update daftar ringkasan berkas di Step 7
+      const docsContainer = document.getElementById("summary-docs-list");
+      if (docsContainer) {
+        const docItems = [
+          { id: "file_kk", label: "Kartu Keluarga (KK)", req: true },
+          { id: "file_akta", label: "Akta Kelahiran", req: true },
+          { id: "file_skl", label: "SKL / Ijazah", req: true },
+          { id: "file_prestasi", label: "Dokumen Prestasi / KIP", req: false },
+          { id: "file_tahfidz", label: "Syahadah Tahfidz", req: false },
+          { id: "file_butawarna", label: "Surat Bebas Buta Warna", req: false },
+        ];
+
+        let html = "";
+        docItems.forEach((d) => {
+          const inp = document.getElementById(d.id);
+          if (!inp || inp.closest(".hidden")) return;
+          const file = inp.files && inp.files[0];
+          if (file) {
+            const sizeKb = (file.size / 1024).toFixed(0);
+            html += `<div class="p-1.5 rounded bg-surface border border-success text-success-text flex items-center justify-between">
+              <span class="truncate font-medium">${d.label}: ${file.name}</span>
+              <span class="shrink-0 ml-1 text-[10px] font-bold text-success">[✓ ${sizeKb} KB]</span>
+            </div>`;
+          } else if (d.req) {
+            html += `<div class="p-1.5 rounded bg-surface border border-error text-error-text flex items-center justify-between">
+              <span class="font-medium">${d.label}</span>
+              <span class="shrink-0 ml-1 text-[10px] font-bold text-error">[Belum Dipilih *]</span>
+            </div>`;
+          } else {
+            html += `<div class="p-1.5 rounded bg-surface border border-border text-muted flex items-center justify-between">
+              <span>${d.label}</span>
+              <span class="shrink-0 ml-1 text-[10px]">[Opsional - Tidak Diunggah]</span>
+            </div>`;
+          }
+        });
+        docsContainer.innerHTML = html;
+      }
+    }
+
+    // Periksa kelengkapan seluruh data dan aktifkan tombol "Kirim Pendaftaran ✓" HANYA ketika semua telah diisi
+    function checkFormReadiness() {
+      if (!btnSubmit) return;
+
+      let isAllValid = true;
+      let missingFields = [];
+
+      for (let i = 1; i <= 6; i++) {
+        const pane = document.getElementById(`step-pane-${i}`);
+        if (pane) {
+          const reqs = pane.querySelectorAll(
+            "input[required], select[required], textarea[required]",
+          );
+          for (const input of reqs) {
+            // Ignore hidden conditional fields
+            if (input.closest(".hidden")) continue;
+
+            if (!input.checkValidity() || !String(input.value || "").trim()) {
+              isAllValid = false;
+              const labelEl = pane.querySelector(`label[for="${input.id}"]`);
+              const labelText = labelEl
+                ? labelEl.textContent.replace("*", "").trim()
+                : input.name;
+              if (labelText && !missingFields.includes(labelText)) {
+                missingFields.push(labelText);
+              }
+            }
+          }
+        }
+      }
+
+      const isAgreed = agreementCheckbox && agreementCheckbox.checked;
+      const readinessBanner = document.getElementById("form-readiness-banner");
+      const readinessIcon = document.getElementById("readiness-icon");
+      const readinessText = document.getElementById("readiness-text");
+
+      if (isAllValid && isAgreed) {
+        btnSubmit.disabled = false;
+        btnSubmit.classList.remove("opacity-40", "cursor-not-allowed");
+        if (readinessBanner) {
+          readinessBanner.className =
+            "p-3.5 rounded-[8px] text-xs font-medium border border-success/30 bg-success-light text-success-text flex items-start gap-2.5";
+          if (readinessIcon) readinessIcon.textContent = "✓";
+          if (readinessText) {
+            readinessText.innerHTML =
+              "<strong>Seluruh data wajib dan berkas pendaftaran telah lengkap terisi.</strong> Tombol Kirim Pendaftaran di bawah telah aktif.";
+          }
+        }
+      } else {
+        btnSubmit.disabled = true;
+        btnSubmit.classList.add("opacity-40", "cursor-not-allowed");
+        if (readinessBanner) {
+          readinessBanner.className =
+            "p-3.5 rounded-[8px] text-xs font-medium border border-warning/40 bg-warning-light text-warning-text flex items-start gap-2.5";
+          if (readinessIcon) readinessIcon.textContent = "⚠️";
+          if (!isAllValid) {
+            const listStr =
+              missingFields.slice(0, 3).join(", ") +
+              (missingFields.length > 3
+                ? `, dan ${missingFields.length - 3} kolom lainnya`
+                : "");
+            readinessText.innerHTML = `<strong>Data belum lengkap:</strong> Mohon periksa kembali kolom wajib (${listStr}) dan pastikan terisi dengan benar.`;
+          } else {
+            readinessText.innerHTML =
+              "<strong>Tinggal 1 langkah lagi:</strong> Silakan centang kotak pakta integritas pernyataan keabsahan di atas untuk mengaktifkan tombol Kirim Pendaftaran.";
+          }
+        }
+      }
+    }
+
+    function validateCurrentStep() {
+      const activePane = document.getElementById(`step-pane-${currentStep}`);
+      if (!activePane) return true;
+
+      const requiredInputs = activePane.querySelectorAll(
+        "input[required], select[required], textarea[required]",
+      );
+      for (const input of requiredInputs) {
+        if (input.closest(".hidden") || input.offsetParent === null) continue;
+        if (!input.checkValidity() || !String(input.value || "").trim()) {
+          input.reportValidity();
+          input.focus();
+          return false;
+        }
+      }
+      return true;
+    }
+
+    // Event Listeners Navigasi
+    btnNext?.addEventListener("click", () => {
+      if (validateCurrentStep()) {
+        if (currentStep < totalSteps) {
+          renderStep(currentStep + 1);
+        }
+      }
+    });
+
+    btnPrev?.addEventListener("click", () => {
+      if (currentStep > 1) {
+        renderStep(currentStep - 1);
+      }
+    });
+
+    // Checkbox Agreement Event
+    agreementCheckbox?.addEventListener("change", () => {
+      checkFormReadiness();
+    });
+
+    // Event listener input change across form
+    form?.addEventListener("input", () => {
+      if (currentStep === totalSteps) {
+        checkFormReadiness();
+      }
+    });
+
+    // Validasi instan berkas di Step 6
+    const docInputs = form?.querySelectorAll(".doc-file-input");
+    docInputs?.forEach((input) => {
+      input.addEventListener("change", () => {
+        const file = input.files && input.files[0];
+        const fb = document.getElementById(`feedback-${input.id}`);
+        const fbText = document.getElementById(`feedback-text-${input.id}`);
+
+        if (file) {
+          // 1. Validasi Ukuran (Maksimal 2 MB)
+          if (file.size > 2 * 1024 * 1024) {
+            alert(
+              `Ukuran berkas "${file.name}" (${(file.size / (1024 * 1024)).toFixed(2)} MB) melebihi batas maksimal 2 MB. Silakan kompres atau pilih berkas lain.`,
+            );
+            input.value = "";
+            if (fb) fb.classList.add("hidden");
+            checkFormReadiness();
+            return;
+          }
+
+          // 2. Validasi Ekstensi Berkas
+          const ext = (file.name.split(".").pop() || "").toLowerCase();
+          if (!["pdf", "jpg", "jpeg", "png", "webp"].includes(ext)) {
+            alert(
+              `Format berkas .${ext} tidak didukung. Harap unggah berkas berformat PDF, JPG, JPEG, PNG, atau WEBP.`,
+            );
+            input.value = "";
+            if (fb) fb.classList.add("hidden");
+            checkFormReadiness();
+            return;
+          }
+
+          if (fb && fbText) {
+            const sizeKb = (file.size / 1024).toFixed(0);
+            fbText.textContent = `${file.name} (${sizeKb} KB) ✓ Berkas siap`;
+            fb.classList.remove("hidden");
+            fb.classList.add("inline-flex");
+          }
+        } else {
+          if (fb) fb.classList.add("hidden");
+        }
+        checkFormReadiness();
+      });
+    });
+
+    // Stepper header click: bebas mundur, maju hanya langkah berikutnya setelah validasi
+    stepIndicators.forEach((el) => {
+      el.addEventListener("click", () => {
+        const targetStep = parseInt(el.getAttribute("data-step") || "1", 10);
+        if (targetStep === currentStep) return;
+        if (targetStep < currentStep) {
+          renderStep(targetStep);
+        } else if (targetStep === currentStep + 1) {
+          if (validateCurrentStep()) {
+            renderStep(targetStep);
+          }
+        }
+      });
+    });
+
+    // Pengiriman Formulir Nyata ke Endpoint Aman Backend Server
+    form?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      if (currentStep !== totalSteps) {
+        renderStep(totalSteps);
+        return;
+      }
+
+      // Validasi ulang seluruh langkah 1 s.d. 6 di client sebelum submit
+      for (let s = 1; s <= 6; s++) {
+        const pane = document.getElementById(`step-pane-${s}`);
+        if (!pane) continue;
+        const reqs = pane.querySelectorAll(
+          "input[required], select[required], textarea[required]",
+        );
+        for (const input of reqs) {
+          if (input.closest(".hidden") || input.offsetParent === null) continue;
+          if (!input.checkValidity() || !String(input.value || "").trim()) {
+            renderStep(s);
+            input.reportValidity();
+            input.focus();
+            return;
+          }
+        }
+      }
+
+      if (!agreementCheckbox || !agreementCheckbox.checked) {
+        if (errorBanner) {
+          errorBanner.textContent =
+            "Anda wajib mencentang pernyataan keabsahan data sebelum mengirim formulir pendaftaran.";
+          errorBanner.classList.remove("hidden");
+        }
+        return;
+      }
+
+      // Sembunyikan pesan error sebelumnya
+      if (errorBanner) errorBanner.classList.add("hidden");
+
+      // Set status tombol loading
+      btnSubmit.disabled = true;
+      if (submitLabel)
+        submitLabel.textContent = "Mengunggah Dokumen & Menyimpan...";
+
+      // Ekstraksi data formulir utuh (beserta File objek biner)
+      const fd = new FormData(form);
+      const applyBoarding = document.getElementById("apply_boarding");
+      if (applyBoarding) {
+        fd.set("is_boarding", applyBoarding.checked ? "true" : "false");
+      }
+
+      try {
+        const res = await fetch("/api/ppdb/register", {
+          method: "POST",
+          headers: {
+            "X-Requested-With": "XMLHttpRequest",
+          },
+          body: fd,
+        });
+
+        const data = await res.json();
+        btnSubmit.disabled = false;
+        if (submitLabel) submitLabel.textContent = "Kirim Pendaftaran";
+
+        if (data.success) {
+          const modalRegNumber = document.getElementById("modal-reg-number");
+          const modalVerCode = document.getElementById("modal-ver-code");
+          const modalStudentName =
+            document.getElementById("modal-student-name");
+          const modalPathName = document.getElementById("modal-path-name");
+
+          if (modalRegNumber)
+            modalRegNumber.textContent = data.registrationNumber;
+          if (modalVerCode)
+            modalVerCode.textContent = data.verificationCode || "-";
+          if (modalStudentName) modalStudentName.textContent = data.studentName;
+          if (modalPathName) modalPathName.textContent = data.admissionPath;
+
+          // Isi otomatis form Cek Status di bawah agar calon siswa tidak perlu ketik ulang
+          const inputRegInline = document.getElementById("inline-input-reg");
+          const inputCodeInline = document.getElementById("inline-input-code");
+          if (inputRegInline) inputRegInline.value = data.registrationNumber;
+          if (inputCodeInline)
+            inputCodeInline.value = data.verificationCode || "";
+
+          if (successModal) {
+            successModal.classList.remove("hidden");
+          }
+        } else {
+          if (errorBanner) {
+            errorBanner.textContent = `Pendaftaran Ditolak Server: ${
+              data.error || "Terjadi kesalahan validasi data."
+            }`;
+            errorBanner.classList.remove("hidden");
+            errorBanner.scrollIntoView({
+              behavior: "smooth",
+              block: "nearest",
+            });
+          } else {
+            alert(data.error || "Gagal memproses pendaftaran.");
+          }
+          checkFormReadiness();
+        }
+      } catch (err) {
+        btnSubmit.disabled = false;
+        if (submitLabel) submitLabel.textContent = "Kirim Pendaftaran";
+        if (errorBanner) {
+          errorBanner.innerHTML =
+            "<strong>Gangguan Jaringan:</strong> Gagal terhubung ke server institusi. Silakan periksa koneksi internet Anda dan coba lagi.";
+          errorBanner.classList.remove("hidden");
+        }
+      }
+    });
+
+    // Inisialisasi awal formulir pada langkah 1
+    renderStep(1);
+
+    // Tombol Salin Kredensial di Modal Sukses
+    const btnCopyModalReg = document.getElementById("btn-copy-modal-reg");
+    const btnCopyModalCode = document.getElementById("btn-copy-modal-code");
+
+    btnCopyModalReg?.addEventListener("click", () => {
+      const reg = document
+        .getElementById("modal-reg-number")
+        ?.textContent?.trim();
+      if (reg && reg !== "-") {
+        navigator.clipboard.writeText(reg);
+        btnCopyModalReg.textContent = "Tersalin!";
+        setTimeout(() => {
+          btnCopyModalReg.textContent = "Salin";
+        }, 2000);
+      }
+    });
+
+    btnCopyModalCode?.addEventListener("click", () => {
+      const code = document
+        .getElementById("modal-ver-code")
+        ?.textContent?.trim();
+      if (code && code !== "-") {
+        navigator.clipboard.writeText(code);
+        btnCopyModalCode.textContent = "Tersalin!";
+        setTimeout(() => {
+          btnCopyModalCode.textContent = "Salin";
+        }, 2000);
+      }
+    });
+
+    // Countdown Ticker Interaktif jika halaman berstatus upcoming
+    const countdownEl = document.querySelector(".countdown-container");
+    if (countdownEl) {
+      const targetIso = countdownEl.getAttribute("data-target-date");
+      if (targetIso) {
+        const targetDate = new Date(targetIso).getTime();
+        const elDays = document.getElementById("countdown-days");
+        const elHours = document.getElementById("countdown-hours");
+        const elMinutes = document.getElementById("countdown-minutes");
+        const elSeconds = document.getElementById("countdown-seconds");
+
+        function tick() {
+          const now = Date.now();
+          const diff = targetDate - now;
+
+          if (diff <= 0) {
+            if (elDays) elDays.textContent = "00";
+            if (elHours) elHours.textContent = "00";
+            if (elMinutes) elMinutes.textContent = "00";
+            if (elSeconds) elSeconds.textContent = "00";
+            return;
+          }
+
+          const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+          const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+          const minutes = Math.floor((diff / (1000 * 60)) % 60);
+          const seconds = Math.floor((diff / 1000) % 60);
+
+          if (elDays) elDays.textContent = String(days).padStart(2, "0");
+          if (elHours) elHours.textContent = String(hours).padStart(2, "0");
+          if (elMinutes)
+            elMinutes.textContent = String(minutes).padStart(2, "0");
+          if (elSeconds)
+            elSeconds.textContent = String(seconds).padStart(2, "0");
+        }
+
+        tick();
+        setInterval(tick, 1000);
+      }
+    }
+
+    // ==========================================
+    // LOGIKA CEK STATUS PENDAFTARAN INLINE
+    // ==========================================
+    const inlineForm = document.getElementById("form-check-status-inline");
+    const inlineInputReg = document.getElementById("inline-input-reg");
+    const inlineInputCode = document.getElementById("inline-input-code");
+    const inlineErrorBanner = document.getElementById("inline-error-banner");
+    const inlineBtnSubmit = document.getElementById("inline-btn-submit-check");
+    const inlineResultContainer = document.getElementById(
+      "inline-result-container",
+    );
+
+    const inlineResStudentName = document.getElementById(
+      "inline-res-student-name",
+    );
+    const inlineResRegNumber = document.getElementById("inline-res-reg-number");
+    const inlineResVerCode = document.getElementById("inline-res-ver-code");
+    const inlineResAdmissionPath = document.getElementById(
+      "inline-res-admission-path",
+    );
+    const inlineResWave = document.getElementById("inline-res-wave");
+    const inlineResAcademicYear = document.getElementById(
+      "inline-res-academic-year",
+    );
+    const inlineResSubmittedAt = document.getElementById(
+      "inline-res-submitted-at",
+    );
+
+    const inlineBadgeRegistration = document.getElementById(
+      "inline-badge-registration",
+    );
+    const inlineBadgeVerification = document.getElementById(
+      "inline-badge-verification",
+    );
+    const inlineRevisionNotice = document.getElementById(
+      "inline-revision-notice",
+    );
+    const inlineRevisionText = document.getElementById("inline-revision-text");
+
+    const inlineBadgeSelection = document.getElementById(
+      "inline-badge-selection",
+    );
+    const inlineScheduleNotice = document.getElementById(
+      "inline-schedule-notice",
+    );
+    const inlineScheduleDate = document.getElementById("inline-schedule-date");
+
+    const inlineNextTitle = document.getElementById("inline-next-title");
+    const inlineNextDesc = document.getElementById("inline-next-desc");
+
+    function formatTglIndo(isoStr) {
+      if (!isoStr) return "-";
+      try {
+        const d = new Date(isoStr);
+        return d.toLocaleDateString("id-ID", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        });
+      } catch {
+        return isoStr;
+      }
+    }
+
+    inlineForm?.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const registrationNumber = (inlineInputReg?.value || "")
+        .trim()
+        .toUpperCase();
+      const verificationCode = (inlineInputCode?.value || "")
+        .trim()
+        .toUpperCase();
+
+      if (!registrationNumber || !verificationCode) {
+        if (inlineErrorBanner) {
+          inlineErrorBanner.textContent =
+            "Nomor registrasi dan kode akses verifikasi wajib diisi.";
+          inlineErrorBanner.classList.remove("hidden");
+        }
+        return;
+      }
+
+      if (inlineErrorBanner) inlineErrorBanner.classList.add("hidden");
+      if (inlineBtnSubmit) {
+        inlineBtnSubmit.disabled = true;
+        inlineBtnSubmit.textContent = "Memeriksa...";
+      }
+
+      try {
+        const res = await fetch("/api/ppdb/check-status", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Requested-With": "XMLHttpRequest",
+          },
+          body: JSON.stringify({ registrationNumber, verificationCode }),
+        });
+
+        const data = await res.json();
+        if (inlineBtnSubmit) {
+          inlineBtnSubmit.disabled = false;
+          inlineBtnSubmit.innerHTML = `<span>Periksa Status</span> <span>&rarr;</span>`;
+        }
+
+        if (data.success && data.data) {
+          const s = data.data;
+
+          if (inlineResStudentName)
+            inlineResStudentName.textContent = s.studentName;
+          if (inlineResRegNumber)
+            inlineResRegNumber.textContent = s.registrationNumber;
+          if (inlineResVerCode)
+            inlineResVerCode.textContent = s.verificationCode || "-";
+          if (inlineResAdmissionPath)
+            inlineResAdmissionPath.textContent = `${s.admissionPath} (${s.regType})`;
+          if (inlineResWave)
+            inlineResWave.textContent = s.wave || "Gelombang 1";
+          if (inlineResAcademicYear)
+            inlineResAcademicYear.textContent = s.academicYear;
+          if (inlineResSubmittedAt)
+            inlineResSubmittedAt.textContent = formatTglIndo(s.submittedAt);
+
+          // 1. Status Registrasi
+          if (inlineBadgeRegistration) {
+            inlineBadgeRegistration.className =
+              "inline-flex items-center px-2 py-0.5 rounded-[4px] text-[11px] font-semibold bg-success-light text-success-text border border-success";
+            inlineBadgeRegistration.textContent = "Formulir Terkirim";
+          }
+
+          // 2. Status Verifikasi Berkas
+          if (inlineBadgeVerification) {
+            if (s.verificationStatus === "verified") {
+              inlineBadgeVerification.className =
+                "inline-flex items-center px-2 py-0.5 rounded-[4px] text-[11px] font-semibold bg-success-light text-success-text border border-success";
+              inlineBadgeVerification.textContent = "Berkas Terverifikasi Sah";
+              if (inlineRevisionNotice)
+                inlineRevisionNotice.classList.add("hidden");
+            } else if (s.verificationStatus === "revision_required") {
+              inlineBadgeVerification.className =
+                "inline-flex items-center px-2 py-0.5 rounded-[4px] text-[11px] font-semibold bg-warning-light text-warning-text border border-warning";
+              inlineBadgeVerification.textContent = "Perlu Perbaikan Berkas";
+              if (inlineRevisionNotice) {
+                inlineRevisionNotice.classList.remove("hidden");
+                if (inlineRevisionText) {
+                  inlineRevisionText.textContent =
+                    s.revisionNotes ||
+                    "Terdapat berkas yang belum memenuhi ketentuan. Silakan hubungi helpdesk panitia.";
+                }
+              }
+            } else {
+              inlineBadgeVerification.className =
+                "inline-flex items-center px-2 py-0.5 rounded-[4px] text-[11px] font-semibold bg-surface-subtle text-body border border-border";
+              inlineBadgeVerification.textContent = "Menunggu Verifikasi";
+              if (inlineRevisionNotice)
+                inlineRevisionNotice.classList.add("hidden");
+            }
+          }
+
+          // 3. Status Seleksi
+          if (inlineBadgeSelection) {
+            if (s.selectionStatus === "accepted") {
+              inlineBadgeSelection.className =
+                "inline-flex items-center px-2 py-0.5 rounded-[4px] text-[11px] font-semibold bg-success-light text-success-text border border-success";
+              inlineBadgeSelection.textContent = "Diterima (Lolos Seleksi)";
+              if (inlineScheduleNotice)
+                inlineScheduleNotice.classList.add("hidden");
+            } else if (s.selectionStatus === "rejected") {
+              inlineBadgeSelection.className =
+                "inline-flex items-center px-2 py-0.5 rounded-[4px] text-[11px] font-semibold bg-error-light text-error-text border border-error";
+              inlineBadgeSelection.textContent = "Tidak Diterima";
+              if (inlineScheduleNotice)
+                inlineScheduleNotice.classList.add("hidden");
+            } else if (s.selectionStatus === "waitlist") {
+              inlineBadgeSelection.className =
+                "inline-flex items-center px-2 py-0.5 rounded-[4px] text-[11px] font-semibold bg-primary-light text-primary border border-primary";
+              inlineBadgeSelection.textContent = "Daftar Tunggu / Cadangan";
+              if (inlineScheduleNotice)
+                inlineScheduleNotice.classList.add("hidden");
+            } else {
+              inlineBadgeSelection.className =
+                "inline-flex items-center px-2 py-0.5 rounded-[4px] text-[11px] font-medium bg-surface-subtle text-body border border-border";
+              inlineBadgeSelection.textContent = "Belum Diumumkan";
+              if (inlineScheduleNotice) {
+                inlineScheduleNotice.classList.remove("hidden");
+                if (inlineScheduleDate) {
+                  inlineScheduleDate.textContent =
+                    formatTglIndo(s.announcementSchedule) ||
+                    "Sesuai kalender sekolah";
+                }
+              }
+            }
+          }
+
+          // Petunjuk Langkah Lanjutan
+          if (inlineNextTitle && inlineNextDesc) {
+            if (s.selectionStatus === "accepted") {
+              inlineNextTitle.textContent =
+                "Selamat! Anda Dinyatakan Lolos Seleksi";
+              inlineNextDesc.textContent =
+                "Silakan segera lakukan proses daftar ulang sesuai jadwal resmi dengan membawa cetakan bukti status ini beserta berkas fisik asli ke sekolah.";
+            } else if (s.selectionStatus === "rejected") {
+              inlineNextTitle.textContent = "Pemberitahuan Hasil Seleksi";
+              inlineNextDesc.textContent =
+                "Mohon maaf, kuota penerimaan pada jalur ini telah terpenuhi. Terima kasih atas partisipasi dan antusiasme Anda mengikuti seleksi.";
+            } else if (s.selectionStatus === "waitlist") {
+              inlineNextTitle.textContent =
+                "Calon Siswa Cadangan (Daftar Tunggu)";
+              inlineNextDesc.textContent =
+                "Anda terdaftar dalam kuota cadangan. Panitia akan menghubungi Anda melalui nomor WhatsApp jika terdapat kursi pendaftaran yang mengundurkan diri.";
+            } else if (s.verificationStatus === "revision_required") {
+              inlineNextTitle.textContent =
+                "Tindakan Diperlukan: Perbaikan Berkas";
+              inlineNextDesc.textContent =
+                "Panitia menemukan ketidaksesuaian dokumen. Mohon hubungi panitia melalui posko Helpdesk untuk melakukan pembaruan berkas persyaratan.";
+            } else if (s.verificationStatus === "verified") {
+              inlineNextTitle.textContent =
+                "Berkas Sah: Menunggu Jadwal Pengumuman";
+              inlineNextDesc.textContent =
+                "Seluruh dokumen persyaratan Anda telah diverifikasi lengkap dan sah. Silakan menunggu rilis keputusan seleksi resmi sesuai jadwal gelombang.";
+            } else {
+              inlineNextTitle.textContent =
+                "Formulir Diterima: Menunggu Verifikasi Dokumen";
+              inlineNextDesc.textContent =
+                "Data Anda telah tersimpan. Verifikator panitia sedang memeriksa keabsahan dokumen persyaratan secara bertahap.";
+            }
+          }
+
+          if (inlineResultContainer) {
+            inlineResultContainer.classList.remove("hidden");
+            inlineResultContainer.scrollIntoView({
+              behavior: "smooth",
+              block: "start",
+            });
+          }
+        } else {
+          if (inlineErrorBanner) {
+            inlineErrorBanner.textContent =
+              data.error ||
+              "Nomor registrasi atau kode verifikasi tidak ditemukan.";
+            inlineErrorBanner.classList.remove("hidden");
+          }
+          if (inlineResultContainer)
+            inlineResultContainer.classList.add("hidden");
+        }
+      } catch (err) {
+        if (inlineBtnSubmit) {
+          inlineBtnSubmit.disabled = false;
+          inlineBtnSubmit.innerHTML = `<span>Periksa Status</span> <span>&rarr;</span>`;
+        }
+        if (inlineErrorBanner) {
+          inlineErrorBanner.textContent =
+            "Gagal terhubung ke server institusi. Silakan periksa koneksi internet Anda.";
+          inlineErrorBanner.classList.remove("hidden");
+        }
+      }
+    });
+
+    // Buka Lembar Formulir Pendaftaran A4 Resmi Calon Siswa (Standar Resmi Sekolah)
+    const inlineBtnPrintStatus = document.getElementById(
+      "inline-btn-print-status",
+    );
+    inlineBtnPrintStatus?.addEventListener("click", () => {
+      const reg = (
+        inlineInputReg?.value ||
+        document.getElementById("inline-res-reg-number")?.textContent ||
+        ""
+      ).trim();
+      const code = (
+        inlineInputCode?.value ||
+        document.getElementById("inline-res-ver-code")?.textContent ||
+        ""
+      ).trim();
+      if (reg && reg !== "-" && code && code !== "-") {
+        window.open(
+          `/pendaftaran/cetak?reg=${encodeURIComponent(reg)}&code=${encodeURIComponent(code)}&print=true`,
+          "_blank",
+        );
+      } else {
+        alert(
+          "Nomor registrasi dan kode akses verifikasi belum lengkap untuk mencetak lembar A4.",
+        );
+      }
+    });
+
+    const btnModalPrintProof = document.getElementById("btn-modal-print-proof");
+    btnModalPrintProof?.addEventListener("click", () => {
+      const reg = (
+        document.getElementById("modal-reg-number")?.textContent || ""
+      ).trim();
+      const code = (
+        document.getElementById("modal-ver-code")?.textContent || ""
+      ).trim();
+      if (reg && reg !== "-" && code && code !== "-") {
+        window.open(
+          `/pendaftaran/cetak?reg=${encodeURIComponent(reg)}&code=${encodeURIComponent(code)}&print=true`,
+          "_blank",
+        );
+      } else {
+        alert("Data registrasi belum siap untuk dicetak.");
+      }
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initAdmissionPage);
+  } else {
+    initAdmissionPage();
+  }
+  document.addEventListener("astro:page-load", initAdmissionPage);
+</script>

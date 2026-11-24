@@ -1,0 +1,149 @@
+---
+import { Icon } from "astro-icon/components";
+
+interface Props {
+  title: string;
+  url: string;
+  shareText?: string;
+  ariaLabel?: string;
+  class?: string;
+}
+
+const {
+  title,
+  url,
+  shareText,
+  ariaLabel = "Bagikan ke media sosial",
+  class: className = "",
+} = Astro.props;
+
+const encodedTitle = encodeURIComponent(title);
+const encodedUrl = encodeURIComponent(url);
+const nativeShareText = shareText || title;
+---
+
+<div
+  class={`flex flex-wrap items-center gap-1.5 sm:gap-2.5 *:h-7 *:w-7 sm:*:h-9 sm:*:w-9 *:rounded-full *:flex *:items-center *:justify-center *:shadow-xs *:transition-all *:duration-150 ${className}`}
+  aria-label={ariaLabel}
+>
+  <!-- Facebook -->
+  <a
+    href={`https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`}
+    target="_blank"
+    rel="noopener noreferrer"
+    class="bg-[#0866FF] hover:bg-[#0759df] text-white hover:scale-110 active:scale-95"
+    aria-label="Bagikan ke Facebook"
+    title="Bagikan ke Facebook"
+  >
+    <Icon name="facebook" class="h-3.5 w-3.5 fill-white" />
+  </a>
+
+  <!-- X -->
+  <a
+    href={`https://x.com/intent/post?text=${encodedTitle}&url=${encodedUrl}`}
+    target="_blank"
+    rel="noopener noreferrer"
+    class="border border-border bg-surface text-heading hover:bg-surface-subtle hover:scale-110 active:scale-95"
+    aria-label="Bagikan ke X"
+    title="Bagikan ke X"
+  >
+    <Icon name="x" class="h-3 w-3 sm:h-3.5 sm:w-3.5 fill-current" />
+  </a>
+
+  <!-- LinkedIn -->
+  <a
+    href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodedUrl}`}
+    target="_blank"
+    rel="noopener noreferrer"
+    class="bg-[#0A66C2] hover:bg-[#08539e] text-white hover:scale-110 active:scale-95"
+    aria-label="Bagikan ke LinkedIn"
+    title="Bagikan ke LinkedIn"
+  >
+    <Icon name="linkedin" class="h-3 w-3 sm:h-3.5 sm:w-3.5 fill-white" />
+  </a>
+
+  <!-- WhatsApp -->
+  <a
+    href={`https://api.whatsapp.com/send?text=${encodedTitle}%20${encodedUrl}`}
+    target="_blank"
+    rel="noopener noreferrer"
+    class="bg-[#25D366] hover:bg-[#20ba5a] text-white hover:scale-110 active:scale-95"
+    aria-label="Bagikan ke WhatsApp"
+    title="Bagikan ke WhatsApp"
+  >
+    <Icon name="whatsapp" class="h-3.5 w-3.5 fill-white" />
+  </a>
+
+  <!-- Telegram -->
+  <a
+    href={`https://t.me/share/url?url=${encodedUrl}&text=${encodedTitle}`}
+    target="_blank"
+    rel="noopener noreferrer"
+    class="bg-[#24A1DE] hover:bg-[#1f8ec4] text-white hover:scale-110 active:scale-95"
+    aria-label="Bagikan ke Telegram"
+    title="Bagikan ke Telegram"
+  >
+    <Icon name="telegram" class="h-3.5 w-3.5 fill-white" />
+  </a>
+
+  <!-- Smart Web Share / Copy Link -->
+  <button
+    type="button"
+    data-smart-share
+    data-share-text={nativeShareText}
+    class="border border-border bg-surface text-heading hover:bg-surface-subtle hover:scale-110 active:scale-95 cursor-pointer"
+    aria-label="Bagikan via menu perangkat atau salin tautan"
+    title="Bagikan atau Salin Tautan"
+  >
+    <Icon name="share" data-share-icon-default class="h-3.5 w-3.5" />
+    <Icon
+      name="check"
+      data-share-icon-success
+      class="h-3.5 w-3.5 hidden text-success"
+    />
+  </button>
+</div>
+
+<script>
+  // Bind native Web Share API with clipboard fallback once per button instance
+  document
+    .querySelectorAll<HTMLButtonElement>("[data-smart-share]")
+    .forEach((btn) => {
+      if (btn.dataset.shareBound) return;
+      btn.dataset.shareBound = "true";
+
+      const defaultIcon = btn.querySelector("[data-share-icon-default]");
+      const successIcon = btn.querySelector("[data-share-icon-success]");
+      const shareText = btn.dataset.shareText || document.title;
+
+      btn.addEventListener("click", async () => {
+        if (navigator.share) {
+          try {
+            await navigator.share({
+              title: document.title,
+              text: shareText,
+              url: window.location.href,
+            });
+          } catch {
+            // User dismissed native share sheet
+          }
+        } else {
+          try {
+            await navigator.clipboard.writeText(window.location.href);
+            if (defaultIcon && successIcon) {
+              defaultIcon.classList.add("hidden");
+              successIcon.classList.remove("hidden");
+              btn.setAttribute("title", "Tautan Berhasil Disalin!");
+              setTimeout(() => {
+                successIcon.classList.add("hidden");
+                defaultIcon.classList.remove("hidden");
+                btn.setAttribute("title", "Bagikan atau Salin Tautan");
+              }, 2000);
+            }
+          } catch {
+            prompt("Salin tautan ini:", window.location.href);
+          }
+        }
+      });
+    });
+</script>

@@ -1,0 +1,666 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import Header from "../../components/Header.astro";
+import Footer from "../../components/Footer.astro";
+import Icon from "../../components/Icon.astro";
+import { db, settings, registrations, graduations } from "../../db";
+import { eq, desc, asc, or } from "drizzle-orm";
+
+export const prerender = false;
+
+// 1. Ambil Pengaturan Sekolah & Pengumuman
+const allSettings = await db.select().from(settings);
+const settingMap = allSettings.reduce(
+  (acc, curr) => {
+    acc[curr.key] = curr.value;
+    return acc;
+  },
+  {} as Record<string, string>,
+);
+
+const schoolName = settingMap["school_name"] || "SMAN 1 UNGGULAN";
+const schoolType = (settingMap["school_type"] || settingMap["school_level"] || "SMA").toUpperCase();
+const admissionsLabel = settingMap["admissions_label"] || settingMap["ppdb_label"] || "PPDB";
+const admissionsYear = settingMap["ppdb_year"] || "2026/2027";
+const grade12Year = settingMap["graduation_grade12_year"] || "2025/2026";
+const grade12Decree = settingMap["graduation_grade12_decree"] || "421.3/089/CADISDIK-WIL.IV/2026";
+const principalName = settingMap["principal_name"] || "Dr. H. Sulaiman, M.Pd.";
+const principalNip = settingMap["principal_nip"] || "19720315 199802 1 004";
+const logoUrl = settingMap["logo_url"] || "";
+
+// Evaluasi Kunci Rilis (Release Gate)
+const nowIso = new Date().toISOString();
+
+const admissionsPublished = settingMap["admissions_announcement_published"] !== "false";
+const admissionsDate = settingMap["admissions_announcement_date"] || "";
+const admissionsIsLocked = !admissionsPublished || (admissionsDate && admissionsDate > nowIso);
+const admissionsNotes = settingMap["admissions_announcement_notes"] || "Selamat kepada calon siswa yang dinyatakan lolos seleksi penerimaan.";
+
+const grade12Published = settingMap["graduation_grade12_published"] !== "false";
+const grade12Date = settingMap["graduation_grade12_date"] || "";
+const grade12IsLocked = !grade12Published || (grade12Date && grade12Date > nowIso);
+const grade12Notes = settingMap["graduation_grade12_notes"] || "Pengumuman kelulusan resmi peserta didik tingkat akhir.";
+
+// 2. Ambil Data Hasil Seleksi Siswa Baru (Hanya yang berstatus 'accepted' atau 'waitlist' atau 'rejected')
+let admissionsData: any[] = [];
+if (!admissionsIsLocked) {
+  admissionsData = await db
+    .select({
+      id: registrations.id,
+      registrationNumber: registrations.registrationNumber,
+      fullName: registrations.fullName,
+      prevSchool: registrations.prevSchool,
+      admissionPath: registrations.admissionPath,
+      majorChoice1: registrations.majorChoice1,
+      wave: registrations.wave,
+      academicYear: registrations.academicYear,
+      selectionStatus: registrations.selectionStatus,
+      createdAt: registrations.createdAt,
+    })
+    .from(registrations)
+    .where(
+      or(
+        eq(registrations.selectionStatus, "accepted"),
+        eq(registrations.selectionStatus, "waitlist"),
+        eq(registrations.selectionStatus, "rejected"),
+      ),
+    )
+    .orderBy(asc(registrations.admissionPath), asc(registrations.fullName));
+}
+
+// 3. Ambil Data Kelulusan Kelas 12
+let grade12Data: any[] = [];
+if (!grade12IsLocked) {
+  grade12Data = await db
+    .select()
+    .from(graduations)
+    .where(eq(graduations.academicYear, grade12Year))
+    .orderBy(asc(graduations.className), asc(graduations.name));
+}
+
+// Opsi Filter
+const admissionsPaths = Array.from(new Set(admissionsData.map((a) => a.admissionPath).filter(Boolean))).sort();
+const grade12Classes = Array.from(new Set(grade12Data.map((g) => g.className).filter(Boolean))).sort();
+
+// Label tingkat akhir dinamis
+const gradeFinalLabel = ["SD", "MI"].includes(schoolType)
+  ? "Kelas 6"
+  : ["SMP", "MTS"].includes(schoolType)
+    ? "Kelas 9"
+    : "Kelas 12";
+
+function formatDateTimeIndo(dtStr?: string) {
+  if (!dtStr) return "Sesuai Jadwal Resmi";
+  try {
+    const d = new Date(dtStr);
+    return d.toLocaleDateString("id-ID", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    }) + " WIB";
+  } catch {
+    return dtStr;
+  }
+}
+---
+
+<Layout
+  title={`Pengumuman Kelulusan & Hasil Seleksi — ${schoolName}`}
+  description={`Portal resmi pengumuman kelulusan siswa dan hasil seleksi pendaftaran siswa baru (${admissionsLabel}) ${schoolName}.`}
+>
+  <Header currentPath="/kelulusan" />
+
+  <main class="flex-1 py-10 sm:py-14 bg-background font-body text-body">
+    <div class="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 space-y-8">
+      <!-- Hero Header -->
+      <div class="text-center space-y-2.5 max-w-2xl mx-auto">
+        <h1 class="font-display text-2xl sm:text-3xl lg:text-4xl font-extrabold uppercase tracking-tight text-heading">
+          PENGUMUMAN KELULUSAN
+        </h1>
+        <p class="text-xs sm:text-sm text-muted leading-relaxed">
+          Portal verifikasi status kelulusan peserta didik dan hasil seleksi penerimaan siswa baru secara transparan, akurat, dan real-time.
+        </p>
+      </div>
+
+      <!-- Tab Switcher 2 Kategori -->
+      <div class="flex justify-center">
+        <div class="inline-flex rounded-xl p-1 bg-surface-subtle border border-border shadow-xs *:flex *:items-center *:gap-2 *:rounded-lg *:px-4 sm:*:px-6 *:py-2.5 *:text-xs *:transition-all *:cursor-pointer">
+          <button
+            type="button"
+            id="tab-btn-admissions"
+            class="tab-btn bg-primary text-white font-bold shadow-xs"
+            data-target="section-admissions"
+          >
+            <Icon name="user-plus" class="h-4 w-4" />
+            <span>Hasil Seleksi Siswa Baru ({admissionsLabel})</span>
+          </button>
+          <button
+            type="button"
+            id="tab-btn-grade12"
+            class="tab-btn text-muted hover:text-heading font-semibold"
+            data-target="section-grade12"
+          >
+            <Icon name="academic" class="h-4 w-4" />
+            <span>Kelulusan {gradeFinalLabel} (Tingkat Akhir)</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ======================================================== -->
+      <!-- TAB 1: HASIL SELEKSI SISWA BARU (TABEL FRONTEND)         -->
+      <!-- ======================================================== -->
+      <section id="section-admissions" class="tab-section space-y-6">
+        {admissionsIsLocked ? (
+          <div class="rounded-[12px] border border-border bg-surface p-8 sm:p-12 text-center space-y-4 max-w-xl mx-auto shadow-xs">
+            <div class="h-12 w-12 rounded-full bg-warning-light text-warning-text flex items-center justify-center mx-auto">
+              <Icon name="clock" class="h-6 w-6" />
+            </div>
+            <div class="space-y-1.5">
+              <h2 class="font-display text-lg font-bold text-heading">
+                Pengumuman Hasil Seleksi {admissionsLabel} Belum Dibuka
+              </h2>
+              <p class="text-xs text-muted leading-relaxed">
+                {admissionsNotes}
+              </p>
+              {admissionsDate && (
+                <div class="mt-3 inline-block rounded-[6px] bg-surface-subtle border border-border px-3.5 py-1.5 font-mono text-xs text-heading font-semibold">
+                  Jadwal Rilis: {formatDateTimeIndo(admissionsDate)}
+                </div>
+              )}
+            </div>
+            <div class="pt-2">
+              <a
+                href="/pendaftaran"
+                class="inline-flex h-9 items-center justify-center rounded-[6px] border border-border bg-surface px-4 text-xs font-semibold text-heading hover:bg-surface-subtle transition-colors shadow-xs"
+              >
+                Kembali ke Informasi Pendaftaran
+              </a>
+            </div>
+          </div>
+        ) : (
+          <div class="rounded-[12px] border border-border bg-surface shadow-xs p-5 sm:p-6 space-y-5">
+            <!-- Header Ringkasan & Filter (No ad-hoc divider) -->
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-1">
+              <div>
+                <h2 class="font-display text-base font-bold text-heading">
+                  Tabel Hasil Seleksi Penerimaan Siswa Baru TA {admissionsYear}
+                </h2>
+                <p class="text-xs text-muted mt-0.5">
+                  Daftar calon peserta didik yang telah ditetapkan status seleksinya oleh panitia penerimaan.
+                </p>
+              </div>
+
+              <!-- Live Search & Filter -->
+              <div class="flex flex-wrap items-center gap-2.5">
+                <div class="relative w-full sm:w-64">
+                  <input
+                    type="text"
+                    id="search-adm-fe"
+                    aria-label="Cari No. Daftar atau Nama Siswa"
+                    placeholder="Cari No. Daftar atau Nama Siswa..."
+                    class="h-9 w-full rounded-[6px] border border-border bg-surface pl-8 pr-3 text-xs text-heading"
+                  />
+                  <Icon name="search" class="absolute left-2.5 top-2.5 h-4 w-4 text-muted pointer-events-none" />
+                </div>
+
+                <select
+                  id="filter-adm-path-fe"
+                  aria-label="Filter Jalur Pendaftaran"
+                  class="h-9 rounded-[6px] border border-border bg-surface px-3 text-xs text-heading"
+                >
+                  <option value="">Semua Jalur</option>
+                  {admissionsPaths.map((p) => (
+                    <option value={p}>{p}</option>
+                  ))}
+                </select>
+
+                <select
+                  id="filter-adm-status-fe"
+                  class="h-9 rounded-[6px] border border-border bg-surface px-3 text-xs text-heading"
+                >
+                  <option value="">Semua Keputusan</option>
+                  <option value="accepted">Diterima</option>
+                  <option value="waitlist">Cadangan</option>
+                  <option value="rejected">Tidak Diterima</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Tabel Hasil Seleksi Pendaftaran -->
+            <div class="overflow-x-auto border border-border rounded-[8px]">
+              <table class="w-full text-left text-xs" id="table-admissions-fe">
+                <thead class="bg-surface-subtle border-b border-border text-[11px] font-semibold text-muted uppercase tracking-wider">
+                  <tr>
+                    <th class="py-3 px-3.5 w-12 text-center">No</th>
+                    <th class="py-3 px-3.5">No. Pendaftaran</th>
+                    <th class="py-3 px-3.5">Nama Lengkap Calon Siswa</th>
+                    <th class="py-3 px-3.5">Asal Sekolah</th>
+                    <th class="py-3 px-3.5">Jalur &amp; Pilihan</th>
+                    <th class="py-3 px-3.5 text-center">Status Keputusan</th>
+                    <th class="py-3 px-3.5 text-right">Bukti Seleksi</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-border" id="tbody-admissions-fe">
+                  {admissionsData.length === 0 ? (
+                    <tr>
+                      <td colspan="7" class="py-8 text-center text-muted">
+                        Belum ada data hasil seleksi yang diumumkan.
+                      </td>
+                    </tr>
+                  ) : (
+                    admissionsData.map((item, idx) => (
+                      <tr
+                        class="hover:bg-surface-subtle/70 transition-colors row-adm-fe"
+                        data-path={item.admissionPath}
+                        data-status={item.selectionStatus}
+                      >
+                        <td class="py-3 px-3.5 text-center text-muted font-mono">{idx + 1}</td>
+                        <td class="py-3 px-3.5 font-mono font-bold text-heading whitespace-nowrap">
+                          {item.registrationNumber}
+                          <span class="block text-[10px] text-muted font-normal">{item.wave || "Gelombang 1"}</span>
+                        </td>
+                        <td class="py-3 px-3.5 font-bold text-heading">
+                          {item.fullName}
+                        </td>
+                        <td class="py-3 px-3.5 text-muted">
+                          {item.prevSchool || "—"}
+                        </td>
+                        <td class="py-3 px-3.5 whitespace-nowrap">
+                          <span class="inline-block rounded-[4px] bg-surface-subtle border border-border px-2 py-0.5 text-[10px] font-medium text-heading">
+                            {item.admissionPath}
+                          </span>
+                          {item.majorChoice1 && <span class="block text-[10px] text-muted mt-0.5">{item.majorChoice1}</span>}
+                        </td>
+                        <td class="py-3 px-3.5 text-center whitespace-nowrap">
+                          <span class:list={[
+                            "inline-flex items-center rounded-[4px] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider border",
+                            item.selectionStatus === "accepted" ? "bg-success-light text-success-text border-success/30" :
+                            item.selectionStatus === "waitlist" ? "bg-warning-light text-warning-text border-warning/30" :
+                            "bg-error-light text-error-text border-error/30"
+                          ]}>
+                            {item.selectionStatus === "accepted" ? "DITERIMA" :
+                             item.selectionStatus === "waitlist" ? "CADANGAN" : "TIDAK DITERIMA"}
+                          </span>
+                        </td>
+                        <td class="py-3 px-3.5 text-right whitespace-nowrap">
+                          <a
+                            href={`/pendaftaran/cetak?id=${item.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline"
+                          >
+                            <span>Lihat Bukti</span>
+                            <Icon name="chevron-right" class="h-3 w-3" />
+                          </a>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="text-[11px] text-muted flex items-center justify-between pt-1">
+              <span id="adm-row-count">Menampilkan {admissionsData.length} data pendaftar</span>
+              <span>Keputusan panitia penerimaan bersifat mutlak dan tidak dapat diganggu gugat.</span>
+            </div>
+          </div>
+        )}
+      </section>
+
+      <!-- ======================================================== -->
+      <!-- TAB 2: KELULUSAN KELAS 12 (TABEL FRONTEND)               -->
+      <!-- ======================================================== -->
+      <section id="section-grade12" class="tab-section hidden space-y-6">
+        {grade12IsLocked ? (
+          <div class="rounded-[12px] border border-border bg-surface p-8 sm:p-12 text-center space-y-4 max-w-xl mx-auto shadow-xs">
+            <div class="h-12 w-12 rounded-full bg-primary text-white flex items-center justify-center mx-auto">
+              <Icon name="lock" class="h-6 w-6" />
+            </div>
+            <div class="space-y-1.5">
+              <h2 class="font-display text-lg font-bold text-heading">
+                Pengumuman Kelulusan {gradeFinalLabel} Belum Dibuka
+              </h2>
+              <p class="text-xs text-muted leading-relaxed">
+                {grade12Notes}
+              </p>
+              {grade12Date && (
+                <div class="mt-3 inline-block rounded-[6px] bg-surface-subtle border border-border px-3.5 py-1.5 font-mono text-xs text-heading font-semibold">
+                  Jadwal Rilis Resmi: {formatDateTimeIndo(grade12Date)}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div class="rounded-[12px] border border-border bg-surface shadow-xs p-5 sm:p-6 space-y-5">
+            <!-- Header Ringkasan & Filter (No ad-hoc divider) -->
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-1">
+              <div>
+                <h2 class="font-display text-base font-bold text-heading">
+                  Tabel Pengumuman Kelulusan Siswa {gradeFinalLabel} TA {grade12Year}
+                </h2>
+                <p class="text-xs text-muted mt-0.5">
+                  Berdasarkan Surat Keputusan Kepala Sekolah Nomor: <span class="font-mono font-bold text-heading">{grade12Decree}</span>
+                </p>
+              </div>
+
+              <!-- Live Search & Filter -->
+              <div class="flex flex-wrap items-center gap-2.5">
+                <div class="relative w-full sm:w-64">
+                  <input
+                    type="text"
+                    id="search-g12-fe"
+                    aria-label="Cari NISN, NIS, atau Nama Siswa"
+                    placeholder="Cari NISN, NIS, atau Nama Siswa..."
+                    class="h-9 w-full rounded-[6px] border border-border bg-surface pl-8 pr-3 text-xs text-heading"
+                  />
+                  <Icon name="search" class="absolute left-2.5 top-2.5 h-4 w-4 text-muted pointer-events-none" />
+                </div>
+
+                <select
+                  id="filter-g12-class-fe"
+                  aria-label="Filter Rombel Kelas"
+                  class="h-9 rounded-[6px] border border-border bg-surface px-3 text-xs text-heading"
+                >
+                  <option value="">Semua Rombel Kelas</option>
+                  {grade12Classes.map((c) => (
+                    <option value={c}>{c}</option>
+                  ))}
+                </select>
+
+                <select
+                  id="filter-g12-status-fe"
+                  class="h-9 rounded-[6px] border border-border bg-surface px-3 text-xs text-heading"
+                >
+                  <option value="">Semua Status Kelulusan</option>
+                  <option value="LULUS">LULUS</option>
+                  <option value="TIDAK_LULUS">TIDAK LULUS</option>
+                  <option value="DITUNDA">DITUNDA</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Tabel Data Kelulusan Siswa Kelas 12 -->
+            <div class="overflow-x-auto border border-border rounded-[8px]">
+              <table class="w-full text-left text-xs" id="table-grade12-fe">
+                <thead class="bg-surface-subtle border-b border-border text-[11px] font-semibold text-muted uppercase tracking-wider">
+                  <tr>
+                    <th class="py-3 px-3.5 w-12 text-center">No</th>
+                    <th class="py-3 px-3.5">NISN / NIS</th>
+                    <th class="py-3 px-3.5">Nama Lengkap Siswa</th>
+                    <th class="py-3 px-3.5">Kelas &amp; Jurusan</th>
+                    <th class="py-3 px-3.5 text-center">Status Kelulusan</th>
+                    <th class="py-3 px-3.5">No. SKL / Keterangan</th>
+                    <th class="py-3 px-3.5 text-right">Surat Keterangan</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-border" id="tbody-grade12-fe">
+                  {grade12Data.length === 0 ? (
+                    <tr>
+                      <td colspan="7" class="py-8 text-center text-muted">
+                        Belum ada data kelulusan kelas 12 yang diumumkan.
+                      </td>
+                    </tr>
+                  ) : (
+                    grade12Data.map((item, idx) => (
+                      <tr
+                        class="hover:bg-surface-subtle/70 transition-colors row-g12-fe"
+                        data-class={item.className}
+                        data-status={item.status}
+                      >
+                        <td class="py-3 px-3.5 text-center text-muted font-mono">{idx + 1}</td>
+                        <td class="py-3 px-3.5 font-mono text-heading">
+                          <span class="font-bold block">{item.nisn}</span>
+                          {item.nis && <span class="text-[10px] text-muted">NIS: {item.nis}</span>}
+                        </td>
+                        <td class="py-3 px-3.5 font-bold text-heading">
+                          {item.name}
+                        </td>
+                        <td class="py-3 px-3.5">
+                          <span class="font-semibold text-heading block">{item.className}</span>
+                          {item.major && <span class="text-[10px] text-muted">{item.major}</span>}
+                        </td>
+                        <td class="py-3 px-3.5 text-center whitespace-nowrap">
+                          <span class:list={[
+                            "inline-flex items-center rounded-[4px] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider border",
+                            item.status === "LULUS" ? "bg-success-light text-success-text border-success/30" :
+                            item.status === "DITUNDA" ? "bg-warning-light text-warning-text border-warning/30" :
+                            "bg-error-light text-error-text border-error/30"
+                          ]}>
+                            {item.status.replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td class="py-3 px-3.5">
+                          <span class="font-mono text-[11px] text-heading block">{item.letterNumber || "—"}</span>
+                          {item.notes && <span class="text-[10px] text-muted block truncate max-w-xs">{item.notes}</span>}
+                        </td>
+                        <td class="py-3 px-3.5 text-right whitespace-nowrap">
+                          <button
+                            type="button"
+                            class="btn-view-skl inline-flex items-center gap-1 text-[11px] font-semibold text-primary hover:underline cursor-pointer"
+                            data-student={JSON.stringify(item)}
+                          >
+                            <span>Lihat SKL</span>
+                            <Icon name="chevron-right" class="h-3 w-3" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="text-[11px] text-muted flex items-center justify-between pt-1">
+              <span id="g12-row-count">Menampilkan {grade12Data.length} data siswa</span>
+              <span>Surat Keterangan Lulus (SKL) sementara dapat dicetak secara mandiri.</span>
+            </div>
+          </div>
+        )}
+      </section>
+    </div>
+  </main>
+
+  <!-- ======================================================== -->
+  <!-- MODAL SURAT KETERANGAN LULUS (SKL) MANDIRI SISWA         -->
+  <!-- ======================================================== -->
+  <div id="modal-skl" class="fixed inset-0 z-50 hidden bg-heading/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-surface rounded-[12px] border border-border shadow-2xl max-w-xl w-full p-6 space-y-5 text-xs">
+      <!-- Kop Surat Modal -->
+      <div class="flex items-center gap-3 border-b-2 border-heading pb-3">
+        {logoUrl ? (
+          <img src={logoUrl} alt={schoolName} class="h-12 w-auto object-contain" />
+        ) : (
+          <div class="h-10 w-10 rounded-[6px] bg-primary text-white flex items-center justify-center font-bold text-sm">
+            {schoolName.charAt(0)}
+          </div>
+        )}
+        <div class="flex-1 text-center">
+          <p class="font-bold text-sm uppercase tracking-wide text-heading">{schoolName}</p>
+          <p class="text-[10px] text-muted">SURAT KETERANGAN KELULUSAN SEMENTARA</p>
+          <p class="font-mono text-[10px] text-heading font-semibold" id="skl-modal-no">No: 421.3/SKL/2026</p>
+        </div>
+      </div>
+
+      <div class="space-y-3">
+        <p class="text-justify leading-relaxed">
+          Kepala {schoolName} menerangkan bahwa peserta didik di bawah ini:
+        </p>
+
+        <div class="bg-surface-subtle border border-border rounded-[8px] p-3.5 space-y-1.5">
+          <div class="grid grid-cols-3">
+            <span class="text-muted">Nama Lengkap:</span>
+            <strong class="col-span-2 text-heading" id="skl-modal-name">-</strong>
+          </div>
+          <div class="grid grid-cols-3">
+            <span class="text-muted">NISN / NIS:</span>
+            <span class="col-span-2 font-mono text-heading" id="skl-modal-nisn">-</span>
+          </div>
+          <div class="grid grid-cols-3">
+            <span class="text-muted">Kelas / Jurusan:</span>
+            <span class="col-span-2 text-heading" id="skl-modal-class">-</span>
+          </div>
+          <div class="grid grid-cols-3">
+            <span class="text-muted">Tahun Ajaran:</span>
+            <span class="col-span-2 text-heading">{grade12Year}</span>
+          </div>
+        </div>
+
+        <div class="text-center p-3 rounded-[8px] border border-success/30 bg-success-light space-y-0.5">
+          <span class="text-[11px] font-medium text-success-text block">Dinyatakan:</span>
+          <strong class="font-display text-lg font-extrabold text-success-text tracking-wider" id="skl-modal-status">
+            LULUS
+          </strong>
+        </div>
+
+        <div class="pt-4 flex justify-end">
+          <div class="text-center text-[11px] space-y-1">
+            <p class="text-muted">Kepala Sekolah,</p>
+            <div class="h-10"></div>
+            <p class="font-bold text-heading underline">{principalName}</p>
+            <p class="text-[10px] font-mono text-muted">NIP. {principalNip}</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal Actions (No ad-hoc divider) -->
+      <div class="flex items-center justify-between pt-3">
+        <button type="button" id="btn-close-skl" class="h-9 px-4 rounded-[6px] border border-border text-heading font-semibold hover:bg-surface-subtle transition-colors cursor-pointer">
+          Tutup
+        </button>
+        <button type="button" id="btn-print-skl" class="h-9 px-5 rounded-[6px] bg-primary hover:bg-primary-hover text-white font-semibold transition-all duration-200 hover:shadow-(--shadow-button-glow) cursor-pointer shadow-xs">
+          Cetak Surat (PDF)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <Footer />
+
+  <script is:inline>
+    document.addEventListener("DOMContentLoaded", () => {
+      // 1. Tab Switcher Antara Siswa Baru & Kelas 12
+      const tabBtnAdm = document.getElementById("tab-btn-admissions");
+      const tabBtnG12 = document.getElementById("tab-btn-grade12");
+      const secAdm = document.getElementById("section-admissions");
+      const secG12 = document.getElementById("section-grade12");
+
+      function switchTab(activeBtn, inactiveBtn, showSec, hideSec) {
+        activeBtn.classList.remove("text-muted", "hover:text-heading", "font-semibold");
+        activeBtn.classList.add("bg-primary", "text-white", "font-bold", "shadow-xs");
+        inactiveBtn.classList.remove("bg-primary", "text-white", "font-bold", "shadow-xs");
+        inactiveBtn.classList.add("text-muted", "hover:text-heading", "font-semibold");
+        showSec?.classList.remove("hidden");
+        hideSec?.classList.add("hidden");
+      }
+
+      tabBtnAdm?.addEventListener("click", () => switchTab(tabBtnAdm, tabBtnG12, secAdm, secG12));
+      tabBtnG12?.addEventListener("click", () => switchTab(tabBtnG12, tabBtnAdm, secG12, secAdm));
+
+      // 2. Filter & Search Siswa Baru Frontend
+      const searchAdmFe = document.getElementById("search-adm-fe");
+      const filterPathFe = document.getElementById("filter-adm-path-fe");
+      const filterStatusFe = document.getElementById("filter-adm-status-fe");
+      const admRowCount = document.getElementById("adm-row-count");
+
+      function filterAdmissionsTableFe() {
+        const q = (searchAdmFe?.value || "").toLowerCase().trim();
+        const p = filterPathFe?.value || "";
+        const s = filterStatusFe?.value || "";
+        let visibleCount = 0;
+
+        document.querySelectorAll(".row-adm-fe").forEach((row) => {
+          const text = row.textContent?.toLowerCase() || "";
+          const path = row.getAttribute("data-path") || "";
+          const status = row.getAttribute("data-status") || "";
+
+          const matchQ = !q || text.includes(q);
+          const matchP = !p || path === p;
+          const matchS = !s || status === s;
+
+          if (matchQ && matchP && matchS) {
+            row.style.display = "";
+            visibleCount++;
+          } else {
+            row.style.display = "none";
+          }
+        });
+
+        if (admRowCount) admRowCount.textContent = `Menampilkan ${visibleCount} data pendaftar`;
+      }
+
+      searchAdmFe?.addEventListener("input", filterAdmissionsTableFe);
+      filterPathFe?.addEventListener("change", filterAdmissionsTableFe);
+      filterStatusFe?.addEventListener("change", filterAdmissionsTableFe);
+
+      // 3. Filter & Search Kelas 12 Frontend
+      const searchG12Fe = document.getElementById("search-g12-fe");
+      const filterClassG12Fe = document.getElementById("filter-g12-class-fe");
+      const filterStatusG12Fe = document.getElementById("filter-g12-status-fe");
+      const g12RowCount = document.getElementById("g12-row-count");
+
+      function filterGrade12TableFe() {
+        const q = (searchG12Fe?.value || "").toLowerCase().trim();
+        const c = filterClassG12Fe?.value || "";
+        const s = filterStatusG12Fe?.value || "";
+        let visibleCount = 0;
+
+        document.querySelectorAll(".row-g12-fe").forEach((row) => {
+          const text = row.textContent?.toLowerCase() || "";
+          const cls = row.getAttribute("data-class") || "";
+          const status = row.getAttribute("data-status") || "";
+
+          const matchQ = !q || text.includes(q);
+          const matchC = !c || cls === c;
+          const matchS = !s || status === s;
+
+          if (matchQ && matchC && matchS) {
+            row.style.display = "";
+            visibleCount++;
+          } else {
+            row.style.display = "none";
+          }
+        });
+
+        if (g12RowCount) g12RowCount.textContent = `Menampilkan ${visibleCount} data siswa`;
+      }
+
+      searchG12Fe?.addEventListener("input", filterGrade12TableFe);
+      filterClassG12Fe?.addEventListener("change", filterGrade12TableFe);
+      filterStatusG12Fe?.addEventListener("change", filterGrade12TableFe);
+
+      // 4. Modal SKL Mandiri Siswa
+      const modalSkl = document.getElementById("modal-skl");
+      const btnCloseSkl = document.getElementById("btn-close-skl");
+      const btnPrintSkl = document.getElementById("btn-print-skl");
+
+      const sklName = document.getElementById("skl-modal-name");
+      const sklNisn = document.getElementById("skl-modal-nisn");
+      const sklClass = document.getElementById("skl-modal-class");
+      const sklStatus = document.getElementById("skl-modal-status");
+      const sklNo = document.getElementById("skl-modal-no");
+
+      document.querySelectorAll(".btn-view-skl").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          try {
+            const data = JSON.parse(btn.getAttribute("data-student") || "{}");
+            if (sklName) sklName.textContent = data.name || "-";
+            if (sklNisn) sklNisn.textContent = `${data.nisn || "-"} / NIS: ${data.nis || "-"}`;
+            if (sklClass) sklClass.textContent = `${data.className || "-"} (${data.major || "-"})`;
+            if (sklStatus) sklStatus.textContent = (data.status || "LULUS").replace("_", " ");
+            if (sklNo) sklNo.textContent = `No: ${data.letterNumber || "421.3/SKL/2026"}`;
+            modalSkl?.classList.remove("hidden");
+          } catch (e) {
+            console.error(e);
+          }
+        });
+      });
+
+      btnCloseSkl?.addEventListener("click", () => modalSkl?.classList.add("hidden"));
+      btnPrintSkl?.addEventListener("click", () => window.print());
+    });
+  </script>
+</Layout>

@@ -1,0 +1,381 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import Breadcrumb from '../components/Breadcrumb.astro';
+import Icon from '../components/Icon.astro';
+import Pagination from '../components/Pagination.astro';
+import { db, documents, settings } from '../db';
+import { desc, and, eq, like, or, sql } from 'drizzle-orm';
+
+export const prerender = false;
+
+// Pengaturan Identitas Sekolah
+const allSettings = await db.select().from(settings);
+const settingMap = allSettings.reduce((acc, curr) => {
+  acc[curr.key] = curr.value;
+  return acc;
+}, {} as Record<string, string>);
+
+const schoolName = settingMap['school_name'] || 'SMAN 1 Unggulan';
+
+// Parameter Query
+const searchQuery = Astro.url.searchParams.get('q') || '';
+const currentCategory = Astro.url.searchParams.get('kategori') || 'all';
+const currentPage = Math.max(1, parseInt(Astro.url.searchParams.get('page') || '1', 10) || 1);
+const pageSize = 9;
+
+// Agregasi Kategori & Metrik Keseluruhan (Hanya Dokumen Aktif Publik)
+const allDocsRaw = await db.select().from(documents).where(eq(documents.isActive, true));
+const totalDocsCount = allDocsRaw.length;
+const totalDownloadCount = allDocsRaw.reduce((sum, item) => sum + (item.downloadCount || 0), 0);
+
+// Hitung frekuensi kategori unik
+const categoryCounts: Record<string, number> = {};
+allDocsRaw.forEach((doc) => {
+  const cat = doc.category?.trim() || 'Umum';
+  categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+});
+const categoriesList = Object.keys(categoryCounts).sort();
+
+// Filter Query
+const conditions: any[] = [eq(documents.isActive, true)];
+
+if (searchQuery.trim()) {
+  const qPattern = `%${searchQuery.trim()}%`;
+  conditions.push(
+    or(
+      like(documents.title, qPattern),
+      like(documents.category, qPattern)
+    )
+  );
+}
+
+if (currentCategory && currentCategory !== 'all') {
+  conditions.push(eq(documents.category, currentCategory));
+}
+
+const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+// Hitung total terfilter untuk pagination
+const totalFiltered = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(documents)
+  .where(whereClause)
+  .then((r) => Number(r[0]?.count || 0));
+
+const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
+const validPage = Math.min(currentPage, totalPages);
+const offset = (validPage - 1) * pageSize;
+
+const documentList = await db
+  .select()
+  .from(documents)
+  .where(whereClause)
+  .orderBy(desc(documents.createdAt), desc(documents.id))
+  .limit(pageSize)
+  .offset(offset);
+
+function getPageUrl(p: number) {
+  const params = new URLSearchParams();
+  if (searchQuery) params.set('q', searchQuery);
+  if (currentCategory && currentCategory !== 'all') params.set('kategori', currentCategory);
+  if (p > 1) params.set('page', String(p));
+  const qs = params.toString();
+  return `/dokumen${qs ? `?${qs}` : ''}`;
+}
+
+function formatDate(dateStr: string | null) {
+  if (!dateStr) return '-';
+  try {
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  } catch {
+    return dateStr;
+  }
+}
+---
+
+<Layout
+  title={`Pusat Dokumen & Unduhan Publik — ${schoolName}`}
+  description={`Pusat repositori dokumen resmi, kalender akademik, formulir administratif, dan silabus pembelajaran ${schoolName}.`}
+>
+  <Header currentPath="/dokumen" />
+
+  <main class="flex-1 py-8 sm:py-12 bg-background">
+    <div class="mx-auto max-w-7xl px-3.5 sm:px-6 lg:px-8 space-y-8 sm:space-y-10">
+      <!-- Breadcrumb -->
+      <Breadcrumb
+        class="mb-0"
+        items={[
+          { label: 'Beranda', href: '/' },
+          { label: 'Informasi Publik' },
+          { label: 'Pusat Dokumen' },
+        ]}
+      />
+
+      <!-- Hero Section -->
+      <section class="rounded-[12px] border border-border bg-surface p-5 sm:p-8 shadow-hairline">
+        <div class="space-y-4 max-w-3xl">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="rounded-[4px] bg-primary text-primary-foreground px-2.5 py-0.5 font-body text-xs font-semibold uppercase tracking-wider">
+              Arsip & Regulasi Resmi
+            </span>
+            <span class="rounded-[4px] bg-surface-subtle px-2.5 py-0.5 font-mono text-xs font-semibold text-muted border border-border">
+              Terverifikasi Institusi
+            </span>
+          </div>
+
+          <h1 class="font-display text-2xl sm:text-4xl font-bold tracking-tight text-heading leading-tight">
+            Pusat Dokumen & Repositori Unduhan
+          </h1>
+
+          <p class="font-body text-xs sm:text-base text-body leading-relaxed">
+            Akses dan unduh berkas resmi {schoolName}, mencakup kalender akademik, silabus pembelajaran, formulir administrasi kesiswaan, serta surat keputusan institusi secara terbuka dan transparan.
+          </p>
+
+          <!-- KPI Statistik Dokumen (Solid Surfaces) -->
+          <div class="grid grid-cols-3 gap-3 sm:gap-6 pt-2 max-w-lg *:rounded-[8px] *:border *:border-border *:bg-surface-subtle *:p-3">
+            <div>
+              <span class="block text-[11px] text-muted font-body">Berkas Tersedia</span>
+              <strong class="font-display text-xl sm:text-2xl text-heading font-bold">{totalDocsCount}</strong>
+            </div>
+            <div>
+              <span class="block text-[11px] text-muted font-body">Total Unduhan</span>
+              <strong class="font-display text-xl sm:text-2xl text-heading font-bold">{totalDownloadCount.toLocaleString('id-ID')}</strong>
+            </div>
+            <div>
+              <span class="block text-[11px] text-muted font-body">Kategori Berkas</span>
+              <strong class="font-display text-xl sm:text-2xl text-heading font-bold">{categoriesList.length}</strong>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Panel Pencarian & Filter Kategori -->
+      <section class="space-y-4">
+        <!-- Input Pencarian -->
+        <form method="GET" action="/dokumen" class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          {currentCategory && currentCategory !== 'all' && (
+            <input type="hidden" name="kategori" value={currentCategory} />
+          )}
+          <div class="relative flex-1">
+            <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-muted">
+              <Icon name="search" class="h-4 w-4" />
+            </div>
+            <input
+              type="text"
+              name="q"
+              value={searchQuery}
+              placeholder="Cari judul dokumen, kalender, silabus, atau formulir..."
+              class="w-full rounded-[8px] border border-border bg-surface py-2.5 pl-10 pr-4 font-body text-xs text-heading placeholder:text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary shadow-xs transition-colors"
+            />
+          </div>
+          <div class="flex items-center gap-2">
+            <button
+              type="submit"
+              class="inline-flex h-[38px] items-center justify-center gap-1.5 rounded-[8px] bg-primary px-5 text-xs font-semibold text-primary-foreground transition-all hover:bg-primary-hover shadow-xs cursor-pointer shrink-0"
+            >
+              <Icon name="search" class="h-3.5 w-3.5" />
+              <span>Cari Dokumen</span>
+            </button>
+            {(searchQuery || currentCategory !== 'all') && (
+              <a
+                href="/dokumen"
+                class="inline-flex h-[38px] items-center justify-center rounded-[8px] border border-border bg-surface px-4 text-xs font-semibold text-muted hover:text-heading hover:bg-surface-subtle transition-colors shrink-0"
+              >
+                Reset Filter
+              </a>
+            )}
+          </div>
+        </form>
+
+        <!-- Filter Tab Kategori (DRY Tailwind v4 *:) -->
+        <div class="flex flex-wrap items-center gap-2 *:rounded-[6px] *:px-3.5 *:py-1.5 *:font-body *:text-xs *:font-semibold *:transition-colors">
+          <a
+            href={searchQuery ? `/dokumen?q=${encodeURIComponent(searchQuery)}` : '/dokumen'}
+            class={currentCategory === 'all'
+              ? 'bg-primary text-primary-foreground border border-primary'
+              : 'border border-border bg-surface text-body hover:bg-surface-subtle hover:text-heading'}
+          >
+            Semua ({totalDocsCount})
+          </a>
+          {categoriesList.map((cat) => {
+            const isActive = currentCategory === cat;
+            const targetUrl = new URLSearchParams();
+            if (searchQuery) targetUrl.set('q', searchQuery);
+            targetUrl.set('kategori', cat);
+            return (
+              <a
+                href={`/dokumen?${targetUrl.toString()}`}
+                class={isActive
+                  ? 'bg-primary text-primary-foreground border border-primary'
+                  : 'border border-border bg-surface text-body hover:bg-surface-subtle hover:text-heading'}
+              >
+                {cat} ({categoryCounts[cat] || 0})
+              </a>
+            );
+          })}
+        </div>
+      </section>
+
+      <!-- Daftar Dokumen Grid -->
+      <section class="space-y-6">
+        {documentList.length === 0 ? (
+          <div class="rounded-[12px] border border-border bg-surface p-12 text-center space-y-3">
+            <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-[8px] bg-surface-subtle text-muted border border-border">
+              <Icon name="folder" class="h-6 w-6" />
+            </div>
+            <h3 class="font-display text-base font-bold text-heading">Tidak Ada Dokumen Ditemukan</h3>
+            <p class="font-body text-xs text-muted max-w-sm mx-auto">
+              {searchQuery || currentCategory !== 'all'
+                ? 'Tidak ada arsip berkas yang cocok dengan filter atau kata kunci pencarian Anda.'
+                : 'Belum ada dokumen publik yang dipublikasikan saat ini.'}
+            </p>
+            {(searchQuery || currentCategory !== 'all') && (
+              <div class="pt-2">
+                <a
+                  href="/dokumen"
+                  class="inline-flex h-[36px] items-center justify-center rounded-[6px] bg-primary px-4 text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition-colors"
+                >
+                  Lihat Semua Dokumen
+                </a>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+            {documentList.map((item) => {
+              const fileType = (item.fileType || 'PDF').toUpperCase();
+              let badgeColor = 'bg-error text-white';
+              if (fileType.includes('DOC')) badgeColor = 'bg-primary text-white';
+              else if (fileType.includes('XLS')) badgeColor = 'bg-success text-white';
+              else if (fileType.includes('ZIP') || fileType.includes('RAR')) badgeColor = 'bg-warning text-white';
+
+              return (
+                <div class="rounded-[10px] border border-border bg-surface p-5 hover:border-primary transition-all shadow-xs flex flex-col justify-between group">
+                  <div class="space-y-3">
+                    <!-- Format & Kategori Header -->
+                    <div class="flex items-center justify-between gap-2">
+                      <span class={`font-mono text-[10px] font-bold px-2 py-0.5 rounded-[4px] uppercase tracking-wider ${badgeColor}`}>
+                        {fileType}
+                      </span>
+                      <span class="rounded-[4px] border border-border bg-surface-subtle px-2 py-0.5 font-body text-[11px] font-medium text-muted truncate max-w-[160px]">
+                        {item.category || 'Umum'}
+                      </span>
+                    </div>
+
+                    <!-- Judul Dokumen -->
+                    <h3 class="font-display text-sm sm:text-base font-bold text-heading group-hover:text-primary transition-colors line-clamp-2 leading-snug">
+                      {item.title}
+                    </h3>
+
+                    <!-- Informasi Meta Berkas -->
+                    <div class="grid grid-cols-2 gap-2 pt-1 font-body text-[11px] text-muted border-t border-border/50">
+                      <div>
+                        <span class="block text-[10px] text-muted">Ukuran:</span>
+                        <span class="font-mono font-medium text-body">{item.fileSize || '1-5 MB'}</span>
+                      </div>
+                      <div>
+                        <span class="block text-[10px] text-muted">Diperbarui:</span>
+                        <span class="font-mono font-medium text-body">{formatDate(item.createdAt)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Aksi Unduh Terpadu -->
+                  <div class="pt-4 mt-4 border-t border-border/50 flex items-center justify-between gap-3">
+                    <span class="flex items-center gap-1.5 font-mono text-[11px] text-muted" title="Jumlah total pengunduhan">
+                      <Icon name="download" class="h-3.5 w-3.5 text-muted" />
+                      <span id={`count-${item.id}`}>{item.downloadCount || 0}</span> kali
+                    </span>
+
+                    <button
+                      type="button"
+                      class="btn-download inline-flex h-[34px] items-center justify-center gap-1.5 rounded-[6px] bg-primary px-3.5 text-xs font-semibold text-primary-foreground hover:bg-primary-hover shadow-xs transition-all cursor-pointer shrink-0"
+                      data-id={item.id}
+                      data-url={item.fileUrl}
+                      data-title={item.title}
+                    >
+                      <Icon name="download" class="h-3.5 w-3.5" />
+                      <span>Unduh Berkas</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <!-- Komponen Pagination Terpusat -->
+        {totalPages > 1 && (
+          <div class="rounded-[8px] border border-border bg-surface overflow-hidden shadow-xs mt-6">
+            <Pagination
+              currentPage={validPage}
+              totalPages={totalPages}
+              totalItems={totalFiltered}
+              pageSize={pageSize}
+              itemLabel="dokumen"
+              getPageUrl={getPageUrl}
+            />
+          </div>
+        )}
+      </section>
+    </div>
+  </main>
+
+  <Footer />
+</Layout>
+
+<script>
+  // Handler Interaktif Unduhan Berkas (Counter Tracking + Trigger Unduh)
+  document.addEventListener('DOMContentLoaded', () => {
+    const downloadBtns = document.querySelectorAll<HTMLButtonElement>('.btn-download');
+
+    downloadBtns.forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        const fileUrl = btn.getAttribute('data-url');
+        if (!fileUrl) return;
+
+        // Visual feedback
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = `<span class="inline-block animate-spin mr-1">↻</span> Unduh...`;
+        btn.disabled = true;
+
+        try {
+          // Increment counter secara asinkron via server API
+          if (id) {
+            fetch(`/api/documents/${id}/download`, { method: 'POST' })
+              .then((res) => res.json())
+              .then((json) => {
+                if (json.success && json.downloadCount !== undefined) {
+                  const counterEl = document.getElementById(`count-${id}`);
+                  if (counterEl) counterEl.textContent = String(json.downloadCount);
+                }
+              })
+              .catch(() => {});
+          }
+
+          // Buka berkas di jendela baru / download
+          const link = document.createElement('a');
+          link.href = fileUrl;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        } finally {
+          setTimeout(() => {
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
+          }, 800);
+        }
+      });
+    });
+  });
+</script>

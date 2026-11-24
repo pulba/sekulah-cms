@@ -1,0 +1,632 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import Breadcrumb from '../components/Breadcrumb.astro';
+import Icon from '../components/Icon.astro';
+import Pagination from '../components/Pagination.astro';
+import { db, studentsAlumni, graduationTracerStats, settings } from '../db';
+import { desc, and, eq, like, or, sql } from 'drizzle-orm';
+
+export const prerender = false;
+
+// Pengaturan Identitas Sekolah
+const allSettings = await db.select().from(settings);
+const settingMap = allSettings.reduce((acc, curr) => {
+  acc[curr.key] = curr.value;
+  return acc;
+}, {} as Record<string, string>);
+
+const schoolName = settingMap['school_name'] || 'SMAN 1 Unggulan';
+const schoolType = (settingMap['school_type'] || settingMap['school_level'] || 'SMA').toUpperCase();
+const isSD = ['SD', 'MI'].includes(schoolType);
+const isSMP = ['SMP', 'MTS'].includes(schoolType);
+const isSMK = schoolType === 'SMK';
+
+// Parameter Query
+const searchQuery = Astro.url.searchParams.get('q') || '';
+const currentYear = Astro.url.searchParams.get('tahun') || 'all';
+const currentPage = Math.max(1, parseInt(Astro.url.searchParams.get('page') || '1', 10) || 1);
+const pageSize = 8;
+
+// Ambil Statistik Penelusuran Alumni (Tracer Study Stats)
+const tracerStatsList = await db
+  .select()
+  .from(graduationTracerStats)
+  .where(eq(graduationTracerStats.isActive, true))
+  .limit(1);
+
+const latestTracer = tracerStatsList[0];
+
+// Ambil Seluruh Data Alumni Aktif untuk Filter Tahun & Agregasi
+const allAlumniRaw = await db
+  .select()
+  .from(studentsAlumni)
+  .where(and(eq(studentsAlumni.type, 'alumni'), eq(studentsAlumni.isPublicConsent, true)));
+
+const totalAlumniCount = allAlumniRaw.length;
+
+// Ekstraksi Daftar Tahun Kelulusan Unik
+const yearCounts: Record<string, number> = {};
+allAlumniRaw.forEach((a) => {
+  const y = a.year ? String(a.year).trim() : 'Lainnya';
+  yearCounts[y] = (yearCounts[y] || 0) + 1;
+});
+const availableYears = Object.keys(yearCounts).sort((a, b) => b.localeCompare(a));
+
+// Filter Query
+const conditions: any[] = [
+  eq(studentsAlumni.type, 'alumni'),
+  eq(studentsAlumni.isPublicConsent, true),
+];
+
+if (searchQuery.trim()) {
+  const qPattern = `%${searchQuery.trim()}%`;
+  conditions.push(
+    or(
+      like(studentsAlumni.name, qPattern),
+      like(studentsAlumni.title, qPattern),
+      like(studentsAlumni.organization, qPattern),
+      like(studentsAlumni.description, qPattern)
+    )
+  );
+}
+
+if (currentYear && currentYear !== 'all') {
+  conditions.push(eq(studentsAlumni.year, currentYear));
+}
+
+const whereClause = and(...conditions);
+
+// Hitung total terfilter untuk pagination
+const totalFiltered = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(studentsAlumni)
+  .where(whereClause)
+  .then((r) => Number(r[0]?.count || 0));
+
+const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
+const validPage = Math.min(currentPage, totalPages);
+const offset = (validPage - 1) * pageSize;
+
+const alumniList = await db
+  .select()
+  .from(studentsAlumni)
+  .where(whereClause)
+  .orderBy(desc(studentsAlumni.year), desc(studentsAlumni.id))
+  .limit(pageSize)
+  .offset(offset);
+
+function getPageUrl(p: number) {
+  const params = new URLSearchParams();
+  if (searchQuery) params.set('q', searchQuery);
+  if (currentYear && currentYear !== 'all') params.set('tahun', currentYear);
+  if (p > 1) params.set('page', String(p));
+  const qs = params.toString();
+  return `/alumni${qs ? `?${qs}` : ''}`;
+}
+
+// Fallback metrik jika tabel statistik belum diisi
+const statTotalGraduates = latestTracer?.totalGraduates || 200;
+const statPtn = latestTracer?.ptnAcceptedUnique || 166;
+const statWorking = latestTracer?.workingCount || 20;
+const statEntrepreneur = latestTracer?.entrepreneurCount || 14;
+---
+
+<Layout
+  title={`Tracer Study & Jejaring Alumni — ${schoolName}`}
+  description={`Pusat informasi penelusuran lulusan (tracer study), rekam jejak karier, dan jejaring ikatan alumni ${schoolName}.`}
+>
+  <Header currentPath="/alumni" />
+
+  <main class="flex-1 py-8 sm:py-12 bg-background">
+    <div class="mx-auto max-w-7xl px-3.5 sm:px-6 lg:px-8 space-y-8 sm:space-y-10">
+      <!-- Breadcrumb -->
+      <Breadcrumb
+        class="mb-0"
+        items={[
+          { label: 'Beranda', href: '/' },
+          { label: 'Kesiswaan' },
+          { label: 'Tracer Study Alumni' },
+        ]}
+      />
+
+      <!-- Hero Section -->
+      <section class="rounded-[12px] border border-border bg-surface p-5 sm:p-8 shadow-hairline">
+        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+          <div class="space-y-4 max-w-2xl">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="rounded-[4px] bg-primary text-primary-foreground px-2.5 py-0.5 font-body text-xs font-semibold uppercase tracking-wider">
+                Tracer Study & Alumni
+              </span>
+              <span class="rounded-[4px] bg-surface-subtle px-2.5 py-0.5 font-mono text-xs font-semibold text-muted border border-border">
+                Jejaring Lintas Angkatan
+              </span>
+            </div>
+
+            <h1 class="font-display text-2xl sm:text-4xl font-bold tracking-tight text-heading leading-tight">
+              Tracer Study & Rekam Jejak Alumni
+            </h1>
+
+            <p class="font-body text-xs sm:text-base text-body leading-relaxed">
+              Menyajikan kiprah dan penelusuran lulusan {schoolName} di perguruan tinggi terkemuka, dunia kerja industri multinasional, serta bidang kewirausahaan mandiri di tanah air maupun mancanegara.
+            </p>
+          </div>
+
+          <!-- Tombol CTA Buka Modal Input Tracer -->
+          <div class="shrink-0 flex flex-col sm:flex-row lg:flex-col gap-3">
+            <button
+              type="button"
+              id="btn-open-tracer-modal"
+              class="inline-flex h-[42px] items-center justify-center gap-2 rounded-[8px] bg-primary px-5 text-xs font-semibold text-primary-foreground hover:bg-primary-hover shadow-xs transition-all cursor-pointer"
+            >
+              <Icon name="user-plus" class="h-4 w-4" />
+              <span>Isi Tracer Study Mandiri</span>
+            </button>
+            <p class="font-body text-[11px] text-muted text-center lg:text-left">
+              Alumni {schoolName}? Perbarui rekam jejak Anda di sini.
+            </p>
+          </div>
+        </div>
+
+        <!-- 4 KPI Statistik Serapan Lulusan (Adaptif Jenjang Pendidikan) -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 pt-6 mt-6 border-t border-border *:rounded-[8px] *:border *:border-border *:bg-surface-subtle *:p-3.5">
+          <div>
+            <span class="block text-[11px] text-muted font-body">Lulusan Terdata (Tracer)</span>
+            <strong class="font-display text-xl sm:text-2xl text-heading font-bold">{statTotalGraduates}</strong>
+            <span class="block text-[10px] text-muted font-mono mt-0.5">Angkatan {latestTracer?.graduationYear || 'Terbaru'}</span>
+          </div>
+          <div>
+            <span class="block text-[11px] text-muted font-body">
+              {isSD ? "Masuk SMP Negeri" : isSMP ? "Lolos SMA/SMK Negeri" : isSMK ? "Bekerja di Industri (BKK)" : "Perguruan Tinggi (PTN/PTS)"}
+            </span>
+            <strong class="font-display text-xl sm:text-2xl text-success font-bold">
+              {isSMK ? statWorking : statPtn}
+            </strong>
+            <span class="block text-[10px] text-muted font-mono mt-0.5">
+              {isSD ? "Zonasi & Prestasi" : isSMP ? "Jalur Prestasi & Domisili" : isSMK ? "Terserap Industri Mitra" : "SNBP, SNBT & Mandiri"}
+            </span>
+          </div>
+          <div>
+            <span class="block text-[11px] text-muted font-body">
+              {isSD ? "SMP Swasta / MTs" : isSMP ? "SMA/SMK Swasta / MA" : isSMK ? "Melanjutkan Kuliah (PT)" : "Karier & Dunia Industri"}
+            </span>
+            <strong class="font-display text-xl sm:text-2xl text-primary font-bold">
+              {isSD || isSMP ? (latestTracer?.ptsAccepted || 0) : isSMK ? statPtn : statWorking}
+            </strong>
+            <span class="block text-[10px] text-muted font-mono mt-0.5">
+              {isSD || isSMP ? "Madrasah & Pesantren" : isSMK ? "Kuliah PTN / PTS" : "Bekerja Profesional"}
+            </span>
+          </div>
+          <div>
+            <span class="block text-[11px] text-muted font-body">
+              {isSD || isSMP ? "Rasio Melanjutkan" : "Wirausaha Mandiri"}
+            </span>
+            <strong class="font-display text-xl sm:text-2xl text-warning font-bold">
+              {isSD || isSMP ? "100%" : statEntrepreneur}
+            </strong>
+            <span class="block text-[10px] text-muted font-mono mt-0.5">
+              {isSD ? "Wajib Belajar 9 Tahun" : isSMP ? "Wajib Belajar 12 Tahun" : "Founder & Bisnis (BMW)"}
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Panel Pencarian & Filter Angkatan -->
+      <section class="space-y-4">
+        <!-- Input Pencarian -->
+        <form method="GET" action="/alumni" class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+          {currentYear && currentYear !== 'all' && (
+            <input type="hidden" name="tahun" value={currentYear} />
+          )}
+          <div class="relative flex-1">
+            <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-muted">
+              <Icon name="search" class="h-4 w-4" />
+            </div>
+            <input
+              type="text"
+              name="q"
+              value={searchQuery}
+              placeholder="Cari nama alumni, profesi, perguruan tinggi, atau nama perusahaan..."
+              class="w-full rounded-[8px] border border-border bg-surface py-2.5 pl-10 pr-4 font-body text-xs text-heading placeholder:text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary shadow-xs transition-colors"
+            />
+          </div>
+          <div class="flex items-center gap-2">
+            <button
+              type="submit"
+              class="inline-flex h-[38px] items-center justify-center gap-1.5 rounded-[8px] bg-primary px-5 text-xs font-semibold text-primary-foreground transition-all hover:bg-primary-hover shadow-xs cursor-pointer shrink-0"
+            >
+              <Icon name="search" class="h-3.5 w-3.5" />
+              <span>Cari Alumni</span>
+            </button>
+            {(searchQuery || currentYear !== 'all') && (
+              <a
+                href="/alumni"
+                class="inline-flex h-[38px] items-center justify-center rounded-[8px] border border-border bg-surface px-4 text-xs font-semibold text-muted hover:text-heading hover:bg-surface-subtle transition-colors shrink-0"
+              >
+                Reset Filter
+              </a>
+            )}
+          </div>
+        </form>
+
+        <!-- Filter Tab Angkatan / Tahun Kelulusan (DRY Tailwind v4 *:) -->
+        <div class="flex flex-wrap items-center gap-2 *:rounded-[6px] *:px-3.5 *:py-1.5 *:font-body *:text-xs *:font-semibold *:transition-colors">
+          <a
+            href={searchQuery ? `/alumni?q=${encodeURIComponent(searchQuery)}` : '/alumni'}
+            class={currentYear === 'all'
+              ? 'bg-primary text-primary-foreground border border-primary'
+              : 'border border-border bg-surface text-body hover:bg-surface-subtle hover:text-heading'}
+          >
+            Semua Angkatan ({totalAlumniCount})
+          </a>
+          {availableYears.map((yr) => {
+            const isActive = currentYear === yr;
+            const targetUrl = new URLSearchParams();
+            if (searchQuery) targetUrl.set('q', searchQuery);
+            targetUrl.set('tahun', yr);
+            return (
+              <a
+                href={`/alumni?${targetUrl.toString()}`}
+                class={isActive
+                  ? 'bg-primary text-primary-foreground border border-primary'
+                  : 'border border-border bg-surface text-body hover:bg-surface-subtle hover:text-heading'}
+              >
+                Angkatan {yr} ({yearCounts[yr] || 0})
+              </a>
+            );
+          })}
+        </div>
+      </section>
+
+      <!-- Direktori Kartu Alumni Grid -->
+      <section class="space-y-6">
+        {alumniList.length === 0 ? (
+          <div class="rounded-[12px] border border-border bg-surface p-12 text-center space-y-3">
+            <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-[8px] bg-surface-subtle text-muted border border-border">
+              <Icon name="user" class="h-6 w-6" />
+            </div>
+            <h3 class="font-display text-base font-bold text-heading">Data Alumni Tidak Ditemukan</h3>
+            <p class="font-body text-xs text-muted max-w-sm mx-auto">
+              {searchQuery || currentYear !== 'all'
+                ? 'Tidak ada data alumni yang cocok dengan kriteria pencarian atau filter angkatan yang dipilih.'
+                : 'Belum ada data profil alumni yang terpublikasi saat ini.'}
+            </p>
+            {(searchQuery || currentYear !== 'all') && (
+              <div class="pt-2">
+                <a
+                  href="/alumni"
+                  class="inline-flex h-[36px] items-center justify-center rounded-[6px] bg-primary px-4 text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition-colors"
+                >
+                  Lihat Semua Alumni
+                </a>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+            {alumniList.map((alumnus) => {
+              const initials = alumnus.name
+                .split(' ')
+                .map((n) => n[0])
+                .slice(0, 2)
+                .join('')
+                .toUpperCase();
+
+              return (
+                <div class="rounded-[10px] border border-border bg-surface p-5 hover:border-primary transition-all shadow-xs flex flex-col justify-between group">
+                  <div class="space-y-4">
+                    <!-- Foto & Angkatan Header -->
+                    <div class="flex items-start justify-between gap-3">
+                      <div class="relative h-14 w-14 shrink-0 rounded-[8px] overflow-hidden border border-border bg-surface-subtle">
+                        {alumnus.photoUrl ? (
+                          <img
+                            src={alumnus.photoUrl}
+                            alt={alumnus.name}
+                            width="56"
+                            height="56"
+                            loading="lazy"
+                            class="h-full w-full object-cover transition-transform group-hover:scale-105"
+                          />
+                        ) : (
+                          <div class="flex h-full w-full items-center justify-center font-display text-sm font-bold text-muted">
+                            {initials}
+                          </div>
+                        )}
+                      </div>
+                      <span class="font-mono text-[11px] font-bold px-2 py-0.5 rounded-[4px] bg-primary text-primary-foreground">
+                        Lulus {alumnus.year}
+                      </span>
+                    </div>
+
+                    <!-- Identitas & Jabatan -->
+                    <div class="space-y-1">
+                      <h3 class="font-display text-base font-bold text-heading group-hover:text-primary transition-colors leading-snug">
+                        {alumnus.name}
+                      </h3>
+                      <p class="font-body text-xs font-semibold text-primary leading-tight">
+                        {alumnus.title}
+                      </p>
+                      {alumnus.organization && (
+                        <p class="font-body text-[11px] text-muted flex items-center gap-1 pt-0.5">
+                          <Icon name="academic" class="h-3 w-3 shrink-0 text-muted" />
+                          <span class="truncate">{alumnus.organization}</span>
+                        </p>
+                      )}
+                    </div>
+
+                    <!-- Testimoni / Pesan Singkat -->
+                    {alumnus.description && (
+                      <div class="rounded-[6px] border border-border bg-surface-subtle p-3 text-[11px] font-body text-body italic leading-relaxed line-clamp-4">
+                        "{alumnus.description}"
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <!-- Komponen Pagination Terpusat -->
+        {totalPages > 1 && (
+          <div class="rounded-[8px] border border-border bg-surface overflow-hidden shadow-xs mt-6">
+            <Pagination
+              currentPage={validPage}
+              totalPages={totalPages}
+              totalItems={totalFiltered}
+              pageSize={pageSize}
+              itemLabel="alumni"
+              getPageUrl={getPageUrl}
+            />
+          </div>
+        )}
+      </section>
+    </div>
+  </main>
+
+  <!-- Modal Interaktif: Formulir Tracer Study Mandiri -->
+  <div
+    id="tracer-modal"
+    class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60 p-4 transition-opacity backdrop-blur-xs"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="tracer-modal-title"
+  >
+    <div class="w-full max-w-lg rounded-[12px] border border-border bg-surface p-6 shadow-xl transition-all">
+      <div class="flex items-center justify-between pb-4 border-b border-border">
+        <div>
+          <h2 id="tracer-modal-title" class="font-display text-lg font-bold text-heading">
+            Formulir Tracer Study Alumni
+          </h2>
+          <p class="font-body text-xs text-muted mt-0.5">
+            Bantu almamater memetakan capaian lulusan dan memperluas jejaring karier.
+          </p>
+        </div>
+        <button
+          type="button"
+          id="btn-close-tracer-modal"
+          class="rounded-[6px] p-1.5 text-muted hover:bg-surface-subtle hover:text-heading transition-colors cursor-pointer"
+          aria-label="Tutup modal"
+        >
+          <Icon name="close" class="h-4 w-4" />
+        </button>
+      </div>
+
+      <form id="form-tracer-submit" class="space-y-4 pt-4 font-body text-xs">
+        <div>
+          <label for="input-name" class="block font-semibold text-heading mb-1">
+            Nama Lengkap & Gelar <span class="text-error">*</span>
+          </label>
+          <input
+            type="text"
+            id="input-name"
+            name="name"
+            required
+            placeholder="Contoh: dr. Farhan Ramadhan, Sp.BS"
+            class="w-full rounded-[6px] border border-border bg-surface px-3 py-2 text-heading placeholder:text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary shadow-xs"
+          />
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label for="input-year" class="block font-semibold text-heading mb-1">
+              Tahun Kelulusan / Angkatan <span class="text-error">*</span>
+            </label>
+            <input
+              type="text"
+              id="input-year"
+              name="year"
+              required
+              placeholder="Contoh: 2022"
+              class="w-full rounded-[6px] border border-border bg-surface px-3 py-2 text-heading placeholder:text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary shadow-xs"
+            />
+          </div>
+          <div>
+            <label for="input-title" class="block font-semibold text-heading mb-1">
+              Profesi / Status Saat Ini <span class="text-error">*</span>
+            </label>
+            <input
+              type="text"
+              id="input-title"
+              name="title"
+              required
+              placeholder="Contoh: Mahasiswa Kedokteran / Engineer"
+              class="w-full rounded-[6px] border border-border bg-surface px-3 py-2 text-heading placeholder:text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary shadow-xs"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label for="input-org" class="block font-semibold text-heading mb-1">
+            Nama Kampus / Perusahaan / Lembaga
+          </label>
+          <input
+            type="text"
+            id="input-org"
+            name="organization"
+            placeholder="Contoh: Universitas Indonesia / PT GoTo Gojek Tokopedia"
+            class="w-full rounded-[6px] border border-border bg-surface px-3 py-2 text-heading placeholder:text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary shadow-xs"
+          />
+        </div>
+
+        <div>
+          <label for="input-photo" class="block font-semibold text-heading mb-1">
+            Tautan Foto Profil (Opsional)
+          </label>
+          <input
+            type="url"
+            id="input-photo"
+            name="photoUrl"
+            placeholder="https://..."
+            class="w-full rounded-[6px] border border-border bg-surface px-3 py-2 text-heading placeholder:text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary shadow-xs"
+          />
+        </div>
+
+        <div>
+          <label for="input-desc" class="block font-semibold text-heading mb-1">
+            Pesan, Kesan, atau Motivasi untuk Adik Kelas
+          </label>
+          <textarea
+            id="input-desc"
+            name="description"
+            rows="3"
+            placeholder="Tuliskan pengalaman berharga selama bersekolah dan pesan untuk generasi penerus..."
+            class="w-full rounded-[6px] border border-border bg-surface px-3 py-2 text-heading placeholder:text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary shadow-xs"
+          ></textarea>
+        </div>
+
+        <div class="flex items-start gap-2 pt-1">
+          <input
+            type="checkbox"
+            id="input-consent"
+            name="isPublicConsent"
+            checked
+            class="mt-0.5 rounded-[4px] border-border text-primary focus:ring-primary cursor-pointer"
+          />
+          <label for="input-consent" class="text-[11px] text-muted leading-tight cursor-pointer">
+            Saya menyetujui ringkasan data kelulusan dan karier ini dipublikasikan pada direktori tracer study website resmi sekolah.
+          </label>
+        </div>
+
+        <div id="modal-alert-box" class="hidden rounded-[6px] p-3 text-xs font-semibold"></div>
+
+        <div class="pt-4 flex items-center justify-end gap-2 border-t border-border">
+          <button
+            type="button"
+            id="btn-cancel-tracer"
+            class="inline-flex h-[36px] items-center justify-center rounded-[6px] border border-border bg-surface px-4 text-xs font-semibold text-muted hover:text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+          >
+            Batal
+          </button>
+          <button
+            type="submit"
+            id="btn-submit-tracer"
+            class="inline-flex h-[36px] items-center justify-center gap-1.5 rounded-[6px] bg-primary px-5 text-xs font-semibold text-primary-foreground hover:bg-primary-hover shadow-xs transition-all cursor-pointer"
+          >
+            <Icon name="check" class="h-3.5 w-3.5" />
+            <span>Kirim Data Tracer</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <Footer />
+</Layout>
+
+<script>
+  // Script Modal Tracer Study Interaktif
+  document.addEventListener('DOMContentLoaded', () => {
+    const modal = document.getElementById('tracer-modal');
+    const openBtn = document.getElementById('btn-open-tracer-modal');
+    const closeBtn = document.getElementById('btn-close-tracer-modal');
+    const cancelBtn = document.getElementById('btn-cancel-tracer');
+    const form = document.getElementById('form-tracer-submit') as HTMLFormElement | null;
+    const submitBtn = document.getElementById('btn-submit-tracer') as HTMLButtonElement | null;
+    const alertBox = document.getElementById('modal-alert-box');
+
+    function openModal() {
+      if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        document.body.classList.add('overflow-hidden');
+      }
+    }
+
+    function closeModal() {
+      if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        document.body.classList.remove('overflow-hidden');
+      }
+      if (form) form.reset();
+      if (alertBox) alertBox.classList.add('hidden');
+    }
+
+    openBtn?.addEventListener('click', openModal);
+    closeBtn?.addEventListener('click', closeModal);
+    cancelBtn?.addEventListener('click', closeModal);
+
+    modal?.addEventListener('click', (e) => {
+      if (e.target === modal) closeModal();
+    });
+
+    form?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!submitBtn) return;
+
+      const formData = new FormData(form);
+      const payload = {
+        name: formData.get('name'),
+        year: formData.get('year'),
+        title: formData.get('title'),
+        organization: formData.get('organization') || '',
+        photoUrl: formData.get('photoUrl') || '',
+        description: formData.get('description') || '',
+        isPublicConsent: formData.get('isPublicConsent') === 'on',
+      };
+
+      const originalHtml = submitBtn.innerHTML;
+      submitBtn.innerHTML = `<span class="inline-block animate-spin mr-1">↻</span> Mengirim...`;
+      submitBtn.disabled = true;
+
+      try {
+        const res = await fetch('/api/alumni/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const json = await res.json();
+        if (json.success) {
+          if (alertBox) {
+            alertBox.className = 'rounded-[6px] p-3 text-xs font-semibold bg-success text-white';
+            alertBox.textContent = 'Data berhasil dikirim! Halaman akan diperbarui...';
+            alertBox.classList.remove('hidden');
+          }
+          setTimeout(() => {
+            closeModal();
+            window.location.reload();
+          }, 1500);
+        } else {
+          if (alertBox) {
+            alertBox.className = 'rounded-[6px] p-3 text-xs font-semibold bg-error text-white';
+            alertBox.textContent = json.error || 'Gagal mengirimkan data.';
+            alertBox.classList.remove('hidden');
+          }
+          submitBtn.innerHTML = originalHtml;
+          submitBtn.disabled = false;
+        }
+      } catch {
+        if (alertBox) {
+          alertBox.className = 'rounded-[6px] p-3 text-xs font-semibold bg-error text-white';
+          alertBox.textContent = 'Terjadi gangguan jaringan saat mengirim data.';
+          alertBox.classList.remove('hidden');
+        }
+        submitBtn.innerHTML = originalHtml;
+        submitBtn.disabled = false;
+      }
+    });
+  });
+</script>

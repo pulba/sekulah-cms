@@ -1,0 +1,547 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import Breadcrumb from "../components/Breadcrumb.astro";
+import Icon from "../components/Icon.astro";
+import { db, bkkOpportunities, settings } from "../db";
+import { eq, desc, asc, and } from "drizzle-orm";
+
+export const prerender = false;
+
+const allSettings = await db.select().from(settings);
+const settingMap = allSettings.reduce(
+  (acc, curr) => {
+    acc[curr.key] = curr.value;
+    return acc;
+  },
+  {} as Record<string, string>,
+);
+
+const schoolName = settingMap["school_name"] || "SMK Negeri 1 Unggulan";
+const schoolType = (
+  settingMap["school_type"] ||
+  settingMap["school_level"] ||
+  "SMA"
+).toUpperCase();
+const isSmk = schoolType === "SMK";
+
+// Modul BKK & Mitra Industri khusus untuk SMK
+if (!isSmk) {
+  return Astro.redirect("/");
+}
+
+const currentFilter = Astro.url.searchParams.get("type") || "all";
+
+// Ambil peluang BKK aktif
+const conditions: any[] = [eq(bkkOpportunities.isActive, true)];
+if (
+  currentFilter &&
+  ["lowongan", "magang", "mitra_mou"].includes(currentFilter)
+) {
+  conditions.push(eq(bkkOpportunities.type, currentFilter as any));
+}
+
+const opportunities = await db
+  .select()
+  .from(bkkOpportunities)
+  .where(and(...conditions))
+  .orderBy(asc(bkkOpportunities.orderNumber), desc(bkkOpportunities.id));
+
+const allActive = await db
+  .select()
+  .from(bkkOpportunities)
+  .where(eq(bkkOpportunities.isActive, true));
+
+const lowonganCount = allActive.filter((i) => i.type === "lowongan").length;
+const magangCount = allActive.filter((i) => i.type === "magang").length;
+const mouCount = allActive.filter((i) => i.type === "mitra_mou").length;
+const partnerList = allActive.filter(
+  (i) => i.type === "mitra_mou" || Boolean(i.companyLogo),
+);
+
+// Duplikasi data 3 set untuk infinite seamless loop tanpa rewind ke awal
+let basePartners = partnerList;
+while (basePartners.length > 0 && basePartners.length < 4) {
+  basePartners = [...basePartners, ...partnerList];
+}
+const displayPartnerList =
+  basePartners.length > 0
+    ? [...basePartners, ...basePartners, ...basePartners]
+    : [];
+---
+
+<Layout
+  title={`Bursa Kerja Khusus (BKK) & Mitra Industri — ${schoolName}`}
+  description={`Pusat informasi karir, rekrutmen alumni, program magang PKL, dan jejaring kemitraan industri (DUDI) ${schoolName}.`}
+>
+  <Header currentPath="/bkk" />
+
+  <main class="flex-1 py-8 sm:py-12 bg-background">
+    <div class="mx-auto max-w-7xl px-3.5 sm:px-6 lg:px-8 space-y-8 sm:space-y-10">
+      <!-- Breadcrumb -->
+      <Breadcrumb
+        class="mb-0"
+        items={[
+          { label: "Beranda", href: "/" },
+          { label: "Kesiswaan" },
+          { label: "Bursa Kerja Khusus (BKK)" },
+        ]}
+      />
+
+      <!-- Hero Section -->
+      <section class="rounded-[12px] border border-border bg-surface p-5 sm:p-8 shadow-hairline">
+        <div class="space-y-4 max-w-3xl">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="rounded-[4px] bg-primary text-white px-2.5 py-0.5 font-body text-xs font-semibold uppercase tracking-wider">
+              Karier & Penyaluran Kerja
+            </span>
+            <span class="rounded-[4px] bg-surface px-2.5 py-0.5 font-mono text-xs font-semibold text-heading border border-border">
+              SMK Vokasi Siap Kerja
+            </span>
+          </div>
+
+          <h1 class="font-display text-2xl sm:text-4xl font-bold tracking-tight text-heading leading-tight">
+            Bursa Kerja Khusus & Kemitraan Industri
+          </h1>
+
+          <p class="font-body text-xs sm:text-base text-body leading-relaxed">
+            Menghubungkan siswa dan alumni {schoolName} langsung dengan Dunia Usaha dan Dunia Industri (DUDI) terkemuka melalui program rekrutmen terpadu, magang bersertifikat, dan penempatan kerja.
+          </p>
+
+          <!-- Pola B Solid Multi-Color KPI -->
+          <div class="grid grid-cols-3 gap-3 sm:gap-4 pt-2 max-w-md *:rounded-[8px] *:border *:p-3 *:shadow-2xs">
+            <div class="bg-success border-success text-white">
+              <span class="block text-[11px] font-semibold text-white/90 font-body">
+                Lowongan Kerja
+              </span>
+              <strong class="font-display text-xl sm:text-2xl font-bold text-white">
+                {lowonganCount}
+              </strong>
+            </div>
+            <div class="bg-primary border-primary text-primary-foreground">
+              <span class="block text-[11px] font-semibold text-primary-foreground/90 font-body">
+                Magang / PKL
+              </span>
+              <strong class="font-display text-xl sm:text-2xl font-bold text-primary-foreground">
+                {magangCount}
+              </strong>
+            </div>
+            <div class="bg-warning border-warning text-white">
+              <span class="block text-[11px] font-semibold text-white/90 font-body">
+                Mitra Industri
+              </span>
+              <strong class="font-display text-xl sm:text-2xl font-bold text-white">
+                {mouCount}
+              </strong>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION SLIDER LOGO MITRA INDUSTRI (MoU) -->
+      {partnerList.length > 0 && (
+        <section class="rounded-[12px] border border-border bg-surface p-5 sm:p-7 shadow-hairline space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <span class="rounded-[4px] bg-warning text-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider">
+                Kemitraan Industri DUDI
+              </span>
+              <h2 class="font-display text-lg sm:text-xl font-bold tracking-tight text-heading mt-1">
+                Jejaring Kemitraan Industri & DUDI (MoU)
+              </h2>
+              <p class="font-body text-xs text-muted mt-0.5">
+                Perusahaan mitra resmi {schoolName} dalam rekrutmen kerja dan kelas industri.
+              </p>
+            </div>
+
+            <!-- Controls -->
+            <div class="flex items-center gap-2 shrink-0 *:inline-flex *:h-8 *:w-8 *:items-center *:justify-center *:rounded-[6px] *:border *:border-border *:bg-surface *:transition-colors *:cursor-pointer">
+              <button
+                type="button"
+                id="partner-slider-prev"
+                class="hover:bg-surface-subtle hover:text-primary"
+                aria-label="Geser ke kiri"
+              >
+                <Icon name="chevron-left" class="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                id="partner-slider-next"
+                class="hover:bg-surface-subtle hover:text-primary"
+                aria-label="Geser ke kanan"
+              >
+                <Icon name="chevron-right" class="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          <!-- Carousel Track (Scroll-Snap horizontal, touch-friendly, smooth) -->
+          <div
+            id="partner-slider-track"
+            class="flex gap-4 sm:gap-5 overflow-x-auto scroll-smooth snap-x snap-mandatory py-2 cursor-grab active:cursor-grabbing select-none [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {displayPartnerList.map((partner) => (
+              <div class="flex-none w-[190px] sm:w-[220px] rounded-[10px] border border-border bg-surface p-4 snap-start shadow-xs hover:-translate-y-0.5 hover:shadow-(--shadow-hover) transition-all duration-200 flex flex-col items-center justify-between text-center space-y-3 group">
+                <div class="h-14 w-full rounded-[6px] bg-surface flex items-center justify-center p-1">
+                  {partner.companyLogo ? (
+                    <img
+                      src={partner.companyLogo}
+                      alt={partner.companyName}
+                      class="max-h-full max-w-full object-contain filter group-hover:scale-105 transition-transform duration-200"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <span class="font-display font-bold text-lg text-primary">
+                      {partner.companyName.trim().charAt(0).toUpperCase()}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <!-- Filter Kategori Tabs (DRY Tailwind v4 *:) -->
+      <div class="flex flex-wrap items-center gap-2 *:rounded-[6px] *:px-3.5 *:py-1.5 *:font-body *:text-xs *:font-semibold *:transition-colors">
+        <a
+          href="/bkk"
+          class={
+            currentFilter === "all"
+              ? "bg-primary text-white shadow-xs"
+              : "border border-border bg-surface text-muted hover:border-heading hover:text-heading"
+          }
+        >
+          Semua Peluang ({allActive.length})
+        </a>
+        <a
+          href="/bkk?type=lowongan"
+          class={
+            currentFilter === "lowongan"
+              ? "bg-primary text-white shadow-xs"
+              : "border border-border bg-surface text-muted hover:border-heading hover:text-heading"
+          }
+        >
+          Lowongan Kerja ({lowonganCount})
+        </a>
+        <a
+          href="/bkk?type=magang"
+          class={
+            currentFilter === "magang"
+              ? "bg-primary text-white shadow-xs"
+              : "border border-border bg-surface text-muted hover:border-heading hover:text-heading"
+          }
+        >
+          Program Magang / PKL ({magangCount})
+        </a>
+        <a
+          href="/bkk?type=mitra_mou"
+          class={
+            currentFilter === "mitra_mou"
+              ? "bg-primary text-white shadow-xs"
+              : "border border-border bg-surface text-muted hover:border-heading hover:text-heading"
+          }
+        >
+          Kemitraan Industri ({mouCount})
+        </a>
+      </div>
+
+      <!-- Opportunities Grid -->
+      {opportunities.length === 0 ? (
+        <div class="rounded-[12px] border border-border bg-surface p-12 text-center text-muted">
+          <p class="font-semibold text-heading text-sm">
+            Belum ada peluang terpublikasi untuk kategori ini
+          </p>
+          <p class="text-xs mt-1">
+            Silakan periksa kembali secara berkala atau hubungi tim BKK sekolah.
+          </p>
+        </div>
+      ) : (
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {opportunities.map((item) => (
+            <div class="rounded-[10px] border border-border bg-surface p-5 shadow-xs flex flex-col justify-between space-y-4 hover:-translate-y-0.5 hover:shadow-(--shadow-hover) transition-all duration-200 group">
+              <div class="space-y-3">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="h-12 w-12 rounded-[8px] border border-border bg-surface flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
+                    {item.companyLogo ? (
+                      <img
+                        src={item.companyLogo}
+                        alt={item.companyName}
+                        class="h-full w-full object-contain p-1.5"
+                      />
+                    ) : (
+                      <span class="font-display font-bold text-sm text-primary">
+                        {item.companyName.trim().charAt(0).toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+
+                  <span
+                    class:list={[
+                      "rounded-[4px] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
+                      item.type === "lowongan"
+                        ? "bg-success text-white"
+                        : item.type === "magang"
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-warning text-white",
+                    ]}
+                  >
+                    {item.type === "lowongan"
+                      ? "Lowongan Kerja"
+                      : item.type === "magang"
+                        ? "Magang / PKL"
+                        : "Mitra Industri"}
+                  </span>
+                </div>
+
+                <div>
+                  <h3 class="font-display text-base font-bold text-heading group-hover:text-primary transition-colors leading-snug">
+                    {item.title}
+                  </h3>
+                  <p class="font-body text-xs font-semibold text-muted mt-0.5">
+                    {item.companyName}
+                  </p>
+                </div>
+
+                <div class="space-y-1.5 text-xs text-muted pt-1">
+                  <div class="flex items-center gap-1.5">
+                    <Icon
+                      name="map-pin"
+                      class="h-3.5 w-3.5 shrink-0 text-muted"
+                    />
+                    <span class="truncate">{item.location}</span>
+                  </div>
+
+                  {item.salaryRange && (
+                    <div class="flex items-center gap-1.5 text-heading font-medium">
+                      <Icon
+                        name="currency"
+                        class="h-3.5 w-3.5 shrink-0 text-success"
+                      />
+                      <span>{item.salaryRange}</span>
+                    </div>
+                  )}
+
+                  <div class="flex items-center gap-1.5 font-mono text-[11px]">
+                    <Icon
+                      name="calendar"
+                      class="h-3.5 w-3.5 shrink-0 text-muted"
+                    />
+                    <span>Batas: {item.deadline || "Pendaftaran Terbuka"}</span>
+                  </div>
+                </div>
+
+                <div class="rounded-[6px] border border-border bg-surface p-3 text-xs text-body leading-relaxed">
+                  <span class="font-semibold text-heading block text-[11px] mb-1">
+                    Persyaratan & Kualifikasi:
+                  </span>
+                  <p class="whitespace-pre-line text-[11px]">
+                    {item.requirements}
+                  </p>
+                </div>
+              </div>
+
+              {item.contactPerson && (
+                <div class="pt-2">
+                  <a
+                    href={
+                      item.contactPerson.startsWith("http")
+                        ? item.contactPerson
+                        : item.contactPerson.includes("@")
+                          ? `mailto:${item.contactPerson}`
+                          : `https://wa.me/${item.contactPerson.replace(/\D/g, "")}`
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="w-full inline-flex h-9 items-center justify-center gap-1.5 rounded-[6px] bg-primary text-white font-body text-xs font-semibold shadow-xs transition-all duration-200 hover:-translate-y-[1px] hover:bg-primary-hover hover:shadow-(--shadow-button-glow)"
+                  >
+                    <span>Daftar / Hubungi Kontak</span>
+                    <Icon name="chevron-right" class="h-3.5 w-3.5" />
+                  </a>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  </main>
+
+  <Footer />
+
+  <script is:inline>
+    function initPartnerSlider() {
+      const track = document.getElementById("partner-slider-track");
+      const prevBtn = document.getElementById("partner-slider-prev");
+      const nextBtn = document.getElementById("partner-slider-next");
+      if (!track) return;
+
+      const totalItems = track.children.length;
+      if (totalItems <= 3) return;
+
+      const singleSetCount = Math.floor(totalItems / 3);
+      let isNormalizing = false;
+      let autoTimer = null;
+      let scrollTimeout = null;
+
+      function getSingleSetWidth() {
+        if (!track || track.children.length < singleSetCount) return 0;
+        const firstCard = track.children[0];
+        const middleCard = track.children[singleSetCount];
+        if (!firstCard || !middleCard) return 0;
+        return middleCard.offsetLeft - firstCard.offsetLeft;
+      }
+
+      function setInitialPosition() {
+        if (!track) return;
+        const singleSetWidth = getSingleSetWidth();
+        if (singleSetWidth > 0 && track.scrollLeft < singleSetWidth * 0.5) {
+          track.classList.remove("scroll-smooth");
+          track.style.scrollSnapType = "none";
+          track.scrollLeft = singleSetWidth;
+          void track.offsetWidth;
+          track.classList.add("scroll-smooth");
+          track.style.scrollSnapType = "";
+        }
+      }
+
+      function normalizePosition() {
+        if (!track || isNormalizing) return;
+        const singleSetWidth = getSingleSetWidth();
+        if (singleSetWidth <= 0) return;
+
+        // Scrolled into third set -> seamlessly jump back to second set without visual jump
+        if (track.scrollLeft >= 2 * singleSetWidth - 8) {
+          isNormalizing = true;
+          track.classList.remove("scroll-smooth");
+          track.style.scrollSnapType = "none";
+          track.scrollLeft -= singleSetWidth;
+          void track.offsetWidth;
+          track.classList.add("scroll-smooth");
+          track.style.scrollSnapType = "";
+          setTimeout(() => {
+            isNormalizing = false;
+          }, 60);
+        }
+        // Scrolled back into first set -> seamlessly jump forward to second set
+        else if (track.scrollLeft <= singleSetWidth * 0.4) {
+          isNormalizing = true;
+          track.classList.remove("scroll-smooth");
+          track.style.scrollSnapType = "none";
+          track.scrollLeft += singleSetWidth;
+          void track.offsetWidth;
+          track.classList.add("scroll-smooth");
+          track.style.scrollSnapType = "";
+          setTimeout(() => {
+            isNormalizing = false;
+          }, 60);
+        }
+      }
+
+      function scrollStep(direction) {
+        if (!track) return;
+        normalizePosition();
+        const firstCard = track.children[0];
+        const step = firstCard
+          ? firstCard.offsetWidth + 20
+          : track.clientWidth * 0.75;
+        track.scrollBy({ left: direction * step, behavior: "smooth" });
+      }
+
+      function startAutoPlay() {
+        stopAutoPlay();
+        autoTimer = setInterval(() => {
+          scrollStep(1);
+        }, 3200);
+      }
+
+      function stopAutoPlay() {
+        if (autoTimer) {
+          clearInterval(autoTimer);
+          autoTimer = null;
+        }
+      }
+
+      prevBtn?.addEventListener("click", () => {
+        scrollStep(-1);
+        startAutoPlay();
+      });
+
+      nextBtn?.addEventListener("click", () => {
+        scrollStep(1);
+        startAutoPlay();
+      });
+
+      // Mouse drag & touch drag gesture support without clicking buttons
+      let isDragging = false;
+      let startX = 0;
+      let startScrollLeft = 0;
+
+      track.addEventListener("mousedown", (e) => {
+        isDragging = true;
+        stopAutoPlay();
+        track.classList.remove("scroll-smooth");
+        startX = e.pageX - track.offsetLeft;
+        startScrollLeft = track.scrollLeft;
+      });
+
+      window.addEventListener("mouseup", () => {
+        if (!isDragging) return;
+        isDragging = false;
+        track.classList.add("scroll-smooth");
+        normalizePosition();
+        startAutoPlay();
+      });
+
+      track.addEventListener("mousemove", (e) => {
+        if (!isDragging) return;
+        e.preventDefault();
+        const x = e.pageX - track.offsetLeft;
+        const walk = (x - startX) * 1.2;
+        track.scrollLeft = startScrollLeft - walk;
+      });
+
+      track.addEventListener("mouseenter", stopAutoPlay);
+      track.addEventListener("mouseleave", () => {
+        if (!isDragging) startAutoPlay();
+      });
+      track.addEventListener("touchstart", stopAutoPlay, { passive: true });
+      track.addEventListener(
+        "touchend",
+        () => {
+          normalizePosition();
+          startAutoPlay();
+        },
+        { passive: true },
+      );
+
+      track.addEventListener(
+        "scroll",
+        () => {
+          if (scrollTimeout) clearTimeout(scrollTimeout);
+          scrollTimeout = setTimeout(normalizePosition, 160);
+        },
+        { passive: true },
+      );
+
+      window.addEventListener(
+        "resize",
+        () => {
+          setInitialPosition();
+        },
+        { passive: true },
+      );
+
+      setInitialPosition();
+      setTimeout(setInitialPosition, 100);
+      startAutoPlay();
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", initPartnerSlider);
+    } else {
+      initPartnerSlider();
+    }
+  </script>
+</Layout>

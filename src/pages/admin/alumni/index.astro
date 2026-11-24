@@ -1,0 +1,707 @@
+---
+import AdminLayout from '../../../layouts/AdminLayout.astro';
+import MediaPickerModal from '../../../components/MediaPickerModal.astro';
+import Icon from '../../../components/Icon.astro';
+import Pagination from '../../../components/Pagination.astro';
+import { db, studentsAlumni } from '../../../db';
+import { desc, eq, and, or, like, sql } from 'drizzle-orm';
+
+export const prerender = false;
+
+// Query parameter search & pagination
+const searchQuery = Astro.url.searchParams.get('q') || '';
+const currentPage = Math.max(1, parseInt(Astro.url.searchParams.get('page') || '1', 10) || 1);
+const pageSize = 10;
+
+// Filter khusus alumni
+const conditions: any[] = [eq(studentsAlumni.type, 'alumni')];
+
+if (searchQuery) {
+  conditions.push(
+    or(
+      like(studentsAlumni.name, `%${searchQuery.trim()}%`),
+      like(studentsAlumni.title, `%${searchQuery.trim()}%`),
+      like(studentsAlumni.organization, `%${searchQuery.trim()}%`),
+      like(studentsAlumni.description, `%${searchQuery.trim()}%`)
+    )
+  );
+}
+
+const whereClause = and(...conditions);
+
+// Hitung total data alumni terfilter
+const totalFiltered = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(studentsAlumni)
+  .where(whereClause)
+  .then((r) => Number(r[0]?.count || 0));
+
+// Hitung total keseluruhan alumni
+const totalAlumniCount = await db
+  .select({ count: sql<number>`count(*)` })
+  .from(studentsAlumni)
+  .where(eq(studentsAlumni.type, 'alumni'))
+  .then((r) => Number(r[0]?.count || 0));
+
+const totalPages = Math.max(1, Math.ceil(totalFiltered / pageSize));
+const validPage = Math.min(currentPage, totalPages);
+const offset = (validPage - 1) * pageSize;
+
+const list = await db
+  .select()
+  .from(studentsAlumni)
+  .where(whereClause)
+  .orderBy(desc(studentsAlumni.year), desc(studentsAlumni.id))
+  .limit(pageSize)
+  .offset(offset);
+
+function getPageUrl(p: number) {
+  const params = new URLSearchParams();
+  if (searchQuery) params.set('q', searchQuery);
+  if (p > 1) params.set('page', String(p));
+  const qs = params.toString();
+  return `/admin/alumni${qs ? `?${qs}` : ''}`;
+}
+---
+
+<AdminLayout title="Tracer Study Alumni" activeNav="alumni">
+  <div class="space-y-6 max-w-6xl">
+    <!-- Header Page -->
+    <!-- Header Page -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2">
+      <div>
+        <h1 class="font-display text-2xl font-bold tracking-tight text-heading">
+          Tracer Study Alumni
+        </h1>
+        <p class="mt-1 font-body text-xs text-muted">
+          Direktori penelusuran lulusan, sebaran perguruan tinggi, profil karier, serta testimoni inspiratif alumni.
+        </p>
+      </div>
+      <button
+        type="button"
+        id="open-modal-btn"
+        class="inline-flex h-[36px] items-center justify-center gap-1.5 rounded-[6px] bg-primary px-4 text-xs font-semibold text-white transition-all hover:bg-primary-hover shadow-xs shrink-0 cursor-pointer"
+      >
+        <Icon name="plus" class="h-4 w-4" />
+        <span>Tambah Alumni</span>
+      </button>
+    </div>
+
+    <!-- Toolbar Pencarian & Info Total -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+
+      <!-- Search Input -->
+      <form method="GET" action="/admin/alumni" class="flex items-center gap-2 shrink-0">
+        <div class="relative w-full sm:w-72">
+          <input
+            type="search"
+            name="q"
+            value={searchQuery}
+            placeholder="Cari nama, jurusan, kampus, kantor..."
+            class="h-[34px] w-full rounded-[6px] border border-border bg-surface pl-8 pr-3 text-xs text-heading transition-colors"
+          />
+          <Icon name="search" class="h-3.5 w-3.5 absolute left-2.5 top-2.5 text-muted pointer-events-none" />
+        </div>
+        {searchQuery && (
+          <a
+            href="/admin/alumni"
+            class="h-[34px] inline-flex items-center justify-center rounded-[6px] border border-border bg-surface px-2.5 text-xs text-muted hover:text-heading hover:bg-surface-subtle transition-colors"
+            title="Reset Pencarian"
+          >
+            ✕
+          </a>
+        )}
+      </form>
+    </div>
+
+    <!-- Tabel Data Alumni -->
+    <div class="overflow-x-auto rounded-[8px] border border-border bg-surface shadow-xs">
+      <table class="w-full text-left font-body text-xs">
+        <thead class="border-b border-border bg-surface-subtle text-[11px] font-semibold uppercase tracking-wider text-muted">
+          <tr>
+            <th class="px-5 py-3.5">Profil Alumni</th>
+            <th class="px-5 py-3.5">Jurusan / Posisi / Profesi</th>
+            <th class="hidden px-5 py-3.5">Kampus / Perusahaan</th>
+            <th class="px-5 py-3.5">Kelulusan</th>
+            <th class="px-5 py-3.5">Status Web</th>
+            <th class="px-5 py-3.5 text-right">Aksi</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-border">
+          {list.length === 0 ? (
+            <tr>
+              <td colspan="6" class="px-5 py-12 text-center text-muted">
+                {searchQuery ? 'Tidak ada data alumni yang sesuai dengan filter pencarian.' : 'Belum ada data tracer study alumni tersimpan. Klik tombol di atas untuk menambahkan.'}
+              </td>
+            </tr>
+          ) : (
+            list.map((item) => (
+              <tr class="transition-colors hover:bg-surface-subtle" id={`item-${item.id}`}>
+                <td class="px-5 py-3.5 font-medium text-heading">
+                  <div class="flex items-center gap-3">
+                    {item.photoUrl ? (
+                      <img
+                        src={item.photoUrl}
+                        alt={item.name}
+                        class="h-9 w-9 rounded-full object-cover border border-border shrink-0 shadow-xs"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div class="h-9 w-9 rounded-full bg-primary-light text-primary font-display font-bold text-xs flex items-center justify-center shrink-0 border border-primary/20">
+                        {item.name.charAt(0) || 'A'}
+                      </div>
+                    )}
+                    <div class="min-w-0 max-w-xs">
+                      <button
+                        type="button"
+                        class="edit-btn font-semibold text-heading hover:text-primary hover:underline text-left truncate block cursor-pointer transition-colors"
+                        data-item={JSON.stringify(item)}
+                        title={`Edit data: ${item.name}`}
+                      >
+                        {item.name}
+                      </button>
+                    </div>
+                  </div>
+                </td>
+                <td class="hidden px-5 py-3.5 font-medium text-heading max-w-xs">
+                  <span class="truncate block font-semibold text-heading" title={item.title}>{item.title}</span>
+                </td>
+                <td class="px-5 py-3.5 text-muted max-w-xs">
+                  <span class="truncate block" title={item.organization || '-'}>{item.organization || '-'}</span>
+                </td>
+                <td class="px-5 py-3.5 font-mono text-muted whitespace-nowrap">
+                  Tahun {item.year}
+                </td>
+                <td class="px-5 py-3.5 whitespace-nowrap">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={item.isPublicConsent ? "true" : "false"}
+                    class:list={[
+                      "toggle-visibility-btn relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden",
+                      item.isPublicConsent ? "bg-primary" : "bg-border"
+                    ]}
+                    data-id={item.id}
+                    data-name={item.name}
+                    data-active={item.isPublicConsent ? "true" : "false"}
+                    title={item.isPublicConsent ? 'Aktif (Klik untuk sembunyikan)' : 'Disembunyikan (Klik untuk tampilkan)'}
+                    aria-label={`Status ${item.name}`}
+                  >
+                    <span class="sr-only">{item.isPublicConsent ? 'Aktif' : 'Disembunyikan'}</span>
+                    <span
+                      aria-hidden="true"
+                      class:list={[
+                        "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs ring-0 transition duration-200 ease-in-out",
+                        item.isPublicConsent ? "translate-x-4" : "translate-x-0"
+                      ]}
+                    />
+                  </button>
+                </td>
+                <td class="px-5 py-3.5 text-right whitespace-nowrap">
+                  <div class="inline-flex items-center justify-end gap-1.5 *:inline-flex *:h-7 *:w-7 *:items-center *:justify-center *:rounded-[6px] *:border *:transition-colors *:cursor-pointer">
+                    <button
+                      type="button"
+                      class="edit-btn border-border bg-surface text-muted hover:text-primary hover:border-primary/40 hover:bg-surface-subtle shadow-2xs"
+                      data-item={JSON.stringify(item)}
+                      title="Edit Data"
+                      aria-label={`Edit ${item.name}`}
+                    >
+                      <Icon name="edit" class="h-3.5 w-3.5 pointer-events-none" />
+                    </button>
+                    <button
+                      type="button"
+                      class="delete-btn border-border bg-surface text-muted hover:text-error hover:border-error/40 hover:bg-error-light shadow-2xs"
+                      data-id={item.id}
+                      data-name={item.name}
+                      title="Hapus Data"
+                      aria-label={`Hapus ${item.name}`}
+                    >
+                      <Icon name="trash" class="h-3.5 w-3.5 pointer-events-none" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+
+      <!-- Baris Pagination -->
+      {totalFiltered > 0 && (
+        <Pagination
+          currentPage={validPage}
+          totalPages={totalPages}
+          totalItems={totalFiltered}
+          pageSize={pageSize}
+          itemLabel="alumni"
+          getPageUrl={getPageUrl}
+        />
+      )}
+    </div>
+
+    <!-- Modal Form (Create / Edit Alumni) -->
+    <div id="modal-backdrop" class="fixed inset-0 bg-heading/40 backdrop-blur-xs z-50 hidden flex items-center justify-center p-3 sm:p-4">
+      <div class="rounded-[10px] border border-border bg-surface shadow-2xl max-w-lg w-full max-h-[calc(100dvh-32px)] flex flex-col overflow-hidden">
+        <!-- Modal Header (Fixed) -->
+        <div class="flex items-center justify-between px-6 py-4 bg-surface shrink-0">
+          <div>
+            <h3 id="modal-title" class="font-display text-sm font-bold text-heading">
+              Tambah Data Alumni
+            </h3>
+            <p id="modal-subtitle" class="text-[11px] text-muted mt-0.5">Identitas, pendidikan, dan testimoni alumni.</p>
+          </div>
+          <button type="button" id="close-modal-btn" class="p-1 rounded-[6px] text-muted hover:text-heading hover:bg-surface-subtle transition-colors cursor-pointer" aria-label="Tutup modal">
+            <Icon name="close" class="h-5 w-5" />
+          </button>
+        </div>
+
+        <!-- Form with scrollable body and fixed footer -->
+        <form id="record-form" class="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <input type="hidden" id="edit-id" name="id" value="" />
+          <input type="hidden" id="type" name="type" value="alumni" />
+
+          <!-- Scrollable Body -->
+          <div class="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div class="space-y-1">
+                <label for="name" class="block font-body text-xs font-semibold text-heading">
+                  Nama Lengkap Alumni <span class="text-error">*</span>
+                </label>
+                <input
+                  id="name"
+                  name="name"
+                  type="text"
+                  required
+                  placeholder="Contoh: dr. Nadhira Arisanti, Sp.A"
+                  class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading transition-colors"
+                />
+              </div>
+
+              <div class="space-y-1">
+                <label for="title" class="block font-body text-xs font-semibold text-heading">
+                  Jurusan / Posisi / Profesi <span class="text-error">*</span>
+                </label>
+                <input
+                  id="title"
+                  name="title"
+                  type="text"
+                  required
+                  placeholder="Contoh: Pendidikan Dokter / Dokter Spesialis Anak"
+                  class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading transition-colors"
+                />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div class="space-y-1">
+                <label for="organization" class="block font-body text-xs font-semibold text-heading">
+                  Kampus / Instansi
+                </label>
+                <input
+                  id="organization"
+                  name="organization"
+                  type="text"
+                  placeholder="Contoh: Universitas Indonesia"
+                  class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading transition-colors"
+                />
+              </div>
+
+              <div class="space-y-1">
+                <label for="year" class="block font-body text-xs font-semibold text-heading">
+                  Tahun Lulus <span class="text-error">*</span>
+                </label>
+                <input
+                  id="year"
+                  name="year"
+                  type="text"
+                  required
+                  placeholder="2021"
+                  class="h-[36px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading font-mono transition-colors"
+                />
+              </div>
+            </div>
+
+            <!-- Foto Profil (Simplified) -->
+            <div>
+              <label class="block font-body text-xs font-semibold text-heading mb-1.5">
+                Foto Profil Alumni
+              </label>
+              <div class="flex items-center gap-3">
+                <div class="h-14 w-14 rounded-[8px] border border-border bg-surface-subtle flex items-center justify-center shrink-0 overflow-hidden shadow-2xs">
+                  <img
+                    id="alumni-photo-preview"
+                    src=""
+                    alt="Preview Foto"
+                    class="h-full w-full object-cover hidden"
+                  />
+                  <svg id="alumni-photo-placeholder" class="h-6 w-6 text-muted/60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                </div>
+
+                <div class="flex flex-col gap-1.5 flex-1 min-w-0">
+                  <div class="flex items-center gap-2">
+                    <button
+                      type="button"
+                      id="open-media-picker-btn"
+                      class="inline-flex h-8 items-center justify-center gap-1.5 rounded-[6px] bg-surface border border-border px-3 text-xs font-semibold text-heading hover:bg-surface-subtle hover:border-primary/50 transition-colors shadow-2xs cursor-pointer"
+                    >
+                      <svg class="h-3.5 w-3.5 text-primary shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <span id="photo-action-text">Pilih Gambar</span>
+                    </button>
+                    <button
+                      type="button"
+                      id="remove-photo-btn"
+                      class="hidden inline-flex h-8 items-center justify-center px-2.5 rounded-[6px] border border-border bg-surface text-xs font-medium text-error hover:bg-error-light hover:border-error/30 transition-colors cursor-pointer"
+                    >
+                      Hapus
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    id="toggle-photo-url-btn"
+                    class="text-[11px] text-muted hover:text-primary transition-colors text-left font-medium cursor-pointer"
+                  >
+                    &plus; Gunakan tautan URL gambar
+                  </button>
+                </div>
+              </div>
+
+              <!-- Collapsible URL Input Field -->
+              <div id="photo-url-container" class="hidden mt-2">
+                <input
+                  id="photoUrl"
+                  name="photoUrl"
+                  type="text"
+                  placeholder="https://... atau tempel URL gambar eksternal"
+                  class="h-[34px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading transition-colors font-mono"
+                />
+              </div>
+            </div>
+
+            <!-- Testimoni -->
+            <div class="space-y-1">
+              <label for="description" class="block font-body text-xs font-semibold text-heading">
+                Kutipan Testimoni / Pesan untuk Siswa
+              </label>
+              <textarea
+                id="description"
+                name="description"
+                rows="3"
+                placeholder="Bagikan pesan inspiratif atau testimoni alumni..."
+                class="w-full rounded-[6px] border border-border bg-surface p-2.5 font-body text-xs text-heading transition-colors"
+              ></textarea>
+            </div>
+          </div>
+
+          <!-- Fixed Modal Footer -->
+          <div class="flex items-center justify-end gap-2.5 px-6 py-3.5 bg-surface-subtle shrink-0">
+            <button
+              type="button"
+              id="cancel-modal-btn"
+              class="h-[36px] rounded-[6px] border border-border bg-surface px-4 font-body text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+            >
+              Batal
+            </button>
+            <button
+              type="submit"
+              id="save-modal-btn"
+              class="inline-flex h-[36px] items-center justify-center gap-1.5 rounded-[6px] bg-primary px-4 font-body text-xs font-semibold text-white transition-all hover:bg-primary-hover shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Icon id="save-modal-icon" name="save" class="h-3.5 w-3.5 text-white" />
+              <svg id="save-modal-spinner" class="hidden h-3.5 w-3.5 animate-spin text-white" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <Icon id="save-modal-check" name="check" class="hidden h-3.5 w-3.5 text-white" />
+              <span id="save-modal-text">Simpan Data</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <MediaPickerModal modalId="media-picker-modal" />
+
+  <script is:inline>
+    function initAlumni() {
+      const modalBackdrop = document.getElementById('modal-backdrop');
+    const openModalBtn = document.getElementById('open-modal-btn');
+    const closeModalBtn = document.getElementById('close-modal-btn');
+    const cancelModalBtn = document.getElementById('cancel-modal-btn');
+    const recordForm = document.getElementById('record-form');
+    const modalTitle = document.getElementById('modal-title');
+    const modalSubtitle = document.getElementById('modal-subtitle');
+    const editIdInput = document.getElementById('edit-id');
+    const typeInput = document.getElementById('type');
+    const nameInput = document.getElementById('name');
+    const titleInput = document.getElementById('title');
+    const yearInput = document.getElementById('year');
+    const orgInput = document.getElementById('organization');
+    const photoUrlInput = document.getElementById('photoUrl');
+    const photoPreview = document.getElementById('alumni-photo-preview');
+    const photoPlaceholder = document.getElementById('alumni-photo-placeholder');
+    const photoActionText = document.getElementById('photo-action-text');
+    const togglePhotoUrlBtn = document.getElementById('toggle-photo-url-btn');
+    const photoUrlContainer = document.getElementById('photo-url-container');
+    const openMediaPickerBtn = document.getElementById('open-media-picker-btn');
+    const removePhotoBtn = document.getElementById('remove-photo-btn');
+    const descInput = document.getElementById('description');
+    const saveBtn = document.getElementById('save-modal-btn');
+    const saveModalIcon = document.getElementById('save-modal-icon');
+    const saveModalSpinner = document.getElementById('save-modal-spinner');
+    const saveModalCheck = document.getElementById('save-modal-check');
+    const saveModalText = document.getElementById('save-modal-text');
+    let currentConsent = true;
+
+    function updatePhotoPreview(url) {
+      if (photoUrlInput) photoUrlInput.value = url;
+      if (url && url.trim()) {
+        if (photoPreview) {
+          photoPreview.src = url;
+          photoPreview.classList.remove('hidden');
+        }
+        photoPlaceholder?.classList.add('hidden');
+        removePhotoBtn?.classList.remove('hidden');
+        if (photoActionText) photoActionText.textContent = 'Ubah Gambar';
+      } else {
+        if (photoPreview) {
+          photoPreview.src = '';
+          photoPreview.classList.add('hidden');
+        }
+        photoPlaceholder?.classList.remove('hidden');
+        removePhotoBtn?.classList.add('hidden');
+        if (photoActionText) photoActionText.textContent = 'Pilih Gambar';
+      }
+    }
+
+    photoUrlInput?.addEventListener('input', () => {
+      updatePhotoPreview(photoUrlInput.value.trim());
+    });
+
+    togglePhotoUrlBtn?.addEventListener('click', () => {
+      photoUrlContainer?.classList.toggle('hidden');
+      if (!photoUrlContainer?.classList.contains('hidden')) {
+        photoUrlInput?.focus();
+      }
+    });
+
+    openMediaPickerBtn?.addEventListener('click', () => {
+      if (typeof window.openMediaPicker === 'function') {
+        window.openMediaPicker(
+          (media) => {
+            if (media) {
+              const url = media.fileUrl || media.mediumUrl || media.url || '';
+              updatePhotoPreview(url);
+            }
+          },
+          { type: 'image' }
+        );
+      } else {
+        window.open('/admin/media', '_blank');
+      }
+    });
+
+    removePhotoBtn?.addEventListener('click', () => {
+      updatePhotoPreview('');
+    });
+
+    function openModal(isEdit = false, data = null) {
+      photoUrlContainer?.classList.add('hidden');
+      saveBtn.disabled = false;
+      saveModalIcon?.classList.remove('hidden');
+      saveModalSpinner?.classList.add('hidden');
+      saveModalCheck?.classList.add('hidden');
+      if (saveModalText) saveModalText.innerText = 'Simpan Data';
+
+      if (isEdit && data) {
+        modalTitle.innerText = 'Edit Data Alumni';
+        if (modalSubtitle) modalSubtitle.innerText = 'Perbarui identitas, pendidikan, dan testimoni alumni.';
+        editIdInput.value = data.id;
+        typeInput.value = 'alumni';
+        nameInput.value = data.name || '';
+        titleInput.value = data.title || '';
+        yearInput.value = data.year || '';
+        orgInput.value = data.organization || '';
+        updatePhotoPreview(data.photoUrl || '');
+        descInput.value = data.description || '';
+        currentConsent = data?.isPublicConsent !== undefined ? Boolean(data.isPublicConsent) : true;
+      } else {
+        modalTitle.innerText = 'Tambah Data Alumni';
+        if (modalSubtitle) modalSubtitle.innerText = 'Identitas, pendidikan, dan testimoni alumni.';
+        editIdInput.value = '';
+        recordForm.reset();
+        typeInput.value = 'alumni';
+        yearInput.value = new Date().getFullYear().toString();
+        updatePhotoPreview('');
+        currentConsent = true;
+      }
+      modalBackdrop?.classList.remove('hidden');
+      modalBackdrop?.classList.add('flex');
+    }
+
+    function closeModal() {
+      modalBackdrop?.classList.add('hidden');
+      modalBackdrop?.classList.remove('flex');
+    }
+
+    openModalBtn?.addEventListener('click', () => openModal(false));
+    closeModalBtn?.addEventListener('click', closeModal);
+    cancelModalBtn?.addEventListener('click', closeModal);
+
+    modalBackdrop?.addEventListener('click', (e) => {
+      if (e.target === modalBackdrop) closeModal();
+    });
+
+    // Edit button click
+    document.querySelectorAll('.edit-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        try {
+          const data = JSON.parse(btn.getAttribute('data-item') || '{}');
+          openModal(true, data);
+        } catch (err) {
+          console.error('Error parsing item data:', err);
+        }
+      });
+    });
+
+    // Delete button click
+    document.querySelectorAll('.delete-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        const name = btn.getAttribute('data-name');
+        if (!id) return;
+
+        const confirmed = await window.confirmDialog({
+          title: 'Hapus Data Alumni',
+          message: `Apakah Anda yakin ingin menghapus data alumni: "${name}"?\nTindakan ini tidak dapat dibatalkan.`,
+          confirmText: 'Ya, Hapus',
+          cancelText: 'Batal',
+          type: 'danger',
+        });
+        if (!confirmed) return;
+
+        try {
+          const res = await fetch(`/api/admin/students_alumni/${id}`, {
+            method: 'DELETE',
+          });
+          const result = await res.json();
+          if (result.success) {
+            window.showToast('Data alumni berhasil dihapus.', 'success');
+            setTimeout(() => window.location.reload(), 400);
+          } else {
+            window.showToast(result.error || 'Gagal menghapus data.', 'error');
+          }
+        } catch (err) {
+          window.showToast('Terjadi kesalahan jaringan.', 'error');
+        }
+      });
+    });
+
+    // Quick toggle visibility in table
+    document.querySelectorAll('.toggle-visibility-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        const name = btn.getAttribute('data-name');
+        const currentActive = btn.getAttribute('data-active') === 'true';
+        if (!id) return;
+
+        const actionText = currentActive ? 'menyembunyikan dari' : 'menampilkan ke';
+        const confirmed = await window.confirmDialog({
+          title: 'Ubah Status Publikasi',
+          message: `Apakah Anda ingin ${actionText} web publik untuk profil alumni: "${name}"?`,
+          confirmText: 'Ya, Ubah',
+          cancelText: 'Batal',
+          type: 'warning',
+        });
+        if (!confirmed) return;
+
+        btn.classList.add('opacity-50', 'pointer-events-none');
+        try {
+          const res = await fetch(`/api/admin/students_alumni/${id}/toggle`, {
+            method: 'PUT',
+          });
+          const result = await res.json();
+          if (result.success) {
+            window.showToast('Status publikasi berhasil diperbarui.', 'success');
+            setTimeout(() => window.location.reload(), 400);
+          } else {
+            window.showToast(result.error || 'Gagal memperbarui status publikasi.', 'error');
+            btn.classList.remove('opacity-50', 'pointer-events-none');
+          }
+        } catch (err) {
+          window.showToast('Terjadi kesalahan jaringan saat memperbarui status.', 'error');
+          btn.classList.remove('opacity-50', 'pointer-events-none');
+        }
+      });
+    });
+
+    // Form submit
+    recordForm?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      saveBtn.disabled = true;
+      saveModalIcon?.classList.add('hidden');
+      saveModalSpinner?.classList.remove('hidden');
+      saveModalCheck?.classList.add('hidden');
+      if (saveModalText) saveModalText.innerText = 'Menyimpan...';
+
+      const isEdit = Boolean(editIdInput.value);
+      const id = editIdInput.value;
+      const payload = {
+        type: 'alumni',
+        name: nameInput.value.trim(),
+        title: titleInput.value.trim(),
+        year: yearInput.value.trim(),
+        organization: orgInput.value.trim() || null,
+        photoUrl: photoUrlInput.value.trim() || null,
+        description: descInput.value.trim() || null,
+        isPublicConsent: currentConsent,
+      };
+
+      try {
+        const url = isEdit ? `/api/admin/students_alumni/${id}` : '/api/admin/students_alumni';
+        const method = isEdit ? 'PUT' : 'POST';
+
+        const res = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const result = await res.json();
+        if (result.success) {
+          saveModalSpinner?.classList.add('hidden');
+          saveModalCheck?.classList.remove('hidden');
+          if (saveModalText) saveModalText.innerText = 'Tersimpan';
+          setTimeout(() => {
+            window.location.reload();
+          }, 600);
+        } else {
+          alert(result.error || 'Gagal menyimpan data.');
+          saveBtn.disabled = false;
+          saveModalSpinner?.classList.add('hidden');
+          saveModalCheck?.classList.add('hidden');
+          saveModalIcon?.classList.remove('hidden');
+          if (saveModalText) saveModalText.innerText = 'Simpan Data';
+        }
+      } catch (err) {
+        alert('Terjadi kesalahan jaringan.');
+        saveBtn.disabled = false;
+        saveModalSpinner?.classList.add('hidden');
+        saveModalCheck?.classList.add('hidden');
+        saveModalIcon?.classList.remove('hidden');
+        if (saveModalText) saveModalText.innerText = 'Simpan Data';
+      }
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initAlumni);
+  } else {
+    initAlumni();
+  }
+</script>
+</AdminLayout>

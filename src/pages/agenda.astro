@@ -1,0 +1,1152 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import Breadcrumb from '../components/Breadcrumb.astro';
+import Icon from '../components/Icon.astro';
+import { db, agendas, settings } from '../db';
+import { asc } from 'drizzle-orm';
+import {
+  calculateAgendaStatus,
+  getStatusMeta,
+  getAgendaCategory,
+  parseDateBadge,
+  formatTimeRange,
+  generateGoogleCalendarUrl,
+  isAgendaToday,
+  AGENDA_CATEGORIES,
+} from '../utils/agendaUtils';
+
+export const prerender = false;
+
+// Query seluruh agenda diurutkan berdasarkan tanggal pelaksanaan
+const rawAgendas = await db
+  .select()
+  .from(agendas)
+  .orderBy(asc(agendas.eventDate));
+
+// Olah data dengan status dinamis dan metadata editorial
+const allAgendas = rawAgendas.map((item) => {
+  const status = calculateAgendaStatus(item);
+  const statusMeta = getStatusMeta(status);
+  const category = getAgendaCategory(item.title, item.description);
+  const dateBadge = parseDateBadge(item.eventDate);
+  const endDateBadge = item.endDate ? parseDateBadge(item.endDate) : null;
+  const isToday = isAgendaToday(item.eventDate, item.endDate);
+  const googleCalUrl = generateGoogleCalendarUrl(item);
+
+  return {
+    ...item,
+    status,
+    statusMeta,
+    category,
+    dateBadge,
+    endDateBadge,
+    isToday,
+    googleCalUrl,
+    monthKey: item.eventDate.slice(0, 7), // YYYY-MM
+  };
+});
+
+// Pisahkan agenda aktif (mendatang & berlangsung) dan agenda yang telah selesai
+const activeAgendas = allAgendas.filter((a) => a.status !== 'completed');
+// Agenda selesai diurutkan descending (terbaru selesai di atas)
+const completedAgendas = allAgendas
+  .filter((a) => a.status === 'completed')
+  .sort((a, b) => b.eventDate.localeCompare(a.eventDate));
+
+const completedRecent = completedAgendas.slice(0, 3);
+const completedArchive = completedAgendas.slice(3);
+
+// Metrik status dinamis
+const upcomingCount = allAgendas.filter((a) => a.status === 'upcoming').length;
+const ongoingCount = allAgendas.filter((a) => a.status === 'ongoing').length;
+const completedCount = completedAgendas.length;
+const totalCount = allAgendas.length;
+
+// Daftar agenda terdekat untuk sidebar (prioritaskan ongoing & upcoming)
+const nearAgendas = activeAgendas.slice(0, 3);
+const displayNearAgendas = nearAgendas.length > 0 ? nearAgendas : allAgendas.slice(0, 3);
+
+// Kumpulan tanggal unik yang memiliki agenda untuk mini kalender
+const agendaDatesMap: Record<string, string[]> = {};
+allAgendas.forEach((item) => {
+  if (!agendaDatesMap[item.eventDate]) {
+    agendaDatesMap[item.eventDate] = [];
+  }
+  agendaDatesMap[item.eventDate].push(item.title);
+});
+
+// Daftar bulan unik dari agenda untuk opsi filter
+const availableMonths = Array.from(
+  new Set(allAgendas.map((a) => a.eventDate.slice(0, 7)))
+).sort();
+
+const monthNamesId: Record<string, string> = {
+  '01': 'Januari',
+  '02': 'Februari',
+  '03': 'Maret',
+  '04': 'April',
+  '05': 'Mei',
+  '06': 'Juni',
+  '07': 'Juli',
+  '08': 'Agustus',
+  '09': 'September',
+  '10': 'Oktober',
+  '11': 'November',
+  '12': 'Desember',
+};
+
+function formatMonthLabel(mKey: string) {
+  const [y, m] = mKey.split('-');
+  return `${monthNamesId[m] || m} ${y}`;
+}
+
+const allSettings = await db.select().from(settings).catch(() => []);
+const schoolInfo = allSettings.reduce(
+  (acc, curr) => {
+    acc[curr.key] = curr.value;
+    return acc;
+  },
+  {} as Record<string, string>,
+);
+const schoolName = schoolInfo["school_name"] || "SMAN 1 Unggulan";
+const academicYear = schoolInfo["academic_year"] || "2026/2027";
+const heroBgImage =
+  schoolInfo["agenda_hero_bg"] ||
+  schoolInfo["school_hero_image"] ||
+  "https://images.unsplash.com/photo-1506784983877-45594efa4cbe?auto=format&fit=crop&w=1920&q=80";
+---
+
+<Layout
+  title={`Kalender Agenda & Kegiatan Sekolah — ${schoolName}`}
+  description={`Jadwal resmi kalender akademik, rapat pleno, ujian tengah/akhir semester, dan kegiatan kependidikan ${schoolName} tahun ajaran ${academicYear}.`}
+>
+  <Header currentPath="/agenda" />
+
+  <main class="flex-1 bg-background">
+    <!-- Hero Section dengan Background Image ::before -->
+    <section
+      class="relative isolate overflow-hidden bg-surface py-12 sm:py-16 page-hero-section"
+      style={`--page-hero-bg: url('${heroBgImage}');`}
+    >
+      <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <!-- Breadcrumb -->
+        <Breadcrumb
+          items={[
+            { label: 'Beranda', href: '/' },
+            { label: 'Agenda & Kalender' },
+          ]}
+        />
+
+        <div>
+          <h1 class="font-display text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-heading">
+            Jadwal & Agenda Sekolah
+          </h1>
+          <p class="mt-2 font-body text-sm sm:text-base text-muted max-w-3xl leading-relaxed">
+            Pusat informasi resmi kegiatan kurikuler, evaluasi belajar, rapat akademik, dan agenda kependidikan {schoolName}.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Layout 2-Kolom (Editorial Precision) -->
+    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10 sm:py-12">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        <!-- ========================================== -->
+        <!-- KOLOM KIRI: Toolbar & Daftar Agenda (~68%) -->
+        <!-- ========================================== -->
+        <div class="lg:col-span-8 space-y-6">
+          <!-- Toolbar Filter & Pencarian -->
+          <div class="rounded-[12px] border border-border bg-surface p-4 sm:p-5 space-y-4 shadow-(--shadow-hairline)">
+            <!-- Tab Status Filter -->
+            <div class="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs font-body no-scrollbar">
+              <button
+                type="button"
+                data-filter-status="all"
+                class="agenda-status-tab inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1.5 font-medium transition-colors bg-primary text-white"
+              >
+                <span>Semua</span>
+                <span class="text-[11px] opacity-80 font-mono">({totalCount})</span>
+              </button>
+
+              <button
+                type="button"
+                data-filter-status="upcoming"
+                class="agenda-status-tab inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1.5 font-medium transition-colors text-muted hover:text-heading hover:bg-surface-subtle"
+              >
+                <span>Akan Datang</span>
+                <span class="text-[11px] opacity-80 font-mono">({upcomingCount})</span>
+              </button>
+
+              {ongoingCount > 0 && (
+                <button
+                  type="button"
+                  data-filter-status="ongoing"
+                  class="agenda-status-tab inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1.5 font-medium transition-colors text-muted hover:text-heading hover:bg-surface-subtle"
+                >
+                  <span>Sedang Berlangsung</span>
+                  <span class="text-[11px] opacity-80 font-mono">({ongoingCount})</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                data-filter-status="completed"
+                class="agenda-status-tab inline-flex items-center gap-1.5 rounded-[6px] px-3 py-1.5 font-medium transition-colors text-muted hover:text-heading hover:bg-surface-subtle"
+              >
+                <span>Selesai</span>
+                <span class="text-[11px] opacity-80 font-mono">({completedCount})</span>
+              </button>
+            </div>
+
+            <!-- Search Bar + Dropdown Kategori & Bulan -->
+            <div class="grid grid-cols-1 sm:grid-cols-12 gap-3">
+              <!-- Search Input (6 cols) -->
+              <div class="sm:col-span-6 relative">
+                <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-muted">
+                  <Icon name="search" class="h-4 w-4" />
+                </div>
+                <input
+                  id="agenda-search"
+                  type="text"
+                  placeholder="Cari kegiatan atau lokasi..."
+                  class="h-[38px] w-full rounded-[6px] border border-border bg-surface pl-9 pr-3 font-body text-xs sm:text-sm text-heading placeholder:text-muted/60 transition-colors"
+                />
+              </div>
+
+              <!-- Filter Kategori (3 cols) -->
+              <div class="sm:col-span-3">
+                <select
+                  id="agenda-category-select"
+                  class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading transition-colors"
+                >
+                  <option value="all">Semua Kategori</option>
+                  {AGENDA_CATEGORIES.filter((c) => c !== 'Semua').map((cat) => (
+                    <option value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+
+              <!-- Filter Bulan (3 cols) -->
+              <div class="sm:col-span-3">
+                <select
+                  id="agenda-month-select"
+                  class="h-[38px] w-full rounded-[6px] border border-border bg-surface px-3 font-body text-xs text-heading transition-colors"
+                >
+                  <option value="all">Semua Bulan</option>
+                  {availableMonths.map((m) => (
+                    <option value={m}>{formatMonthLabel(m)}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <!-- Active Filter Indicator Bar -->
+            <div id="filter-indicator-bar" class="hidden items-center justify-between pt-2 text-xs font-body text-muted">
+              <div class="flex items-center gap-2 flex-wrap" id="active-tags-container">
+                <!-- Diisi via JavaScript -->
+              </div>
+              <button
+                type="button"
+                id="btn-reset-filters"
+                class="text-xs font-medium text-primary hover:underline shrink-0"
+              >
+                Reset Filter
+              </button>
+            </div>
+          </div>
+
+          <!-- Counter Agenda Aktif -->
+          <div class="flex items-center justify-between text-xs text-muted font-body px-1">
+            <span id="agenda-count-label">
+              Menampilkan <strong>{totalCount}</strong> agenda kegiatan
+            </span>
+          </div>
+
+          <!-- Empty Filter State (Hidden by default, shown by JS when 0 matches) -->
+          <div id="empty-filter-state" class="hidden rounded-[12px] border border-border bg-surface p-10 text-center">
+            <div class="mx-auto w-10 h-10 rounded-full bg-surface-subtle border border-border flex items-center justify-center text-muted mb-3">
+              <Icon name="search" class="h-5 w-5 text-muted" />
+            </div>
+            <h3 class="font-display text-base font-bold text-heading">Tidak Ada Agenda Ditemukan</h3>
+            <p class="mt-1 text-xs text-muted max-w-sm mx-auto">
+              Tidak ditemukan kegiatan yang cocok dengan kriteria filter atau pencarian Anda.
+            </p>
+            <button
+              type="button"
+              id="btn-empty-reset"
+              class="mt-4 inline-flex h-9 items-center justify-center rounded-[6px] border border-border bg-surface px-4 font-body text-xs font-medium text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+            >
+              Bersihkan Filter
+            </button>
+          </div>
+
+          <!-- SECTION 1: Agenda Aktif (Mendatang & Sedang Berlangsung) -->
+          <div id="active-agenda-container" class="space-y-4">
+            {activeAgendas.length === 0 ? (
+              <div id="no-active-banner" class="rounded-[12px] border border-border bg-surface p-8 text-center">
+                <p class="font-display text-base font-bold text-heading">Tidak ada agenda aktif atau mendatang saat ini</p>
+                <p class="mt-1 text-xs text-muted">Jadwal kegiatan akademik berikutnya akan segera diperbarui oleh pihak sekolah.</p>
+              </div>
+            ) : (
+              activeAgendas.map((item) => {
+                const isMultiDay = Boolean(item.endDate && item.endDate !== item.eventDate);
+                const timeLabel = formatTimeRange(item.startTime, item.endTime);
+
+                return (
+                  <article
+                    class="agenda-card group rounded-[12px] border border-border bg-surface p-5 sm:p-6 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-(--shadow-hover)"
+                    data-status={item.status}
+                    data-category={item.category}
+                    data-month={item.monthKey}
+                    data-date={item.eventDate}
+                    data-end-date={item.endDate || item.eventDate}
+                    data-search={`${item.title} ${item.description || ''} ${item.location}`.toLowerCase()}
+                  >
+                    <div class="flex flex-col sm:flex-row items-start gap-5">
+                      <!-- Date Badge (Editorial Precision) -->
+                      <div class="flex flex-col items-center justify-center rounded-[8px] border border-border bg-surface-subtle p-3 text-center shrink-0 w-16 sm:w-20">
+                        <span class="font-display text-2xl sm:text-3xl font-bold text-heading leading-none">
+                          {item.dateBadge.day}
+                        </span>
+                        <span class="font-mono text-xs font-bold text-primary uppercase mt-1">
+                          {item.dateBadge.monthShort}
+                        </span>
+                        <span class="text-[10px] text-muted font-mono">
+                          {item.dateBadge.year}
+                        </span>
+                      </div>
+
+                      <!-- Agenda Details -->
+                      <div class="flex-1 min-w-0 space-y-2">
+                        <!-- Top Meta: Category + Status + Today Tag -->
+                        <div class="flex flex-wrap items-center gap-2">
+                          <span class="rounded-[4px] bg-primary-light border border-primary/20 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                            {item.category}
+                          </span>
+
+                          <span class={`rounded-[4px] px-2 py-0.5 text-[11px] font-semibold ${item.statusMeta.badgeClass}`}>
+                            {item.statusMeta.label}
+                          </span>
+
+                          {item.isToday && (
+                            <span class="rounded-[4px] bg-warning-light text-warning-text border border-warning/30 px-2 py-0.5 text-[11px] font-semibold">
+                              Hari Ini
+                            </span>
+                          )}
+                        </div>
+
+                        <!-- Title -->
+                        <h2 class="font-display text-lg sm:text-xl font-bold text-heading group-hover:text-primary transition-colors leading-snug">
+                          <a href={`/agenda/${item.id}`} class="">
+                            {item.title}
+                          </a>
+                        </h2>
+
+                        <!-- Description -->
+                        {item.description && (
+                          <p class="text-xs sm:text-sm text-muted leading-relaxed line-clamp-2 font-body">
+                            {item.description}
+                          </p>
+                        )}
+
+                        <!-- Location & Time Info -->
+                        <div class="pt-1 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted font-body">
+                          <!-- Time -->
+                          <span class="inline-flex items-center gap-1.5 font-mono">
+                            <Icon name="clock" class="h-3.5 w-3.5 text-primary shrink-0" />
+                            {timeLabel}
+                          </span>
+
+                          <span>&bull;</span>
+
+                          <!-- Location -->
+                          <span class="inline-flex items-center gap-1.5">
+                            <Icon name="map-pin" class="h-3.5 w-3.5 text-primary shrink-0" />
+                            {item.location}
+                          </span>
+
+                          {isMultiDay && item.endDateBadge && (
+                            <>
+                              <span>&bull;</span>
+                              <span class="text-[11px] text-muted italic">
+                                S.d. {item.endDateBadge.day} {item.endDateBadge.monthShort} {item.endDateBadge.year}
+                              </span>
+                            </>
+                          )}
+                        </div>
+
+                        <!-- Bottom Actions: Lihat Detail & Add to Calendar -->
+                        <div class="pt-3 flex flex-wrap items-center gap-2.5">
+                          <a
+                            href={`/agenda/${item.id}`}
+                            class="inline-flex h-[32px] items-center justify-center gap-1.5 rounded-[6px] border border-border bg-surface px-3 font-body text-xs font-medium text-heading transition-colors hover:border-heading hover:bg-surface-subtle"
+                          >
+                            <span>Lihat Detail</span>
+                            <Icon name="chevron-right" class="h-3.5 w-3.5 text-muted" />
+                          </a>
+
+                          <a
+                            href={item.googleCalUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="inline-flex h-[32px] items-center justify-center gap-1.5 rounded-[6px] px-2.5 font-body text-xs font-medium text-muted transition-colors hover:bg-surface-subtle hover:text-heading"
+                            title="Simpan ke Google Calendar"
+                          >
+                            <Icon name="calendar" class="h-3.5 w-3.5 text-primary" />
+                            <span>Google Calendar</span>
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })
+            )}
+          </div>
+
+          <!-- SECTION 2: Bagian Tersendiri untuk Agenda yang Sudah Selesai -->
+          {completedAgendas.length > 0 && (
+            <section id="completed-agenda-section" class="mt-12 space-y-4">
+              <!-- Section Header -->
+              <div class="flex items-center justify-between">
+                <div>
+                  <h2 class="font-display text-lg font-bold text-heading">
+                    Riwayat Agenda yang Telah Selesai
+                  </h2>
+                  <p class="text-xs text-muted font-body mt-0.5">
+                    Dokumentasi kegiatan dan agenda akademik yang telah terlaksana.
+                  </p>
+                </div>
+                <span class="rounded-[4px] bg-surface-subtle border border-border px-2.5 py-0.5 text-xs font-mono text-muted">
+                  {completedAgendas.length} Selesai
+                </span>
+              </div>
+
+              <!-- 3 Agenda Selesai Terbaru -->
+              <div id="completed-recent-list" class="space-y-4">
+                {completedRecent.map((item) => {
+                  const isMultiDay = Boolean(item.endDate && item.endDate !== item.eventDate);
+                  const timeLabel = formatTimeRange(item.startTime, item.endTime);
+
+                  return (
+                    <article
+                      class="agenda-card group rounded-[12px] border border-border bg-surface p-5 sm:p-6 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-(--shadow-hover)"
+                      data-status={item.status}
+                      data-category={item.category}
+                      data-month={item.monthKey}
+                      data-date={item.eventDate}
+                      data-end-date={item.endDate || item.eventDate}
+                      data-search={`${item.title} ${item.description || ''} ${item.location}`.toLowerCase()}
+                    >
+                      <div class="flex flex-col sm:flex-row items-start gap-5">
+                        <div class="flex flex-col items-center justify-center rounded-[8px] border border-border bg-surface-subtle p-3 text-center shrink-0 w-16 sm:w-20 opacity-80">
+                          <span class="font-display text-2xl sm:text-3xl font-bold text-heading leading-none">
+                            {item.dateBadge.day}
+                          </span>
+                          <span class="font-mono text-xs font-bold text-muted uppercase mt-1">
+                            {item.dateBadge.monthShort}
+                          </span>
+                          <span class="text-[10px] text-muted font-mono">
+                            {item.dateBadge.year}
+                          </span>
+                        </div>
+
+                        <div class="flex-1 min-w-0 space-y-2">
+                          <div class="flex flex-wrap items-center gap-2">
+                            <span class="rounded-[4px] bg-surface-subtle text-muted px-2 py-0.5 text-[11px] font-semibold border border-border">
+                              {item.category}
+                            </span>
+                            <span class={`rounded-[4px] px-2 py-0.5 text-[11px] font-semibold ${item.statusMeta.badgeClass}`}>
+                              {item.statusMeta.label}
+                            </span>
+                          </div>
+
+                          <h3 class="font-display text-lg font-bold text-heading group-hover:text-primary transition-colors leading-snug">
+                            <a href={`/agenda/${item.id}`} class="">
+                              {item.title}
+                            </a>
+                          </h3>
+
+                          {item.description && (
+                            <p class="text-xs sm:text-sm text-muted leading-relaxed line-clamp-2 font-body">
+                              {item.description}
+                            </p>
+                          )}
+
+                          <div class="pt-1 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted font-body">
+                            <span class="inline-flex items-center gap-1.5 font-mono">
+                              <Icon name="clock" class="h-3.5 w-3.5 text-muted shrink-0" />
+                              {timeLabel}
+                            </span>
+                            <span>&bull;</span>
+                            <span class="inline-flex items-center gap-1.5">
+                              <Icon name="map-pin" class="h-3.5 w-3.5 text-muted shrink-0" />
+                              {item.location}
+                            </span>
+                          </div>
+
+                          <div class="pt-3 flex items-center gap-2.5">
+                            <a
+                              href={`/agenda/${item.id}`}
+                              class="inline-flex h-[32px] items-center justify-center gap-1.5 rounded-[6px] border border-border bg-surface px-3 font-body text-xs font-medium text-heading transition-colors hover:border-heading hover:bg-surface-subtle"
+                            >
+                              <span>Lihat Dokumentasi & Detail</span>
+                              <Icon name="chevron-right" class="h-3.5 w-3.5 text-muted" />
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+
+              <!-- Sisa Agenda Selesai (> 3) di dalam Container Toggle -->
+              {completedArchive.length > 0 && (
+                <>
+                  <div id="completed-archive-container" class="hidden space-y-4 pt-2">
+                    {completedArchive.map((item) => {
+                      const timeLabel = formatTimeRange(item.startTime, item.endTime);
+
+                      return (
+                        <article
+                          class="agenda-card group rounded-[12px] border border-border bg-surface p-5 sm:p-6 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-(--shadow-hover)"
+                          data-status={item.status}
+                          data-category={item.category}
+                          data-month={item.monthKey}
+                          data-date={item.eventDate}
+                          data-end-date={item.endDate || item.eventDate}
+                          data-search={`${item.title} ${item.description || ''} ${item.location}`.toLowerCase()}
+                        >
+                          <div class="flex flex-col sm:flex-row items-start gap-5">
+                            <div class="flex flex-col items-center justify-center rounded-[8px] border border-border bg-surface-subtle p-3 text-center shrink-0 w-16 sm:w-20 opacity-80">
+                              <span class="font-display text-2xl sm:text-3xl font-bold text-heading leading-none">
+                                {item.dateBadge.day}
+                              </span>
+                              <span class="font-mono text-xs font-bold text-muted uppercase mt-1">
+                                {item.dateBadge.monthShort}
+                              </span>
+                              <span class="text-[10px] text-muted font-mono">
+                                {item.dateBadge.year}
+                              </span>
+                            </div>
+
+                            <div class="flex-1 min-w-0 space-y-2">
+                              <div class="flex flex-wrap items-center gap-2">
+                                <span class="rounded-[4px] bg-surface-subtle text-muted px-2 py-0.5 text-[11px] font-semibold border border-border">
+                                  {item.category}
+                                </span>
+                                <span class={`rounded-[4px] px-2 py-0.5 text-[11px] font-semibold ${item.statusMeta.badgeClass}`}>
+                                  {item.statusMeta.label}
+                                </span>
+                              </div>
+
+                              <h3 class="font-display text-lg font-bold text-heading group-hover:text-primary transition-colors leading-snug">
+                                <a href={`/agenda/${item.id}`} class="">
+                                  {item.title}
+                                </a>
+                              </h3>
+
+                              {item.description && (
+                                <p class="text-xs sm:text-sm text-muted leading-relaxed line-clamp-2 font-body">
+                                  {item.description}
+                                </p>
+                              )}
+
+                              <div class="pt-1 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted font-body">
+                                <span class="inline-flex items-center gap-1.5 font-mono">
+                                  <Icon name="clock" class="h-3.5 w-3.5 text-muted shrink-0" />
+                                  {timeLabel}
+                                </span>
+                                <span>&bull;</span>
+                                <span class="inline-flex items-center gap-1.5">
+                                  <Icon name="map-pin" class="h-3.5 w-3.5 text-muted shrink-0" />
+                                  {item.location}
+                                </span>
+                              </div>
+
+                              <div class="pt-3 flex items-center gap-2.5">
+                                <a
+                                  href={`/agenda/${item.id}`}
+                                  class="inline-flex h-[32px] items-center justify-center gap-1.5 rounded-[6px] border border-border bg-surface px-3 font-body text-xs font-medium text-heading transition-colors hover:border-heading hover:bg-surface-subtle"
+                                >
+                                  <span>Lihat Dokumentasi & Detail</span>
+                                  <Icon name="chevron-right" class="h-3.5 w-3.5 text-muted" />
+                                </a>
+                              </div>
+                            </div>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+
+                  <!-- Tombol Toggle Buka Semua Riwayat Selesai -->
+                  <button
+                    type="button"
+                    id="btn-toggle-completed"
+                    class="w-full inline-flex h-[38px] items-center justify-center gap-2 rounded-[6px] border border-border bg-surface px-4 font-body text-xs sm:text-sm font-medium text-heading transition-colors hover:border-heading hover:bg-surface-subtle"
+                  >
+                    <span id="toggle-completed-text">
+                      Lihat Semua Riwayat Selesai ({completedAgendas.length})
+                    </span>
+                    <Icon id="toggle-completed-icon" name="chevron-down" class="h-4 w-4 text-muted transition-transform duration-200" />
+                  </button>
+                </>
+              )}
+            </section>
+          )}
+        </div>
+
+        <!-- ========================================== -->
+        <!-- KOLOM KANAN: Sidebar Kalender & Info (~32%) -->
+        <!-- ========================================== -->
+        <aside class="lg:col-span-4 space-y-6">
+          <!-- Widget Kalender Mini Interaktif -->
+          <div class="rounded-[12px] border border-border bg-surface p-5 shadow-(--shadow-hairline)">
+            <div class="flex items-center justify-between pb-2">
+              <h2 id="calendar-month-year" class="font-display text-sm font-bold text-heading">
+                <!-- Terisi via JS -->
+                November 2026
+              </h2>
+              <div class="flex items-center gap-1">
+                <button
+                  type="button"
+                  id="cal-prev-month"
+                  class="p-1 rounded-[4px] text-muted hover:text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+                  aria-label="Bulan Sebelumnya"
+                >
+                  <Icon name="chevron-left" class="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  id="cal-next-month"
+                  class="p-1 rounded-[4px] text-muted hover:text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
+                  aria-label="Bulan Berikutnya"
+                >
+                  <Icon name="chevron-right" class="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <!-- Kalender Grid -->
+            <div class="mt-3">
+              <!-- Hari Header -->
+              <div class="grid grid-cols-7 gap-1 text-center font-mono text-[10px] font-semibold text-muted mb-1.5 uppercase">
+                <span>Min</span>
+                <span>Sen</span>
+                <span>Sel</span>
+                <span>Rab</span>
+                <span>Kam</span>
+                <span>Jum</span>
+                <span>Sab</span>
+              </div>
+
+              <!-- Hari Cells (diisi via JS) -->
+              <div id="calendar-days-grid" class="grid grid-cols-7 gap-1 text-center font-body text-xs">
+                <!-- Dynamic day buttons -->
+              </div>
+            </div>
+
+            <!-- Info Bar Bawah Kalender -->
+            <div class="mt-3 pt-1 flex items-center justify-between text-[11px] text-muted font-body">
+              <span class="flex items-center gap-1.5">
+                <span class="inline-block w-2 h-2 rounded-[2px] bg-primary"></span>
+                <span>Ada agenda</span>
+              </span>
+              <button
+                type="button"
+                id="cal-btn-today"
+                class="font-medium text-primary hover:underline"
+              >
+                Hari Ini
+              </button>
+            </div>
+          </div>
+
+          <!-- Widget Agenda Terdekat -->
+          <div class="rounded-[12px] border border-border bg-surface p-5 shadow-(--shadow-hairline)">
+            <h2 class="font-display text-sm font-bold text-heading pb-2 flex items-center justify-between">
+              <span>Agenda Terdekat</span>
+              <span class="text-[11px] font-normal text-muted font-body">Mendatang</span>
+            </h2>
+
+            <div class="mt-2 space-y-1">
+              {displayNearAgendas.map((item) => (
+                <a
+                  href={`/agenda/${item.id}`}
+                  class="block p-2 rounded-[8px] hover:bg-surface-subtle transition-colors group"
+                >
+                  <div class="flex items-start gap-3">
+                    <div class="flex flex-col items-center justify-center rounded-[6px] border border-border bg-surface-subtle p-1.5 text-center shrink-0 w-12">
+                      <span class="font-display text-base font-bold text-heading leading-none">
+                        {item.dateBadge.day}
+                      </span>
+                      <span class="font-mono text-[9px] font-bold text-primary uppercase mt-0.5">
+                        {item.dateBadge.monthShort}
+                      </span>
+                    </div>
+
+                    <div class="flex-1 min-w-0">
+                      <span class={`inline-block text-[10px] font-semibold ${item.statusMeta.textClass}`}>
+                        {item.statusMeta.label}
+                      </span>
+                      <h3 class="font-display text-xs font-semibold text-heading truncate group-hover:text-primary transition-colors mt-0.5">
+                        {item.title}
+                      </h3>
+                      <p class="text-[11px] text-muted truncate mt-0.5 font-body">
+                        {item.location}
+                      </p>
+                    </div>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
+
+          <!-- Widget Tahun Ajaran & Info Kalender Resmi -->
+          <div class="rounded-[12px] border border-border bg-surface p-5 space-y-3.5 shadow-(--shadow-hairline) font-body text-xs">
+            <h3 class="font-display text-sm font-bold text-heading">
+              Tahun Ajaran 2026/2027
+            </h3>
+            <p class="text-muted leading-relaxed">
+              Kalender resmi disinkronkan langsung dengan penetapan Dinas Pendidikan Provinsi dan Kurikulum Operasional Satuan Pendidikan (KOSP).
+            </p>
+
+            <div class="rounded-[8px] bg-surface-subtle border border-border p-3 space-y-1.5">
+              <div class="flex items-center justify-between text-muted">
+                <span>Semester Aktif:</span>
+                <strong class="text-heading font-medium">Ganjil (I)</strong>
+              </div>
+              <div class="flex items-center justify-between text-muted">
+                <span>Minggu Efektif:</span>
+                <strong class="text-heading font-medium">18 Pekan</strong>
+              </div>
+              <div class="flex items-center justify-between text-muted">
+                <span>Libur Semester:</span>
+                <strong class="text-heading font-medium">21 Des – 2 Jan 2027</strong>
+              </div>
+            </div>
+
+            <div class="pt-2">
+              <a
+                href="/kontak"
+                class="inline-flex w-full items-center justify-center gap-1.5 rounded-[6px] border border-border bg-surface px-3 py-2 text-xs font-medium text-heading transition-colors hover:border-heading hover:bg-surface-subtle"
+              >
+                <span>Koordinasi dengan Tata Usaha</span>
+                <Icon name="chevron-right" class="h-3.5 w-3.5 text-muted" />
+              </a>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </main>
+
+  <Footer />
+</Layout>
+
+<!-- Client Script: Filtering, Search, Archive Toggle, and Mini Calendar -->
+<script is:inline define:vars={{ agendaDatesMap, totalCompleted: completedAgendas.length }}>
+  (function () {
+    // State Filter
+    let activeStatus = 'all';
+    let activeCategory = 'all';
+    let activeMonth = 'all';
+    let searchQuery = '';
+    let selectedDate = null; // YYYY-MM-DD
+    let isArchiveExpanded = false;
+
+    // DOM Elements
+    const statusTabs = document.querySelectorAll('.agenda-status-tab');
+    const searchInput = document.getElementById('agenda-search');
+    const categorySelect = document.getElementById('agenda-category-select');
+    const monthSelect = document.getElementById('agenda-month-select');
+    const allCards = document.querySelectorAll('.agenda-card');
+    const countLabel = document.getElementById('agenda-count-label');
+    const emptyState = document.getElementById('empty-filter-state');
+    const filterIndicator = document.getElementById('filter-indicator-bar');
+    const activeTagsContainer = document.getElementById('active-tags-container');
+    const resetBtn = document.getElementById('btn-reset-filters');
+    const emptyResetBtn = document.getElementById('btn-empty-reset');
+
+    // Completed section elements
+    const completedSection = document.getElementById('completed-agenda-section');
+    const completedArchiveContainer = document.getElementById('completed-archive-container');
+    const toggleCompletedBtn = document.getElementById('btn-toggle-completed');
+    const toggleCompletedText = document.getElementById('toggle-completed-text');
+    const toggleCompletedIcon = document.getElementById('toggle-completed-icon');
+    const activeAgendaContainer = document.getElementById('active-agenda-container');
+
+    // Calendar Elements
+    const calMonthYear = document.getElementById('calendar-month-year');
+    const calDaysGrid = document.getElementById('calendar-days-grid');
+    const calPrev = document.getElementById('cal-prev-month');
+    const calNext = document.getElementById('cal-next-month');
+    const calTodayBtn = document.getElementById('cal-btn-today');
+
+    // Date state for calendar navigation
+    const today = new Date();
+    let currentCalYear = today.getFullYear();
+    let currentCalMonth = today.getMonth(); // 0-indexed
+
+    function formatDateIso(y, m, d) {
+      const mm = String(m + 1).padStart(2, '0');
+      const dd = String(d).padStart(2, '0');
+      return `${y}-${mm}-${dd}`;
+    }
+
+    const todayIso = formatDateIso(today.getFullYear(), today.getMonth(), today.getDate());
+
+    const monthNamesIndo = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+
+    // Toggle Completed Archive
+    if (toggleCompletedBtn && completedArchiveContainer) {
+      toggleCompletedBtn.addEventListener('click', () => {
+        isArchiveExpanded = !isArchiveExpanded;
+        if (isArchiveExpanded) {
+          completedArchiveContainer.classList.remove('hidden');
+          if (toggleCompletedText) {
+            toggleCompletedText.textContent = 'Sembunyikan Sebagian (Tampilkan 3 Teratas)';
+          }
+          if (toggleCompletedIcon) {
+            toggleCompletedIcon.classList.add('rotate-180');
+          }
+        } else {
+          completedArchiveContainer.classList.add('hidden');
+          if (toggleCompletedText) {
+            toggleCompletedText.textContent = `Lihat Semua Riwayat Selesai (${totalCompleted})`;
+          }
+          if (toggleCompletedIcon) {
+            toggleCompletedIcon.classList.remove('rotate-180');
+          }
+        }
+        applyFilters();
+      });
+    }
+
+    // Filter Logic
+    function applyFilters() {
+      let visibleCount = 0;
+      let visibleActiveCount = 0;
+      let visibleCompletedCount = 0;
+
+      // Handle section visibility based on tab status
+      if (activeStatus === 'upcoming' || activeStatus === 'ongoing') {
+        if (completedSection) completedSection.classList.add('hidden');
+        if (activeAgendaContainer) activeAgendaContainer.classList.remove('hidden');
+      } else if (activeStatus === 'completed') {
+        if (activeAgendaContainer) activeAgendaContainer.classList.add('hidden');
+        if (completedSection) {
+          completedSection.classList.remove('hidden');
+          // In completed tab, auto expand all completed cards
+          if (completedArchiveContainer) completedArchiveContainer.classList.remove('hidden');
+          if (toggleCompletedBtn) toggleCompletedBtn.classList.add('hidden');
+        }
+      } else {
+        // 'all' tab: show both active & completed
+        if (activeAgendaContainer) activeAgendaContainer.classList.remove('hidden');
+        if (completedSection) {
+          completedSection.classList.remove('hidden');
+          // Respect user toggle state
+          if (completedArchiveContainer) {
+            if (isArchiveExpanded) {
+              completedArchiveContainer.classList.remove('hidden');
+            } else {
+              completedArchiveContainer.classList.add('hidden');
+            }
+          }
+          if (toggleCompletedBtn) toggleCompletedBtn.classList.remove('hidden');
+        }
+      }
+
+      // Check each card
+      allCards.forEach((card) => {
+        const cStatus = card.getAttribute('data-status');
+        const cCategory = card.getAttribute('data-category');
+        const cMonth = card.getAttribute('data-month');
+        const cDate = card.getAttribute('data-date');
+        const cEndDate = card.getAttribute('data-end-date') || cDate;
+        const cSearch = card.getAttribute('data-search') || '';
+
+        // Match Status
+        const matchStatus = activeStatus === 'all' || cStatus === activeStatus;
+
+        // Match Category
+        const matchCategory = activeCategory === 'all' || cCategory === activeCategory;
+
+        // Match Month
+        const matchMonth = activeMonth === 'all' || cMonth === activeMonth;
+
+        // Match Search
+        const matchSearch = !searchQuery || cSearch.includes(searchQuery);
+
+        // Match Selected Date from Calendar
+        let matchDate = true;
+        if (selectedDate) {
+          matchDate = selectedDate >= cDate && selectedDate <= cEndDate;
+        }
+
+        const isVisible = matchStatus && matchCategory && matchMonth && matchSearch && matchDate;
+
+        if (isVisible) {
+          card.classList.remove('hidden');
+          visibleCount++;
+          if (cStatus === 'completed') {
+            visibleCompletedCount++;
+          } else {
+            visibleActiveCount++;
+          }
+        } else {
+          card.classList.add('hidden');
+        }
+      });
+
+      // Update counter
+      if (countLabel) {
+        countLabel.innerHTML = `Menampilkan <strong>${visibleCount}</strong> dari ${allCards.length} agenda kegiatan`;
+      }
+
+      // Show/Hide Empty State
+      if (emptyState) {
+        if (visibleCount === 0) {
+          emptyState.classList.remove('hidden');
+          if (completedSection) completedSection.classList.add('hidden');
+          if (activeAgendaContainer) activeAgendaContainer.classList.add('hidden');
+        } else {
+          emptyState.classList.add('hidden');
+        }
+      }
+
+      // Update active tags bar
+      updateActiveTagsBar();
+    }
+
+    function updateActiveTagsBar() {
+      if (!filterIndicator || !activeTagsContainer) return;
+
+      const tags = [];
+      if (activeStatus !== 'all') {
+        const labels = { upcoming: 'Akan Datang', ongoing: 'Sedang Berlangsung', completed: 'Selesai' };
+        tags.push(`Status: ${labels[activeStatus] || activeStatus}`);
+      }
+      if (activeCategory !== 'all') {
+        tags.push(`Kategori: ${activeCategory}`);
+      }
+      if (activeMonth !== 'all') {
+        tags.push(`Bulan: ${activeMonth}`);
+      }
+      if (searchQuery) {
+        tags.push(`Cari: "${searchQuery}"`);
+      }
+      if (selectedDate) {
+        tags.push(`Tanggal: ${selectedDate}`);
+      }
+
+      if (tags.length > 0) {
+        filterIndicator.classList.remove('hidden');
+        filterIndicator.classList.add('flex');
+        activeTagsContainer.innerHTML = tags
+          .map((t) => `<span class="rounded-[4px] bg-surface-subtle border border-border px-2 py-0.5 text-[11px] font-medium text-heading">${t}</span>`)
+          .join('');
+      } else {
+        filterIndicator.classList.add('hidden');
+        filterIndicator.classList.remove('flex');
+        activeTagsContainer.innerHTML = '';
+      }
+    }
+
+    function resetAllFilters() {
+      activeStatus = 'all';
+      activeCategory = 'all';
+      activeMonth = 'all';
+      searchQuery = '';
+      selectedDate = null;
+
+      if (searchInput) searchInput.value = '';
+      if (categorySelect) categorySelect.value = 'all';
+      if (monthSelect) monthSelect.value = 'all';
+
+      statusTabs.forEach((tab) => {
+        if (tab.getAttribute('data-filter-status') === 'all') {
+          tab.classList.add('bg-primary', 'text-white');
+          tab.classList.remove('text-muted', 'hover:text-heading', 'hover:bg-surface-subtle');
+        } else {
+          tab.classList.remove('bg-primary', 'text-white');
+          tab.classList.add('text-muted', 'hover:text-heading', 'hover:bg-surface-subtle');
+        }
+      });
+
+      renderCalendar(currentCalYear, currentCalMonth);
+      applyFilters();
+    }
+
+    // Status Tab Click Event
+    statusTabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const targetStatus = tab.getAttribute('data-filter-status') || 'all';
+        activeStatus = targetStatus;
+
+        statusTabs.forEach((t) => {
+          if (t === tab) {
+            t.classList.add('bg-primary', 'text-white');
+            t.classList.remove('text-muted', 'hover:text-heading', 'hover:bg-surface-subtle');
+          } else {
+            t.classList.remove('bg-primary', 'text-white');
+            t.classList.add('text-muted', 'hover:text-heading', 'hover:bg-surface-subtle');
+          }
+        });
+
+        applyFilters();
+      });
+    });
+
+    // Search Input Event (Debounced)
+    let searchTimeout = null;
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+          searchQuery = (e.target.value || '').trim().toLowerCase();
+          applyFilters();
+        }, 150);
+      });
+    }
+
+    // Dropdown Category Event
+    if (categorySelect) {
+      categorySelect.addEventListener('change', (e) => {
+        activeCategory = e.target.value;
+        applyFilters();
+      });
+    }
+
+    // Dropdown Month Event
+    if (monthSelect) {
+      monthSelect.addEventListener('change', (e) => {
+        activeMonth = e.target.value;
+        if (activeMonth !== 'all') {
+          const [y, m] = activeMonth.split('-');
+          currentCalYear = parseInt(y, 10);
+          currentCalMonth = parseInt(m, 10) - 1;
+          renderCalendar(currentCalYear, currentCalMonth);
+        }
+        applyFilters();
+      });
+    }
+
+    if (resetBtn) resetBtn.addEventListener('click', resetAllFilters);
+    if (emptyResetBtn) emptyResetBtn.addEventListener('click', resetAllFilters);
+
+    // ==========================================
+    // Mini Calendar Logic
+    // ==========================================
+    function renderCalendar(year, month) {
+      if (!calMonthYear || !calDaysGrid) return;
+
+      calMonthYear.textContent = `${monthNamesIndo[month]} ${year}`;
+
+      const firstDay = new Date(year, month, 1).getDay(); // 0 = Sun
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+      calDaysGrid.innerHTML = '';
+
+      // Blank prefix cells
+      for (let i = 0; i < firstDay; i++) {
+        const blank = document.createElement('div');
+        blank.className = 'h-8';
+        calDaysGrid.appendChild(blank);
+      }
+
+      // Day cells
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = formatDateIso(year, month, d);
+        const hasAgenda = Boolean(agendaDatesMap && agendaDatesMap[dateStr]);
+        const isCurrentDay = dateStr === todayIso;
+        const isSelected = selectedDate === dateStr;
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = String(d);
+        btn.setAttribute('data-cal-date', dateStr);
+
+        let cellClasses = [
+          'relative', 'h-8', 'w-full', 'rounded-[4px]', 'font-medium',
+          'transition-all', 'duration-150', 'flex', 'items-center', 'justify-center'
+        ];
+
+        if (isSelected) {
+          cellClasses.push('bg-primary', 'text-white', 'font-bold');
+        } else if (isCurrentDay) {
+          cellClasses.push('border', 'border-primary', 'text-primary', 'font-bold');
+        } else if (hasAgenda) {
+          cellClasses.push('text-heading', 'hover:bg-surface-subtle', 'font-semibold');
+        } else {
+          cellClasses.push('text-muted', 'hover:bg-surface-subtle');
+        }
+
+        btn.className = cellClasses.join(' ');
+
+        // Add dot marker for dates with agendas
+        if (hasAgenda && !isSelected) {
+          const dot = document.createElement('span');
+          dot.className = 'absolute bottom-1 w-1 h-1 rounded-full bg-primary pointer-events-none';
+          btn.appendChild(dot);
+        }
+
+        btn.addEventListener('click', () => {
+          if (selectedDate === dateStr) {
+            selectedDate = null; // toggle off
+          } else {
+            selectedDate = dateStr;
+          }
+          renderCalendar(year, month);
+          applyFilters();
+        });
+
+        calDaysGrid.appendChild(btn);
+      }
+    }
+
+    if (calPrev) {
+      calPrev.addEventListener('click', () => {
+        currentCalMonth--;
+        if (currentCalMonth < 0) {
+          currentCalMonth = 11;
+          currentCalYear--;
+        }
+        renderCalendar(currentCalYear, currentCalMonth);
+      });
+    }
+
+    if (calNext) {
+      calNext.addEventListener('click', () => {
+        currentCalMonth++;
+        if (currentCalMonth > 11) {
+          currentCalMonth = 0;
+          currentCalYear++;
+        }
+        renderCalendar(currentCalYear, currentCalMonth);
+      });
+    }
+
+    if (calTodayBtn) {
+      calTodayBtn.addEventListener('click', () => {
+        currentCalYear = today.getFullYear();
+        currentCalMonth = today.getMonth();
+        selectedDate = todayIso;
+        renderCalendar(currentCalYear, currentCalMonth);
+        applyFilters();
+      });
+    }
+
+    // Initial render
+    renderCalendar(currentCalYear, currentCalMonth);
+    applyFilters();
+  })();
+</script>

@@ -1,0 +1,1171 @@
+---
+import { db, settings, navigationItems } from "../db";
+import { asc, eq } from "drizzle-orm";
+import Icon from "./Icon.astro";
+
+interface Props {
+  currentPath?: string;
+}
+
+const { currentPath = "/" } = Astro.props;
+const normalizedCurrentPath =
+  (currentPath || Astro.url.pathname || "/").replace(/\/$/, "") || "/";
+
+let schoolSettings: Record<string, string> = {};
+try {
+  const allSettings = await db.select().from(settings);
+  schoolSettings = allSettings.reduce(
+    (acc, curr) => {
+      acc[curr.key] = curr.value;
+      return acc;
+    },
+    {} as Record<string, string>,
+  );
+} catch {
+  schoolSettings = {};
+}
+
+const schoolName = schoolSettings["school_name"] || "SMAN 1 UNGGULAN";
+const schoolCity =
+  schoolSettings["city"] || schoolSettings["school_city"] || "Jakarta";
+const npsn = schoolSettings["npsn"] || "20101234";
+const logoUrl = schoolSettings["logo_url"] || "";
+const headerShowSchoolName =
+  schoolSettings["header_show_school_name"] !== "false";
+const logoOrientation = schoolSettings["logo_orientation"] || "auto";
+const admissionsLabel =
+  schoolSettings["admissions_label"] || schoolSettings["ppdb_label"] || "PPDB";
+const academicYear =
+  schoolSettings["ppdb_year"] ||
+  schoolSettings["admissions_year"] ||
+  "2026/2027";
+
+// Ambil navigasi dinamis dari database
+let rawNavItems: any[] = [];
+try {
+  rawNavItems = await db
+    .select()
+    .from(navigationItems)
+    .where(eq(navigationItems.isActive, true))
+    .orderBy(asc(navigationItems.sortOrder), asc(navigationItems.createdAt));
+} catch {
+  rawNavItems = [];
+}
+
+// Fallback jika database belum ada data
+if (rawNavItems.length === 0) {
+  rawNavItems = [
+    {
+      id: "def_1",
+      label: "Beranda",
+      type: "page",
+      href: "/",
+      parentId: null,
+      sortOrder: 0,
+      showDesktop: true,
+      showMobile: true,
+      openInNewTab: false,
+    },
+    {
+      id: "def_2",
+      label: "Profil",
+      type: "dropdown",
+      href: null,
+      parentId: null,
+      sortOrder: 1,
+      showDesktop: true,
+      showMobile: true,
+      openInNewTab: false,
+    },
+    {
+      id: "def_20",
+      label: "Sambutan Kepala Sekolah",
+      type: "page",
+      href: "/profil#sambutan",
+      parentId: "def_2",
+      sortOrder: 0,
+      showDesktop: true,
+      showMobile: true,
+      openInNewTab: false,
+    },
+    {
+      id: "def_21",
+      label: "Sejarah Sekolah",
+      type: "page",
+      href: "/profil#sejarah",
+      parentId: "def_2",
+      sortOrder: 1,
+      showDesktop: true,
+      showMobile: true,
+      openInNewTab: false,
+    },
+    {
+      id: "def_22",
+      label: "Visi dan Misi",
+      type: "page",
+      href: "/profil#visi-misi",
+      parentId: "def_2",
+      sortOrder: 2,
+      showDesktop: true,
+      showMobile: true,
+      openInNewTab: false,
+    },
+    {
+      id: "def_23",
+      label: "Struktur Kepemimpinan",
+      type: "page",
+      href: "/profil#struktur",
+      parentId: "def_2",
+      sortOrder: 3,
+      showDesktop: true,
+      showMobile: true,
+      openInNewTab: false,
+    },
+    {
+      id: "def_3",
+      label: "Berita",
+      type: "page",
+      href: "/berita",
+      parentId: null,
+      sortOrder: 2,
+      showDesktop: true,
+      showMobile: true,
+      openInNewTab: false,
+    },
+    {
+      id: "def_4",
+      label: "Agenda",
+      type: "page",
+      href: "/agenda",
+      parentId: null,
+      sortOrder: 3,
+      showDesktop: true,
+      showMobile: true,
+      openInNewTab: false,
+    },
+    {
+      id: "def_5",
+      label: "Direktori",
+      type: "dropdown",
+      href: null,
+      parentId: null,
+      sortOrder: 4,
+      showDesktop: true,
+      showMobile: true,
+      openInNewTab: false,
+    },
+    {
+      id: "def_51",
+      label: "Guru dan Staf",
+      type: "page",
+      href: "/direktori",
+      parentId: "def_5",
+      sortOrder: 0,
+      showDesktop: true,
+      showMobile: true,
+      openInNewTab: false,
+    },
+    {
+      id: "def_52",
+      label: "Fasilitas Sekolah",
+      type: "page",
+      href: "/fasilitas",
+      parentId: "def_5",
+      sortOrder: 1,
+      showDesktop: true,
+      showMobile: true,
+      openInNewTab: false,
+    },
+    {
+      id: "def_53",
+      label: "Organisasi Siswa (OSIS)",
+      type: "page",
+      href: "/profil#kesiswaan",
+      parentId: "def_5",
+      sortOrder: 2,
+      showDesktop: true,
+      showMobile: true,
+      openInNewTab: false,
+    },
+    {
+      id: "def_54",
+      label: "Pengumuman Kelulusan",
+      type: "page",
+      href: "/berita?kategori=pengumuman",
+      parentId: "def_5",
+      sortOrder: 3,
+      showDesktop: true,
+      showMobile: true,
+      openInNewTab: false,
+    },
+    {
+      id: "def_55",
+      label: "Pusat Unduhan Dokumen",
+      type: "page",
+      href: "/dokumen",
+      parentId: "def_5",
+      sortOrder: 4,
+      showDesktop: true,
+      showMobile: true,
+      openInNewTab: false,
+    },
+    {
+      id: "def_56",
+      label: "Tracer Study Alumni",
+      type: "page",
+      href: "/alumni",
+      parentId: "def_5",
+      sortOrder: 5,
+      showDesktop: true,
+      showMobile: true,
+      openInNewTab: false,
+    },
+    {
+      id: "def_6",
+      label: "Kontak",
+      type: "page",
+      href: "/kontak",
+      parentId: null,
+      sortOrder: 5,
+      showDesktop: true,
+      showMobile: true,
+      openInNewTab: false,
+    },
+    {
+      id: "def_7",
+      label: admissionsLabel,
+      type: "page",
+      href: "/pendaftaran",
+      parentId: null,
+      sortOrder: 6,
+      showDesktop: true,
+      showMobile: true,
+      openInNewTab: false,
+      highlight: true,
+    },
+  ];
+}
+
+const topLevelItems = rawNavItems.filter((i) => !i.parentId);
+const childrenMap = new Map<string, any[]>();
+rawNavItems.forEach((item) => {
+  if (item.parentId) {
+    if (!childrenMap.has(item.parentId)) {
+      childrenMap.set(item.parentId, []);
+    }
+    childrenMap.get(item.parentId)!.push(item);
+  }
+});
+
+// Helper identifikasi CTA Pendaftaran/SPMB
+const isAdmissionsCta = (item: any) =>
+  item.href === "/pendaftaran" ||
+  item.href === "/ppdb" ||
+  item.highlight ||
+  item.label.toLowerCase().includes("ppdb") ||
+  item.label.toLowerCase().includes("pendaftaran") ||
+  item.label.toLowerCase().includes("psb") ||
+  item.label.toLowerCase().includes("spmb");
+
+const admissionsItem = topLevelItems.find(isAdmissionsCta);
+const admissionsHref = admissionsItem?.href || "/pendaftaran";
+const admissionsButtonText = `Informasi ${admissionsLabel} ${academicYear}`;
+
+// Menu mobile dinamis berdasarkan CMS (mengecualikan tombol CTA yang ditempatkan di sticky bottom)
+const mobileNavItems = topLevelItems.filter(
+  (item) => item.showMobile !== false && !isAdmissionsCta(item),
+);
+---
+
+<header
+  id="site-header"
+  class="sticky top-0 z-40 h-18 bg-surface border-b border-border transition-transform duration-300 ease-in-out will-change-transform translate-y-0"
+>
+  <div class="mx-auto flex h-full max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+    <!-- Logo & Nama Sekolah -->
+    <a href="/" class="flex items-center gap-2.5 sm:gap-3 group shrink-0">
+      {logoUrl ? (
+        <img
+          src={logoUrl}
+          alt={schoolName}
+          width="36"
+          height="36"
+          class:list={[
+            "object-contain rounded-[4px] shrink-0 transition-all",
+            logoOrientation === "horizontal"
+              ? "h-10 max-w-[190px] w-auto"
+              : logoOrientation === "square"
+                ? "h-9 w-9"
+                : "h-9 max-w-[160px] w-auto",
+          ]}
+        />
+      ) : (
+        <div class="flex h-8 w-8 items-center justify-center rounded-[6px] bg-primary font-display font-bold text-white shadow-(--shadow-hairline) shrink-0">
+          {schoolName.charAt(0) || "S"}
+        </div>
+      )}
+      {headerShowSchoolName && (
+        <div class="flex flex-col">
+          <span class="font-display text-sm font-bold tracking-tight text-heading group-hover:text-primary transition-colors uppercase">
+            {schoolName}
+          </span>
+          <span class="text-[10px] uppercase tracking-wider text-muted font-body">
+            {schoolCity}
+          </span>
+        </div>
+      )}
+    </a>
+
+    <!-- Nav Desktop Dinamis (Aktif Mulai Layar Desktop 1024px ke Atas) -->
+    <nav
+      class="hidden lg:flex items-center gap-2 lg:gap-3"
+      aria-label="Navigasi Utama"
+    >
+      {topLevelItems
+        .filter((item) => item.showDesktop !== false)
+        .map((item) => {
+          const children = (childrenMap.get(item.id) || []).filter(
+            (c) => c.showDesktop !== false,
+          );
+          const isDropdown = item.type === "dropdown" && children.length > 0;
+          const isCta = isAdmissionsCta(item);
+
+          // CTA Menonjol untuk Pendaftaran/PPDB/PSB/SPMB
+          if (isCta) {
+            const isGenericAdmissions =
+              item.href === "/pendaftaran" ||
+              item.href === "/ppdb" ||
+              item.id === "nav_ppdb" ||
+              [
+                "ppdb",
+                "psb",
+                "spmb",
+                "pendaftaran",
+                "info ppdb",
+                "info psb",
+                "info spmb",
+                "info pendaftaran",
+              ].includes(item.label.toLowerCase().trim());
+            const effectiveLabel = isGenericAdmissions
+              ? admissionsLabel || "Pendaftaran"
+              : item.label;
+            const buttonText = effectiveLabel.toLowerCase().startsWith("info")
+              ? effectiveLabel
+              : `Info ${effectiveLabel}`;
+
+            return (
+              <a
+                href={item.href || "/pendaftaran"}
+                target={item.openInNewTab ? "_blank" : undefined}
+                rel={item.openInNewTab ? "noopener noreferrer" : undefined}
+                class="ml-1.5 inline-flex h-[34px] items-center justify-center font-body text-xs font-semibold text-white bg-primary rounded-full px-6 transition-all duration-200 hover:-translate-y-[1px] hover:bg-primary-hover hover:shadow-(--shadow-button-glow)"
+              >
+                {buttonText}
+              </a>
+            );
+          }
+
+          // Menu Dropdown dengan Submenu Desktop
+          if (isDropdown) {
+            const isChildServerActive = children.some(
+              (c) =>
+                c.href &&
+                (c.href === "/"
+                  ? currentPath === "/"
+                  : currentPath.startsWith(c.href.split("#")[0])),
+            );
+
+            return (
+              <div
+                class="nav-dropdown-group group relative py-1.5"
+                data-dropdown-id={item.id}
+                data-open="false"
+              >
+                <button
+                  type="button"
+                  class:list={[
+                    "nav-dropdown-trigger inline-flex items-center gap-1.5 font-body text-sm font-medium transition-colors px-2.5 py-1.5 rounded-[6px] cursor-pointer",
+                    isChildServerActive
+                      ? "text-primary font-bold"
+                      : "text-muted hover:text-primary group-hover:text-primary group-data-[open=true]:text-primary",
+                  ]}
+                  data-dropdown-trigger={item.id}
+                  aria-expanded="false"
+                  aria-haspopup="true"
+                >
+                  <span>{item.label}</span>
+                  <Icon
+                    name="chevron-down"
+                    class="dropdown-chevron h-3.5 w-3.5 text-muted transition-transform duration-200 group-hover:rotate-180 group-data-[open=true]:rotate-180"
+                  />
+                </button>
+
+                <!-- Flyout Submenu Desktop (Mendukung Hover & Click) -->
+                <div class="nav-dropdown-flyout invisible opacity-0 pointer-events-none transform translate-y-1.5 group-hover:visible group-hover:opacity-100 group-hover:pointer-events-auto group-hover:translate-y-0 group-data-[open=true]:visible group-data-[open=true]:opacity-100 group-data-[open=true]:pointer-events-auto group-data-[open=true]:translate-y-0 transition-all duration-200 ease-out absolute left-0 top-full pt-1.5 z-50 min-w-[220px]">
+                  <div class="rounded-[8px] border border-border bg-surface p-1.5 shadow-dropdown space-y-0.5">
+                    {children.map((child) => {
+                      const isSubServerActive =
+                        child.href === "/"
+                          ? currentPath === "/"
+                          : currentPath === child.href;
+
+                      return (
+                        <a
+                          href={child.href || "#"}
+                          target={child.openInNewTab ? "_blank" : undefined}
+                          rel={
+                            child.openInNewTab
+                              ? "noopener noreferrer"
+                              : undefined
+                          }
+                          data-nav-href={child.href}
+                          data-parent-id={item.id}
+                          data-is-submenu="true"
+                          class:list={[
+                            "nav-sub-link block rounded-[4px] px-3 py-2 text-xs font-medium transition-all",
+                            isSubServerActive
+                              ? "bg-primary-light text-primary font-semibold"
+                              : "text-heading hover:bg-surface-subtle hover:text-primary",
+                          ]}
+                        >
+                          {child.label}
+                        </a>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          // Menu Standar Halaman Tunggal Desktop (Zero Layout Shift via border-b-2)
+          const isTopServerActive =
+            item.href === "/"
+              ? currentPath === "/"
+              : currentPath.startsWith(item.href || "");
+
+          return (
+            <a
+              href={item.href || "#"}
+              target={item.openInNewTab ? "_blank" : undefined}
+              rel={item.openInNewTab ? "noopener noreferrer" : undefined}
+              data-nav-href={item.href}
+              class:list={[
+                "nav-top-link font-body text-sm font-medium transition-colors px-2.5 py-1.5 border-b-2",
+                isTopServerActive
+                  ? "text-primary font-bold border-primary"
+                  : "text-muted hover:text-primary border-transparent",
+              ]}
+            >
+              {item.label}
+            </a>
+          );
+        })}
+    </nav>
+
+    <!-- Tombol Pencarian & Hamburger Mobile/Tablet (DRY Tailwind v4 *:) -->
+    <div class="flex items-center gap-2 *:rounded-[6px] *:border *:border-border *:bg-surface *:transition-colors">
+      <!-- Pencarian (Desktop >= 1024px) -->
+      <a
+        href="/cari"
+        title="Pencarian Terpadu"
+        aria-label="Pencarian Terpadu"
+        class="hidden lg:inline-flex h-[34px] w-[34px] items-center justify-center text-muted hover:text-heading hover:bg-surface-subtle"
+      >
+        <Icon name="search" class="h-4 w-4" />
+      </a>
+
+      <!-- Toggle Dark Mode Publik (Desktop >= 1024px) -->
+      <button
+        type="button"
+        id="public-theme-toggle"
+        title="Ganti Mode Gelap / Terang"
+        aria-label="Ganti Mode Gelap / Terang"
+        class="relative hidden lg:inline-flex h-[34px] w-[34px] items-center justify-center text-muted hover:text-heading hover:bg-surface-subtle cursor-pointer overflow-hidden group"
+      >
+        <Icon
+          id="public-theme-sun"
+          name="sun"
+          class="absolute h-4 w-4 text-warning transition-all duration-300 ease-in-out transform"
+        />
+        <Icon
+          id="public-theme-moon"
+          name="moon"
+          class="absolute h-4 w-4 text-muted group-hover:text-heading transition-all duration-300 ease-in-out transform"
+        />
+      </button>
+
+      <!-- Hamburger Menu Button (< 1024px: Mobile & Tablet) -->
+      <button
+        id="public-menu-toggle"
+        type="button"
+        class="lg:hidden inline-flex h-[38px] w-[38px] items-center justify-center text-heading hover:bg-surface-subtle cursor-pointer"
+        aria-label="Buka navigasi menu sekolah"
+        aria-expanded="false"
+        aria-controls="public-mobile-drawer-root"
+      >
+        <Icon name="menu" class="h-5 w-5" />
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- Mobile & Tablet Navigation Drawer (< 1024px) DI LUAR <header> AGAR BEBAS DARI BACKDROP-FILTER -->
+<div
+  id="public-mobile-drawer-root"
+  class="lg:hidden fixed inset-0 z-50 hidden"
+  role="dialog"
+  aria-modal="true"
+  aria-label="Menu Navigasi Mobile dan Tablet"
+>
+  <!-- Backdrop Overlay Gelap -->
+  <div
+    id="public-mobile-backdrop"
+    class="fixed inset-0 bg-heading/50 backdrop-blur-xs transition-opacity duration-200"
+    aria-hidden="true"
+  ></div>
+
+  <!-- Panel Drawer Full-Height (Slide-in dari Kanan) -->
+  <div
+    id="public-mobile-menu"
+    class="fixed inset-y-0 right-0 z-50 flex h-full h-dvh w-full max-w-[340px] sm:max-w-[380px] flex-col bg-surface shadow-2xl translate-x-full transition-transform duration-200 ease-in-out"
+  >
+    <!-- 1. Header Drawer: Ringkas & Bersih (No ad-hoc divider border-b) -->
+    <div class="flex h-14 items-center justify-between px-4 shrink-0 bg-surface">
+      <div class="flex items-center gap-2.5 min-w-0">
+        {logoUrl ? (
+          <img
+            src={logoUrl}
+            alt={schoolName}
+            width="28"
+            height="28"
+            class="h-7 w-7 object-contain rounded-[4px] shrink-0"
+          />
+        ) : (
+          <div class="flex h-7 w-7 items-center justify-center rounded-[5px] bg-primary font-display text-xs font-bold text-white shrink-0">
+            {schoolName.charAt(0) || "S"}
+          </div>
+        )}
+        <div class="flex flex-col min-w-0">
+          <span class="font-display text-xs sm:text-sm font-bold tracking-tight text-heading uppercase truncate">
+            {schoolName}
+          </span>
+          <span class="text-[9px] uppercase tracking-wider text-muted font-body truncate">
+            {schoolCity}
+          </span>
+        </div>
+      </div>
+
+      <!-- Tombol Tutup (X) Tunggal -->
+      <button
+        type="button"
+        id="btn-close-mobile-drawer"
+        class="inline-flex h-9 w-9 items-center justify-center rounded-[6px] border border-border text-muted hover:text-heading hover:bg-surface-subtle transition-colors cursor-pointer shrink-0"
+        aria-label="Tutup navigasi menu"
+      >
+        <Icon name="close" class="h-4 w-4" />
+      </button>
+    </div>
+
+    <!-- 2. Search Field Lengkap -->
+    <div class="px-4 py-2 bg-surface shrink-0">
+      <form action="/cari" method="GET" class="relative">
+        <input
+          type="text"
+          name="q"
+          placeholder="Cari halaman, berita, agenda..."
+          aria-label="Cari halaman, berita, agenda sekolah"
+          class="h-[40px] w-full rounded-[6px] border border-border bg-surface-subtle pl-9 pr-3 font-body text-xs text-heading placeholder:text-muted transition-colors"
+        />
+        <Icon
+          name="search"
+          class="absolute left-3 top-3 h-4 w-4 text-muted pointer-events-none"
+        />
+      </form>
+    </div>
+
+    <!-- 3. Scrollable Navigation Menu (Hanya area ini yang scrollable) -->
+    <div class="flex-1 overflow-y-auto px-4 py-3 overscroll-contain space-y-1">
+      {mobileNavItems.map((item) => {
+        const isTopActive =
+          item.href &&
+          (item.href === "/"
+            ? normalizedCurrentPath === "/"
+            : normalizedCurrentPath.startsWith(item.href.split("#")[0]));
+        const children = (childrenMap.get(item.id) || []).filter(
+          (c) => c.showMobile !== false,
+        );
+        const isDropdown = item.type === "dropdown" && children.length > 0;
+        const hasActiveChild =
+          isDropdown &&
+          children.some(
+            (c) =>
+              c.href &&
+              (c.href === "/"
+                ? normalizedCurrentPath === "/"
+                : normalizedCurrentPath.startsWith(c.href.split("#")[0])),
+          );
+
+        if (isDropdown) {
+          return (
+            <div class="rounded-[6px]">
+              <button
+                type="button"
+                class:list={[
+                  "mobile-accordion-btn flex h-[42px] w-full items-center justify-between rounded-[6px] px-3 font-body text-sm transition-colors cursor-pointer",
+                  hasActiveChild
+                    ? "text-primary font-semibold"
+                    : "text-heading hover:bg-surface-subtle hover:text-primary",
+                ]}
+                data-target={`mobile-sub-${item.id}`}
+                aria-controls={`mobile-sub-${item.id}`}
+                aria-expanded={hasActiveChild ? "true" : "false"}
+                aria-label={`Buka submenu ${item.label}`}
+              >
+                <span>{item.label}</span>
+                <Icon
+                  name="chevron-down"
+                  class:list={[
+                    "chevron-icon h-4 w-4 text-muted transition-transform duration-200",
+                    hasActiveChild ? "rotate-180 text-primary" : "",
+                  ]}
+                />
+              </button>
+              <div
+                id={`mobile-sub-${item.id}`}
+                class:list={[
+                  "mobile-sub-menu pl-3 my-1 space-y-0.5 border-l-2 border-border ml-3",
+                  hasActiveChild ? "" : "hidden",
+                ]}
+              >
+                {children.map((child) => {
+                  const isChildActive =
+                    child.href &&
+                    (child.href === "/"
+                      ? normalizedCurrentPath === "/"
+                      : normalizedCurrentPath.startsWith(
+                          child.href.split("#")[0],
+                        ));
+                  return (
+                    <a
+                      href={child.href || "#"}
+                      target={child.openInNewTab ? "_blank" : undefined}
+                      rel={
+                        child.openInNewTab ? "noopener noreferrer" : undefined
+                      }
+                      data-nav-href={child.href}
+                      data-parent-id={item.id}
+                      data-is-submenu="true"
+                      aria-current={isChildActive ? "page" : undefined}
+                      class:list={[
+                        "nav-sub-link flex h-[38px] items-center rounded-[4px] px-3 font-body text-xs transition-colors",
+                        isChildActive
+                          ? "bg-primary-light text-primary font-semibold border-l-2 border-primary pl-2.5"
+                          : "text-muted hover:text-heading hover:bg-surface-subtle",
+                      ]}
+                    >
+                      {child.label}
+                    </a>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <a
+            href={item.href || "#"}
+            target={item.openInNewTab ? "_blank" : undefined}
+            rel={item.openInNewTab ? "noopener noreferrer" : undefined}
+            data-nav-href={item.href}
+            aria-current={isTopActive ? "page" : undefined}
+            class:list={[
+              "nav-top-link flex h-[42px] items-center rounded-[6px] px-3 font-body text-sm transition-colors",
+              isTopActive
+                ? "bg-primary-light text-primary font-semibold border-l-2 border-primary"
+                : "text-muted hover:text-heading hover:bg-surface-subtle",
+            ]}
+          >
+            {item.label}
+          </a>
+        );
+      })}
+    </div>
+
+    <!-- 4. Sticky Bottom Footer Drawer: CTA SPMB + Pengaturan Tema (No ad-hoc divider border-t) -->
+    <div class="bg-surface p-4 shrink-0 space-y-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
+      <!-- CTA SPMB: Design System Compliant Primary Button -->
+      <a
+        href={admissionsHref}
+        target={admissionsItem?.openInNewTab ? "_blank" : undefined}
+        rel={admissionsItem?.openInNewTab ? "noopener noreferrer" : undefined}
+        class="inline-flex h-[42px] w-full items-center justify-center rounded-[6px] bg-primary font-body text-xs font-semibold text-white shadow-xs transition-all duration-200 hover:bg-primary-hover hover:shadow-(--shadow-button-glow)"
+      >
+        {admissionsButtonText}
+      </a>
+
+      <!-- Pengaturan Tema (Terang / Gelap) -->
+      <div class="flex items-center justify-between pt-1 text-xs text-muted font-body">
+        <span>Mode tampilan:</span>
+        <button
+          type="button"
+          id="mobile-theme-toggle"
+          class="inline-flex h-[32px] items-center gap-2 rounded-[6px] border border-border bg-surface-subtle px-2.5 font-body text-xs font-medium text-heading hover:bg-surface transition-colors cursor-pointer"
+          aria-label="Ganti mode tampilan"
+        >
+          <span class="relative flex h-3.5 w-3.5 items-center justify-center">
+            <Icon
+              id="mobile-theme-sun"
+              name="sun"
+              class="absolute h-3.5 w-3.5 text-warning transition-all duration-300 ease-in-out transform"
+            />
+            <Icon
+              id="mobile-theme-moon"
+              name="moon"
+              class="absolute h-3.5 w-3.5 text-muted transition-all duration-300 ease-in-out transform"
+            />
+          </span>
+          <span
+            id="mobile-theme-label"
+            class="font-semibold text-heading transition-colors"
+          >
+            Terang
+          </span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function initHeader() {
+    const header = document.getElementById("site-header");
+    const menuToggle = document.getElementById("public-menu-toggle");
+    const drawerRoot = document.getElementById("public-mobile-drawer-root");
+    const drawerBackdrop = document.getElementById("public-mobile-backdrop");
+    const drawerPanel = document.getElementById("public-mobile-menu");
+    const closeDrawerBtn = document.getElementById("btn-close-mobile-drawer");
+
+    // ========================================================
+    // 1. INTERACTIVE NAVBAR SCROLL (Hide on Down, Show on Up)
+    // ========================================================
+    let lastScrollY = window.scrollY;
+    let isHeaderHidden = false;
+
+    function handleScroll() {
+      // Jangan sembunyikan jika mobile drawer sedang terbuka
+      if (drawerRoot && !drawerRoot.classList.contains("hidden")) return;
+
+      const currentScrollY = window.scrollY;
+
+      // 1. Scroll ke bawah dan sudah melewati ambang 80px: sembunyikan navbar
+      if (currentScrollY > lastScrollY && currentScrollY > 80) {
+        if (!isHeaderHidden && header) {
+          header.classList.remove("translate-y-0");
+          header.classList.add("-translate-y-full");
+          isHeaderHidden = true;
+          closeAllDropdowns();
+        }
+      }
+      // 2. Scroll ke atas: tampilkan kembali navbar
+      else if (currentScrollY < lastScrollY) {
+        if (isHeaderHidden && header) {
+          header.classList.remove("-translate-y-full");
+          header.classList.add("translate-y-0");
+          isHeaderHidden = false;
+        }
+      }
+
+      // 3. Jika posisi di paling atas (<= 0), pastikan selalu tampil
+      if (currentScrollY <= 0 && header) {
+        header.classList.remove("-translate-y-full");
+        header.classList.add("translate-y-0");
+        isHeaderHidden = false;
+      }
+
+      lastScrollY = Math.max(0, currentScrollY);
+    }
+
+    if ((window as any).__headerScrollHandler) {
+      window.removeEventListener(
+        "scroll",
+        (window as any).__headerScrollHandler,
+      );
+    }
+    (window as any).__headerScrollHandler = handleScroll;
+    window.addEventListener("scroll", handleScroll, { passive: true });
+
+    // ========================================================
+    // 2. DESKTOP DROPDOWN INTERACTION (Click, Hover, Keyboard)
+    // ========================================================
+    const dropdownGroups = document.querySelectorAll<HTMLElement>(
+      ".nav-dropdown-group",
+    );
+
+    function closeAllDropdowns() {
+      dropdownGroups.forEach((group) => {
+        group.setAttribute("data-open", "false");
+        const trigger = group.querySelector(".nav-dropdown-trigger");
+        trigger?.setAttribute("aria-expanded", "false");
+      });
+    }
+
+    dropdownGroups.forEach((group) => {
+      const trigger = group.querySelector<HTMLButtonElement>(
+        ".nav-dropdown-trigger",
+      );
+      const flyout = group.querySelector<HTMLElement>(".nav-dropdown-flyout");
+
+      if (!trigger || !flyout) return;
+
+      let closeTimer: any = null;
+
+      function openDropdown() {
+        if (closeTimer) {
+          clearTimeout(closeTimer);
+          closeTimer = null;
+        }
+        dropdownGroups.forEach((other) => {
+          if (other !== group) {
+            other.setAttribute("data-open", "false");
+            other
+              .querySelector(".nav-dropdown-trigger")
+              ?.setAttribute("aria-expanded", "false");
+          }
+        });
+        group.setAttribute("data-open", "true");
+        trigger.setAttribute("aria-expanded", "true");
+      }
+
+      function scheduleCloseDropdown() {
+        if (closeTimer) clearTimeout(closeTimer);
+        closeTimer = setTimeout(() => {
+          group.setAttribute("data-open", "false");
+          trigger.setAttribute("aria-expanded", "false");
+        }, 150);
+      }
+
+      // Click toggle: Buka atau tutup saat tombol diklik
+      trigger.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const isOpen = group.getAttribute("data-open") === "true";
+        if (isOpen) {
+          group.setAttribute("data-open", "false");
+          trigger.setAttribute("aria-expanded", "false");
+        } else {
+          openDropdown();
+        }
+      });
+
+      // Hover in & out
+      group.addEventListener("mouseenter", openDropdown);
+      group.addEventListener("mouseleave", scheduleCloseDropdown);
+
+      // Tutup saat sublink di dalam dropdown diklik
+      flyout.querySelectorAll("a").forEach((sublink) => {
+        sublink.addEventListener("click", () => {
+          group.setAttribute("data-open", "false");
+          trigger.setAttribute("aria-expanded", "false");
+        });
+      });
+
+      // Keyboard support: Escape closes & focus back
+      group.addEventListener("keydown", (e: KeyboardEvent) => {
+        if (e.key === "Escape") {
+          group.setAttribute("data-open", "false");
+          trigger.setAttribute("aria-expanded", "false");
+          trigger.focus();
+        }
+      });
+    });
+
+    // Klik di luar dropdown untuk menutup semua flyout
+    document.addEventListener("click", (e) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest(".nav-dropdown-group")) {
+        closeAllDropdowns();
+      }
+    });
+
+    // ========================================================
+    // 3. MOBILE & TABLET DRAWER TOGGLE & SLIDE ANIMATION
+    // ========================================================
+    function openMobileDrawer() {
+      if (!drawerRoot || !drawerPanel) return;
+      drawerRoot.classList.remove("hidden");
+      requestAnimationFrame(() => {
+        drawerPanel.classList.remove("translate-x-full");
+        drawerPanel.classList.add("translate-x-0");
+      });
+      menuToggle?.setAttribute("aria-expanded", "true");
+      document.body.style.overflow = "hidden";
+      setTimeout(() => {
+        closeDrawerBtn?.focus();
+      }, 50);
+    }
+
+    function closeMobileDrawer() {
+      if (!drawerRoot || !drawerPanel) return;
+      drawerPanel.classList.remove("translate-x-0");
+      drawerPanel.classList.add("translate-x-full");
+      setTimeout(() => {
+        drawerRoot.classList.add("hidden");
+      }, 200);
+      menuToggle?.setAttribute("aria-expanded", "false");
+      document.body.style.overflow = "";
+      menuToggle?.focus();
+    }
+
+    menuToggle?.addEventListener("click", () => {
+      const isHidden = drawerRoot?.classList.contains("hidden");
+      if (isHidden) {
+        openMobileDrawer();
+      } else {
+        closeMobileDrawer();
+      }
+    });
+
+    closeDrawerBtn?.addEventListener("click", closeMobileDrawer);
+    drawerBackdrop?.addEventListener("click", closeMobileDrawer);
+
+    // Tutup drawer jika link di dalamnya diklik
+    drawerRoot?.querySelectorAll("a").forEach((link) => {
+      link.addEventListener("click", () => {
+        closeMobileDrawer();
+      });
+    });
+
+    // Mobile Accordion Toggle: Exclusive Single-Open (Aturan 5.6 DESIGN-SYSTEM.md)
+    const accordionButtons = document.querySelectorAll<HTMLButtonElement>(
+      ".mobile-accordion-btn",
+    );
+    const accordionMenus =
+      document.querySelectorAll<HTMLElement>(".mobile-sub-menu");
+
+    accordionButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const targetId = btn.getAttribute("data-target");
+        if (!targetId) return;
+        const subMenu = document.getElementById(targetId);
+        const chevron = btn.querySelector(".chevron-icon");
+
+        if (subMenu) {
+          const isClosed = subMenu.classList.contains("hidden");
+
+          accordionMenus.forEach((otherSub) => {
+            if (otherSub !== subMenu) {
+              otherSub.classList.add("hidden");
+            }
+          });
+          accordionButtons.forEach((otherBtn) => {
+            if (otherBtn !== btn) {
+              otherBtn
+                .querySelector(".chevron-icon")
+                ?.classList.remove("rotate-180");
+              otherBtn.setAttribute("aria-expanded", "false");
+            }
+          });
+
+          if (isClosed) {
+            subMenu.classList.remove("hidden");
+            chevron?.classList.add("rotate-180");
+            btn.setAttribute("aria-expanded", "true");
+          } else {
+            subMenu.classList.add("hidden");
+            chevron?.classList.remove("rotate-180");
+            btn.setAttribute("aria-expanded", "false");
+          }
+        }
+      });
+    });
+
+    // Tutup mobile drawer saat Escape ditekan
+    document.addEventListener("keydown", (e) => {
+      if (
+        e.key === "Escape" &&
+        drawerRoot &&
+        !drawerRoot.classList.contains("hidden")
+      ) {
+        closeMobileDrawer();
+      }
+    });
+
+    // Lepaskan scroll lock dan tutup drawer saat resize ke desktop (>= 1024px)
+    window.addEventListener("resize", () => {
+      if (
+        window.innerWidth >= 1024 &&
+        drawerRoot &&
+        !drawerRoot.classList.contains("hidden")
+      ) {
+        closeMobileDrawer();
+      }
+    });
+
+    // ========================================================
+    // 4. LOGIKA STATUS AKTIF DINAMIS (PATHNAME + URL HASH #)
+    // ========================================================
+    function updateNavActiveStates() {
+      const currentPathname = (
+        window.location.pathname.replace(/\/$/, "") || "/"
+      ).toLowerCase();
+      const currentHash = (window.location.hash || "").toLowerCase();
+      const currentFull = currentPathname + currentHash;
+
+      // Reset semua active classes pada sub-links (desktop & mobile)
+      document.querySelectorAll(".nav-sub-link").forEach((link) => {
+        link.classList.remove(
+          "bg-primary-light",
+          "text-primary",
+          "font-semibold",
+          "border-l-2",
+          "border-primary",
+          "pl-2.5",
+        );
+        link.classList.add("text-muted");
+        link.removeAttribute("aria-current");
+      });
+
+      // Reset semua active classes pada top-links (desktop & mobile)
+      document.querySelectorAll(".nav-top-link").forEach((link) => {
+        const isMobile = Boolean(link.closest("#public-mobile-drawer-root"));
+        link.classList.remove(
+          "text-primary",
+          "font-bold",
+          "font-semibold",
+          "border-primary",
+          "bg-primary-light",
+        );
+        link.classList.add("text-muted");
+        if (isMobile) {
+          link.classList.remove("border-l-2");
+        } else {
+          link.classList.add("border-b-2", "border-transparent");
+        }
+        link.removeAttribute("aria-current");
+      });
+
+      // Reset trigger dropdown desktop
+      document.querySelectorAll(".nav-dropdown-trigger").forEach((trigger) => {
+        trigger.classList.remove("text-primary", "font-bold");
+        trigger.classList.add("text-muted");
+      });
+
+      // Reset trigger accordion mobile
+      document.querySelectorAll(".mobile-accordion-btn").forEach((btn) => {
+        btn.classList.remove("text-primary", "font-semibold");
+        btn.classList.add("text-heading");
+        btn.querySelector(".chevron-icon")?.classList.remove("text-primary");
+      });
+
+      const allLinks = Array.from(
+        document.querySelectorAll<HTMLAnchorElement>("[data-nav-href]"),
+      );
+
+      let matchedLinks: HTMLAnchorElement[] = [];
+      if (currentHash) {
+        matchedLinks = allLinks.filter((a) => {
+          const href = (a.getAttribute("data-nav-href") || "").toLowerCase();
+          return href === currentFull;
+        });
+      }
+
+      if (matchedLinks.length === 0) {
+        matchedLinks = allLinks.filter((a) => {
+          const rawHref = (a.getAttribute("data-nav-href") || "").toLowerCase();
+          const pathPart = rawHref.split("#")[0].replace(/\/$/, "") || "/";
+          if (rawHref.includes("#") && !currentHash) return false;
+          return pathPart === currentPathname;
+        });
+      }
+
+      matchedLinks.forEach((matchedLink) => {
+        matchedLink.setAttribute("aria-current", "page");
+        const isSubmenu = matchedLink.hasAttribute("data-is-submenu");
+        const isMobileDrawer = Boolean(
+          matchedLink.closest("#public-mobile-drawer-root"),
+        );
+
+        if (isSubmenu) {
+          matchedLink.classList.remove("text-muted", "text-heading");
+          matchedLink.classList.add(
+            "bg-primary-light",
+            "text-primary",
+            "font-semibold",
+            "border-l-2",
+            "border-primary",
+            "pl-2.5",
+          );
+
+          const parentId = matchedLink.getAttribute("data-parent-id");
+          if (parentId) {
+            document
+              .querySelectorAll(`[data-dropdown-trigger="${parentId}"]`)
+              .forEach((trigger) => {
+                trigger.classList.remove("text-muted");
+                trigger.classList.add("text-primary", "font-bold");
+              });
+
+            const mobileAccordionBtn = document.querySelector(
+              `[data-target="mobile-sub-${parentId}"]`,
+            );
+            if (mobileAccordionBtn) {
+              mobileAccordionBtn.classList.remove("text-heading", "text-muted");
+              mobileAccordionBtn.classList.add("text-primary", "font-semibold");
+              const chevron = mobileAccordionBtn.querySelector(".chevron-icon");
+              chevron?.classList.add("rotate-180", "text-primary");
+              mobileAccordionBtn.setAttribute("aria-expanded", "true");
+            }
+
+            const mobileSubMenu = document.getElementById(
+              `mobile-sub-${parentId}`,
+            );
+            if (mobileSubMenu) {
+              mobileSubMenu.classList.remove("hidden");
+            }
+          }
+        } else {
+          matchedLink.classList.remove("text-muted");
+          if (isMobileDrawer) {
+            matchedLink.classList.add(
+              "bg-primary-light",
+              "text-primary",
+              "font-semibold",
+              "border-l-2",
+              "border-primary",
+            );
+          } else {
+            matchedLink.classList.remove("border-transparent");
+            matchedLink.classList.add(
+              "text-primary",
+              "font-bold",
+              "border-b-2",
+              "border-primary",
+            );
+          }
+        }
+      });
+    }
+
+    window.addEventListener("hashchange", updateNavActiveStates);
+    window.addEventListener("popstate", updateNavActiveStates);
+
+    document
+      .querySelectorAll<HTMLAnchorElement>("a[href*='#']")
+      .forEach((anchor) => {
+        anchor.addEventListener("click", () => {
+          setTimeout(updateNavActiveStates, 50);
+        });
+      });
+
+    updateNavActiveStates();
+  }
+
+  // Jalankan inisialisasi pada DOM ready dan setiap event navigasi ClientRouter
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initHeader);
+  } else {
+    initHeader();
+  }
+  document.addEventListener("astro:page-load", initHeader);
+</script>
