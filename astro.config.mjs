@@ -15,7 +15,7 @@ export default defineConfig({
     enabled: false,
   },
   adapter: isBuild
-    ? cloudflare({ prerenderEnvironment: 'node' })
+    ? cloudflare({ prerenderEnvironment: 'node', imageService: 'compile' })
     : node({ mode: 'standalone' }),
   vite: {
     plugins: [tailwindcss()],
