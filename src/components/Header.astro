@@ -328,42 +328,7 @@ const mobileNavItems = topLevelItems.filter(
             (c) => c.showDesktop !== false,
           );
           const isDropdown = item.type === "dropdown" && children.length > 0;
-          const isCta = isAdmissionsCta(item);
-
-          // CTA Menonjol untuk Pendaftaran/PPDB/PSB/SPMB
-          if (isCta) {
-            const isGenericAdmissions =
-              item.href === "/pendaftaran" ||
-              item.href === "/ppdb" ||
-              item.id === "nav_ppdb" ||
-              [
-                "ppdb",
-                "psb",
-                "spmb",
-                "pendaftaran",
-                "info ppdb",
-                "info psb",
-                "info spmb",
-                "info pendaftaran",
-              ].includes(item.label.toLowerCase().trim());
-            const effectiveLabel = isGenericAdmissions
-              ? admissionsLabel || "Pendaftaran"
-              : item.label;
-            const buttonText = effectiveLabel.toLowerCase().startsWith("info")
-              ? effectiveLabel
-              : `Info ${effectiveLabel}`;
-
-            return (
-              <a
-                href={item.href || "/pendaftaran"}
-                target={item.openInNewTab ? "_blank" : undefined}
-                rel={item.openInNewTab ? "noopener noreferrer" : undefined}
-                class="ml-1.5 inline-flex h-[34px] items-center justify-center font-body text-xs font-semibold text-white bg-primary rounded-full px-6 transition-all duration-200 hover:-translate-y-[1px] hover:bg-primary-hover hover:shadow-(--shadow-button-glow)"
-              >
-                {buttonText}
-              </a>
-            );
-          }
+          if (isAdmissionsCta(item)) return null;
 
           // Menu Dropdown dengan Submenu Desktop
           if (isDropdown) {
@@ -463,25 +428,15 @@ const mobileNavItems = topLevelItems.filter(
         })}
     </nav>
 
-    <!-- Tombol Pencarian & Hamburger Mobile/Tablet (DRY Tailwind v4 *:) -->
-    <div class="flex items-center gap-2 *:rounded-[6px] *:border *:border-border *:bg-surface *:transition-colors">
-      <!-- Pencarian (Desktop >= 1024px) -->
-      <a
-        href="/cari"
-        title="Pencarian Terpadu"
-        aria-label="Pencarian Terpadu"
-        class="hidden lg:inline-flex h-[34px] w-[34px] items-center justify-center text-muted hover:text-heading hover:bg-surface-subtle"
-      >
-        <Icon name="search" class="h-4 w-4" />
-      </a>
-
-      <!-- Toggle Dark Mode Publik (Desktop >= 1024px) -->
+    <!-- Tombol Pencarian, Dark Mode, CTA & Hamburger -->
+    <div class="flex items-center gap-1">
+      <!-- Toggle Dark Mode Publik (Tampil di Mobile & Desktop) -->
       <button
         type="button"
         id="public-theme-toggle"
         title="Ganti Mode Gelap / Terang"
         aria-label="Ganti Mode Gelap / Terang"
-        class="relative hidden lg:inline-flex h-[34px] w-[34px] items-center justify-center text-muted hover:text-heading hover:bg-surface-subtle cursor-pointer overflow-hidden group"
+        class="relative inline-flex h-[36px] w-[36px] lg:h-[34px] lg:w-[34px] items-center justify-center text-muted hover:text-heading overflow-hidden group"
       >
         <Icon
           id="public-theme-sun"
@@ -495,17 +450,101 @@ const mobileNavItems = topLevelItems.filter(
         />
       </button>
 
+      <!-- Pencarian Popover (Tampil di Mobile & Desktop) -->
+      <button
+        type="button"
+        id="public-search-toggle"
+        title="Pencarian Cepat"
+        aria-label="Buka pencarian cepat"
+        aria-expanded="false"
+        aria-controls="public-search-popover"
+        class="inline-flex h-[36px] w-[36px] lg:h-[34px] lg:w-[34px] items-center justify-center text-muted hover:text-primary"
+      >
+        <Icon name="search" class="h-4 w-4" />
+      </button>
+
+      <!-- CTA Pendaftaran/PPDB Desktop (Digabung di Grup Aksi Kanan) -->
+      {topLevelItems
+        .filter((item) => item.showDesktop !== false && isAdmissionsCta(item))
+        .map((item) => {
+          const isGenericAdmissions =
+            item.href === "/pendaftaran" ||
+            item.href === "/ppdb" ||
+            item.id === "nav_ppdb" ||
+            [
+              "ppdb",
+              "psb",
+              "spmb",
+              "pendaftaran",
+              "info ppdb",
+              "info psb",
+              "info spmb",
+              "info pendaftaran",
+            ].includes(item.label.toLowerCase().trim());
+          const effectiveLabel = isGenericAdmissions
+            ? admissionsLabel || "Pendaftaran"
+            : item.label;
+          const buttonText = effectiveLabel.toLowerCase().startsWith("info")
+            ? effectiveLabel
+            : `Info ${effectiveLabel}`;
+
+          return (
+            <a
+              href={item.href || "/pendaftaran"}
+              target={item.openInNewTab ? "_blank" : undefined}
+              rel={item.openInNewTab ? "noopener noreferrer" : undefined}
+              class="hidden md:inline-flex ml-1.5 h-[34px] items-center justify-center font-body text-xs font-semibold text-white bg-primary rounded-full px-6 transition-all duration-200 hover:-translate-y-[1px] hover:bg-primary-hover hover:shadow-(--shadow-button-glow)"
+            >
+              {buttonText}
+            </a>
+          );
+        })}
+
       <!-- Hamburger Menu Button (< 1024px: Mobile & Tablet) -->
       <button
         id="public-menu-toggle"
         type="button"
-        class="lg:hidden inline-flex h-[38px] w-[38px] items-center justify-center text-heading hover:bg-surface-subtle cursor-pointer"
+        class="lg:hidden inline-flex h-[36px] w-[36px] items-center justify-center text-heading"
         aria-label="Buka navigasi menu sekolah"
         aria-expanded="false"
         aria-controls="public-mobile-drawer-root"
       >
         <Icon name="menu" class="h-5 w-5" />
       </button>
+    </div>
+  </div>
+
+  <!-- Popover Pencarian Cepat (Muncul tepat di bawah header) -->
+  <div
+    id="public-search-popover"
+    class="hidden absolute left-0 right-0 top-full z-40 px-4 sm:px-6 lg:px-8 pt-2"
+    role="search"
+    aria-label="Pencarian cepat sekolah"
+  >
+    <div class="mx-auto max-w-3xl rounded-full border border-border bg-surface p-1 shadow-dropdown">
+      <form action="/cari" method="GET" class="flex items-center gap-2">
+        <div class="relative flex-1 min-w-0">
+          <Icon
+            name="search"
+            class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted"
+          />
+          <input
+            id="public-search-input"
+            type="search"
+            name="q"
+            placeholder="Cari berita, agenda, guru, dokumen..."
+            aria-label="Kata kunci pencarian"
+            class="h-[40px] w-full rounded-full border border-border bg-surface-subtle pl-9 pr-3 font-body text-xs sm:text-sm text-heading placeholder:text-muted transition-colors"
+            required
+          />
+        </div>
+        <button
+          type="submit"
+          class="inline-flex h-[40px] shrink-0 items-center justify-center rounded-full bg-primary px-5 font-body text-xs sm:text-sm font-semibold text-white transition-all duration-200 hover:bg-primary-hover hover:shadow-(--shadow-button-glow) cursor-pointer"
+        >
+          Cari
+        </button>
+      </form>
     </div>
   </div>
 </header>
@@ -530,27 +569,34 @@ const mobileNavItems = topLevelItems.filter(
     id="public-mobile-menu"
     class="fixed inset-y-0 right-0 z-50 flex h-full h-dvh w-full max-w-[340px] sm:max-w-[380px] flex-col bg-surface shadow-2xl translate-x-full transition-transform duration-200 ease-in-out"
   >
-    <!-- 1. Header Drawer: Ringkas & Bersih (No ad-hoc divider border-b) -->
-    <div class="flex h-14 items-center justify-between px-4 shrink-0 bg-surface">
-      <div class="flex items-center gap-2.5 min-w-0">
+    <!-- 1. Header Drawer: Ringkas & Bersih (Selaras dengan tinggi & skala logo utama) -->
+    <div class="flex h-18 items-center justify-between px-4 shrink-0 bg-surface">
+      <div class="flex items-center gap-2.5 sm:gap-3 min-w-0">
         {logoUrl ? (
           <img
             src={logoUrl}
             alt={schoolName}
-            width="28"
-            height="28"
-            class="h-7 w-7 object-contain rounded-[4px] shrink-0"
+            width="36"
+            height="36"
+            class:list={[
+              "object-contain rounded-[4px] shrink-0 transition-all",
+              logoOrientation === "horizontal"
+                ? "h-10 max-w-[160px] w-auto"
+                : logoOrientation === "square"
+                  ? "h-9 w-9"
+                  : "h-9 max-w-[150px] w-auto",
+            ]}
           />
         ) : (
-          <div class="flex h-7 w-7 items-center justify-center rounded-[5px] bg-primary font-display text-xs font-bold text-white shrink-0">
+          <div class="flex h-8 w-8 items-center justify-center rounded-[6px] bg-primary font-display text-sm font-bold text-white shrink-0">
             {schoolName.charAt(0) || "S"}
           </div>
         )}
         <div class="flex flex-col min-w-0">
-          <span class="font-display text-xs sm:text-sm font-bold tracking-tight text-heading uppercase truncate">
+          <span class="font-display text-sm font-bold tracking-tight text-heading uppercase truncate">
             {schoolName}
           </span>
-          <span class="text-[9px] uppercase tracking-wider text-muted font-body truncate">
+          <span class="text-[10px] uppercase tracking-wider text-muted font-body truncate">
             {schoolCity}
           </span>
         </div>
@@ -560,31 +606,14 @@ const mobileNavItems = topLevelItems.filter(
       <button
         type="button"
         id="btn-close-mobile-drawer"
-        class="inline-flex h-9 w-9 items-center justify-center rounded-[6px] border border-border text-muted hover:text-heading hover:bg-surface-subtle transition-colors cursor-pointer shrink-0"
+        class="inline-flex h-12 w-12 items-center justify-center text-muted hover:text-heading transition-colors cursor-pointer shrink-0"
         aria-label="Tutup navigasi menu"
       >
-        <Icon name="close" class="h-4 w-4" />
+        <Icon name="close" class="h-6 w-6" />
       </button>
     </div>
 
-    <!-- 2. Search Field Lengkap -->
-    <div class="px-4 py-2 bg-surface shrink-0">
-      <form action="/cari" method="GET" class="relative">
-        <input
-          type="text"
-          name="q"
-          placeholder="Cari halaman, berita, agenda..."
-          aria-label="Cari halaman, berita, agenda sekolah"
-          class="h-[40px] w-full rounded-[6px] border border-border bg-surface-subtle pl-9 pr-3 font-body text-xs text-heading placeholder:text-muted transition-colors"
-        />
-        <Icon
-          name="search"
-          class="absolute left-3 top-3 h-4 w-4 text-muted pointer-events-none"
-        />
-      </form>
-    </div>
-
-    <!-- 3. Scrollable Navigation Menu (Hanya area ini yang scrollable) -->
+    <!-- 2. Scrollable Navigation Menu (Hanya area ini yang scrollable) -->
     <div class="flex-1 overflow-y-auto px-4 py-3 overscroll-contain space-y-1">
       {mobileNavItems.map((item) => {
         const isTopActive =
@@ -608,11 +637,11 @@ const mobileNavItems = topLevelItems.filter(
 
         if (isDropdown) {
           return (
-            <div class="rounded-[6px]">
+            <div>
               <button
                 type="button"
                 class:list={[
-                  "mobile-accordion-btn flex h-[42px] w-full items-center justify-between rounded-[6px] px-3 font-body text-sm transition-colors cursor-pointer",
+                  "mobile-accordion-btn flex h-[42px] w-full items-center justify-between px-3 font-body text-sm transition-colors cursor-pointer",
                   hasActiveChild
                     ? "text-primary font-semibold"
                     : "text-heading hover:bg-surface-subtle hover:text-primary",
@@ -658,7 +687,7 @@ const mobileNavItems = topLevelItems.filter(
                       data-is-submenu="true"
                       aria-current={isChildActive ? "page" : undefined}
                       class:list={[
-                        "nav-sub-link flex h-[38px] items-center rounded-[4px] px-3 font-body text-xs transition-colors",
+                        "nav-sub-link flex h-[38px] items-center px-3 font-body text-xs transition-colors",
                         isChildActive
                           ? "bg-primary-light text-primary font-semibold border-l-2 border-primary pl-2.5"
                           : "text-muted hover:text-heading hover:bg-surface-subtle",
@@ -681,7 +710,7 @@ const mobileNavItems = topLevelItems.filter(
             data-nav-href={item.href}
             aria-current={isTopActive ? "page" : undefined}
             class:list={[
-              "nav-top-link flex h-[42px] items-center rounded-[6px] px-3 font-body text-sm transition-colors",
+              "nav-top-link flex h-[42px] items-center px-3 font-body text-sm transition-colors",
               isTopActive
                 ? "bg-primary-light text-primary font-semibold border-l-2 border-primary"
                 : "text-muted hover:text-heading hover:bg-surface-subtle",
@@ -693,8 +722,8 @@ const mobileNavItems = topLevelItems.filter(
       })}
     </div>
 
-    <!-- 4. Sticky Bottom Footer Drawer: CTA SPMB + Pengaturan Tema (No ad-hoc divider border-t) -->
-    <div class="bg-surface p-4 shrink-0 space-y-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
+    <!-- 3. Sticky Bottom Footer Drawer: CTA SPMB (No ad-hoc divider border-t) -->
+    <div class="bg-surface p-4 shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
       <!-- CTA SPMB: Design System Compliant Primary Button -->
       <a
         href={admissionsHref}
@@ -704,36 +733,6 @@ const mobileNavItems = topLevelItems.filter(
       >
         {admissionsButtonText}
       </a>
-
-      <!-- Pengaturan Tema (Terang / Gelap) -->
-      <div class="flex items-center justify-between pt-1 text-xs text-muted font-body">
-        <span>Mode tampilan:</span>
-        <button
-          type="button"
-          id="mobile-theme-toggle"
-          class="inline-flex h-[32px] items-center gap-2 rounded-[6px] border border-border bg-surface-subtle px-2.5 font-body text-xs font-medium text-heading hover:bg-surface transition-colors cursor-pointer"
-          aria-label="Ganti mode tampilan"
-        >
-          <span class="relative flex h-3.5 w-3.5 items-center justify-center">
-            <Icon
-              id="mobile-theme-sun"
-              name="sun"
-              class="absolute h-3.5 w-3.5 text-warning transition-all duration-300 ease-in-out transform"
-            />
-            <Icon
-              id="mobile-theme-moon"
-              name="moon"
-              class="absolute h-3.5 w-3.5 text-muted transition-all duration-300 ease-in-out transform"
-            />
-          </span>
-          <span
-            id="mobile-theme-label"
-            class="font-semibold text-heading transition-colors"
-          >
-            Terang
-          </span>
-        </button>
-      </div>
     </div>
   </div>
 </div>
@@ -741,7 +740,23 @@ const mobileNavItems = topLevelItems.filter(
 <script>
   function initHeader() {
     const header = document.getElementById("site-header");
+    if (!header || header.dataset.headerInit === "1") return;
+    header.dataset.headerInit = "1";
+
+    // Abort previous document/window listeners from prior ClientRouter navigation
+    if ((window as any).__headerAbortController) {
+      (window as any).__headerAbortController.abort();
+    }
+    const controller = new AbortController();
+    (window as any).__headerAbortController = controller;
+    const { signal } = controller;
+
     const menuToggle = document.getElementById("public-menu-toggle");
+    const searchToggle = document.getElementById("public-search-toggle");
+    const searchPopover = document.getElementById("public-search-popover");
+    const searchInput = document.getElementById(
+      "public-search-input",
+    ) as HTMLInputElement | null;
     const drawerRoot = document.getElementById("public-mobile-drawer-root");
     const drawerBackdrop = document.getElementById("public-mobile-backdrop");
     const drawerPanel = document.getElementById("public-mobile-menu");
@@ -766,6 +781,7 @@ const mobileNavItems = topLevelItems.filter(
           header.classList.add("-translate-y-full");
           isHeaderHidden = true;
           closeAllDropdowns();
+          closeSearchPopover();
         }
       }
       // 2. Scroll ke atas: tampilkan kembali navbar
@@ -787,14 +803,7 @@ const mobileNavItems = topLevelItems.filter(
       lastScrollY = Math.max(0, currentScrollY);
     }
 
-    if ((window as any).__headerScrollHandler) {
-      window.removeEventListener(
-        "scroll",
-        (window as any).__headerScrollHandler,
-      );
-    }
-    (window as any).__headerScrollHandler = handleScroll;
-    window.addEventListener("scroll", handleScroll, { passive: true });
+    window.addEventListener("scroll", handleScroll, { passive: true, signal });
 
     // ========================================================
     // 2. DESKTOP DROPDOWN INTERACTION (Click, Hover, Keyboard)
@@ -880,19 +889,67 @@ const mobileNavItems = topLevelItems.filter(
       });
     });
 
-    // Klik di luar dropdown untuk menutup semua flyout
-    document.addEventListener("click", (e) => {
-      const target = e.target as HTMLElement;
-      if (!target.closest(".nav-dropdown-group")) {
-        closeAllDropdowns();
+    // ========================================================
+    // 2B. QUICK SEARCH POPOVER INTERACTION
+    // ========================================================
+    function openSearchPopover() {
+      if (!searchPopover || !searchToggle) return;
+      closeAllDropdowns();
+      searchPopover.classList.remove("hidden");
+      searchToggle.setAttribute("aria-expanded", "true");
+      searchToggle.classList.add("text-primary", "bg-primary-light");
+      searchToggle.classList.remove("text-muted");
+      requestAnimationFrame(() => searchInput?.focus());
+    }
+
+    function closeSearchPopover() {
+      if (!searchPopover || !searchToggle) return;
+      if (searchPopover.classList.contains("hidden")) return;
+      searchPopover.classList.add("hidden");
+      searchToggle.setAttribute("aria-expanded", "false");
+      searchToggle.classList.remove("text-primary", "bg-primary-light");
+      searchToggle.classList.add("text-muted");
+    }
+
+    searchToggle?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const isHidden = searchPopover?.classList.contains("hidden");
+      if (isHidden) {
+        openSearchPopover();
+      } else {
+        closeSearchPopover();
       }
     });
+
+    // Klik di luar dropdown & search popover untuk menutup
+    document.addEventListener(
+      "click",
+      (e) => {
+        const target = e.target as HTMLElement;
+        if (!target.closest(".nav-dropdown-group")) {
+          closeAllDropdowns();
+        }
+        if (
+          !target.closest("#public-search-popover") &&
+          !target.closest("#public-search-toggle")
+        ) {
+          closeSearchPopover();
+        }
+      },
+      { signal },
+    );
 
     // ========================================================
     // 3. MOBILE & TABLET DRAWER TOGGLE & SLIDE ANIMATION
     // ========================================================
+    let drawerCloseTimer: ReturnType<typeof setTimeout> | null = null;
+
     function openMobileDrawer() {
       if (!drawerRoot || !drawerPanel) return;
+      if (drawerCloseTimer) {
+        clearTimeout(drawerCloseTimer);
+        drawerCloseTimer = null;
+      }
       drawerRoot.classList.remove("hidden");
       requestAnimationFrame(() => {
         drawerPanel.classList.remove("translate-x-full");
@@ -907,10 +964,12 @@ const mobileNavItems = topLevelItems.filter(
 
     function closeMobileDrawer() {
       if (!drawerRoot || !drawerPanel) return;
+      if (drawerCloseTimer) clearTimeout(drawerCloseTimer);
       drawerPanel.classList.remove("translate-x-0");
       drawerPanel.classList.add("translate-x-full");
-      setTimeout(() => {
+      drawerCloseTimer = setTimeout(() => {
         drawerRoot.classList.add("hidden");
+        drawerCloseTimer = null;
       }, 200);
       menuToggle?.setAttribute("aria-expanded", "false");
       document.body.style.overflow = "";
@@ -980,27 +1039,37 @@ const mobileNavItems = topLevelItems.filter(
       });
     });
 
-    // Tutup mobile drawer saat Escape ditekan
-    document.addEventListener("keydown", (e) => {
-      if (
-        e.key === "Escape" &&
-        drawerRoot &&
-        !drawerRoot.classList.contains("hidden")
-      ) {
-        closeMobileDrawer();
-      }
-    });
+    // Tutup mobile drawer atau search popover saat Escape ditekan
+    document.addEventListener(
+      "keydown",
+      (e) => {
+        if (e.key !== "Escape") return;
+        if (searchPopover && !searchPopover.classList.contains("hidden")) {
+          closeSearchPopover();
+          searchToggle?.focus();
+          return;
+        }
+        if (drawerRoot && !drawerRoot.classList.contains("hidden")) {
+          closeMobileDrawer();
+        }
+      },
+      { signal },
+    );
 
     // Lepaskan scroll lock dan tutup drawer saat resize ke desktop (>= 1024px)
-    window.addEventListener("resize", () => {
-      if (
-        window.innerWidth >= 1024 &&
-        drawerRoot &&
-        !drawerRoot.classList.contains("hidden")
-      ) {
-        closeMobileDrawer();
-      }
-    });
+    window.addEventListener(
+      "resize",
+      () => {
+        if (
+          window.innerWidth >= 1024 &&
+          drawerRoot &&
+          !drawerRoot.classList.contains("hidden")
+        ) {
+          closeMobileDrawer();
+        }
+      },
+      { passive: true, signal },
+    );
 
     // ========================================================
     // 4. LOGIKA STATUS AKTIF DINAMIS (PATHNAME + URL HASH #)
@@ -1147,8 +1216,8 @@ const mobileNavItems = topLevelItems.filter(
       });
     }
 
-    window.addEventListener("hashchange", updateNavActiveStates);
-    window.addEventListener("popstate", updateNavActiveStates);
+    window.addEventListener("hashchange", updateNavActiveStates, { signal });
+    window.addEventListener("popstate", updateNavActiveStates, { signal });
 
     document
       .querySelectorAll<HTMLAnchorElement>("a[href*='#']")
@@ -1161,11 +1230,6 @@ const mobileNavItems = topLevelItems.filter(
     updateNavActiveStates();
   }
 
-  // Jalankan inisialisasi pada DOM ready dan setiap event navigasi ClientRouter
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", initHeader);
-  } else {
-    initHeader();
-  }
+  // astro:page-load fires on initial load (with ClientRouter) and every soft navigation
   document.addEventListener("astro:page-load", initHeader);
 </script>

@@ -1060,7 +1060,8 @@ const fallbackPartners = [
     id: 1,
     name: "Institut Teknologi Bandung",
     category: "Perguruan Tinggi",
-    logoUrl: "https://upload.wikimedia.org/wikipedia/id/thumb/9/95/Logo_Institut_Teknologi_Bandung.png/250px-Logo_Institut_Teknologi_Bandung.png",
+    logoUrl:
+      "https://upload.wikimedia.org/wikipedia/id/thumb/9/95/Logo_Institut_Teknologi_Bandung.png/250px-Logo_Institut_Teknologi_Bandung.png",
     websiteUrl: "https://itb.ac.id",
     description: "Kerja sama beasiswa & jalur minat bakat",
   },
@@ -1068,7 +1069,8 @@ const fallbackPartners = [
     id: 2,
     name: "Universitas Indonesia",
     category: "Perguruan Tinggi",
-    logoUrl: "https://upload.wikimedia.org/wikipedia/id/thumb/8/80/Lambang_Universitas_Indonesia.svg/300px-Lambang_Universitas_Indonesia.svg.png",
+    logoUrl:
+      "https://upload.wikimedia.org/wikipedia/id/thumb/8/80/Lambang_Universitas_Indonesia.svg/300px-Lambang_Universitas_Indonesia.svg.png",
     websiteUrl: "https://ui.ac.id",
     description: "Program riset saintek & olimpiade",
   },
@@ -1076,7 +1078,8 @@ const fallbackPartners = [
     id: 3,
     name: "Universitas Gadjah Mada",
     category: "Perguruan Tinggi",
-    logoUrl: "https://upload.wikimedia.org/wikipedia/id/thumb/a/a9/Lambang_Universitas_Gadjah_Mada.svg/300px-Lambang_Universitas_Gadjah_Mada.svg.png",
+    logoUrl:
+      "https://upload.wikimedia.org/wikipedia/id/thumb/a/a9/Lambang_Universitas_Gadjah_Mada.svg/300px-Lambang_Universitas_Gadjah_Mada.svg.png",
     websiteUrl: "https://ugm.ac.id",
     description: "Kemitraan akademik & pembinaan guru",
   },
@@ -1084,7 +1087,8 @@ const fallbackPartners = [
     id: 4,
     name: "Institut Teknologi Sepuluh Nopember",
     category: "Perguruan Tinggi",
-    logoUrl: "https://upload.wikimedia.org/wikipedia/id/thumb/0/07/Lambang_ITS.png/250px-Lambang_ITS.png",
+    logoUrl:
+      "https://upload.wikimedia.org/wikipedia/id/thumb/0/07/Lambang_ITS.png/250px-Lambang_ITS.png",
     websiteUrl: "https://its.ac.id",
     description: "Pengembangan robotika & coding",
   },
@@ -1092,7 +1096,8 @@ const fallbackPartners = [
     id: 5,
     name: "PT Telkom Indonesia (Persero) Tbk",
     category: "Industri & BUMN",
-    logoUrl: "https://upload.wikimedia.org/wikipedia/id/thumb/c/c4/Telkom_Indonesia_2013.svg/300px-Telkom_Indonesia_2013.svg.png",
+    logoUrl:
+      "https://upload.wikimedia.org/wikipedia/id/thumb/c/c4/Telkom_Indonesia_2013.svg/300px-Telkom_Indonesia_2013.svg.png",
     websiteUrl: "https://telkom.co.id",
     description: "Digital talent & konektivitas fiber optik",
   },
@@ -1100,7 +1105,8 @@ const fallbackPartners = [
     id: 6,
     name: "PT Bank Mandiri (Persero) Tbk",
     category: "Industri & BUMN",
-    logoUrl: "https://upload.wikimedia.org/wikipedia/id/thumb/f/fa/Bank_Mandiri_logo.svg/300px-Bank_Mandiri_logo.svg.png",
+    logoUrl:
+      "https://upload.wikimedia.org/wikipedia/id/thumb/f/fa/Bank_Mandiri_logo.svg/300px-Bank_Mandiri_logo.svg.png",
     websiteUrl: "https://bankmandiri.co.id",
     description: "Literasi finansial & tabungan pelajar",
   },
@@ -1108,7 +1114,8 @@ const fallbackPartners = [
     id: 7,
     name: "Badan Riset dan Inovasi Nasional (BRIN)",
     category: "Instansi Pemerintah",
-    logoUrl: "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/Logo_BRIN.png/300px-Logo_BRIN.png",
+    logoUrl:
+      "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/Logo_BRIN.png/300px-Logo_BRIN.png",
     websiteUrl: "https://brin.go.id",
     description: "Pendampingan Karya Tulis Ilmiah Remaja",
   },
@@ -1211,7 +1218,10 @@ if (isPpdbAnnouncement) {
 <Layout
   title={`${schoolName} — Pusat Pendidikan & Prestasi Generasi Mandiri`}
   description={`Portal resmi ${schoolName}. Informasi kurikulum riset, pendaftaran ${admissionsLabel}, kalender akademik, serta prestasi siswa tingkat nasional dan global.`}
-  image="https://images.unsplash.com/photo-1541339907198-e08756dedf3f?auto=format&fit=crop&w=1200&q=80"
+  image={
+    activeSlides[0]?.imageUrl ||
+    "https://images.unsplash.com/photo-1541339907198-e08756dedf3f?auto=format&fit=crop&w=1200&q=80"
+  }
 >
   {displayAnnouncement && (
     <AnnouncementBar
@@ -1229,7 +1239,12 @@ if (isPpdbAnnouncement) {
     {activeSlides.length > 0 ? (
       <section
         id="hero-slider"
-        class="relative overflow-hidden bg-heading text-white min-h-[380px] sm:min-h-[480px] lg:min-h-[580px] flex flex-col justify-between"
+        class:list={[
+          "relative overflow-hidden bg-heading text-white sm:min-h-[520px] lg:min-h-[600px] flex flex-col justify-between touch-pan-y select-none",
+          displayAnnouncement
+            ? "min-h-[calc(100svh-108px)]"
+            : "min-h-[calc(100svh-72px)]",
+        ]}
         data-slide-count={activeSlides.length}
       >
         <!-- Slides Container -->
@@ -1410,10 +1425,10 @@ if (isPpdbAnnouncement) {
     {/* 2. STATISTIK SEKOLAH */}
     <section class="bg-surface py-6">
       <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
+        <div class="grid grid-cols-2 lg:grid-cols-4 lg:divide-x lg:divide-border max-lg:[&>*:nth-child(odd)]:border-r max-lg:[&>*:nth-child(n+3)]:border-t max-lg:*:border-border">
           {stats.map((stat, sIdx) => (
             <div
-              class="p-3.5 sm:p-4 rounded-[10px] border border-border bg-surface-subtle lg:border-none lg:bg-transparent lg:p-2 lg:border-r lg:border-border lg:last:border-r-0 reveal-on-scroll"
+              class="px-3.5 sm:px-5 lg:px-6 py-3.5 lg:py-1 odd:pl-0 lg:odd:pl-6 lg:first:pl-0 lg:last:pr-0 reveal-on-scroll"
               data-reveal-delay={String(sIdx * 80)}
             >
               <span
@@ -1425,7 +1440,7 @@ if (isPpdbAnnouncement) {
               <span class="mt-1 font-body text-xs sm:text-sm font-semibold text-heading block truncate">
                 {stat.label}
               </span>
-              <span class="mt-0.5 text-[11px] text-muted block line-clamp-1">
+              <span class="mt-0.5 text-[11px] text-body block line-clamp-1">
                 {stat.desc}
               </span>
             </div>
@@ -1440,8 +1455,8 @@ if (isPpdbAnnouncement) {
           <div class="grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-10 items-center">
             <!-- Kolom Foto & Identitas Kepala Sekolah -->
             <div class="md:col-span-4 flex flex-col items-center md:items-start text-center md:text-left reveal-on-scroll">
-              <div class="relative w-full max-w-[200px] sm:max-w-[240px] md:max-w-[280px] mx-auto md:mx-0">
-                <div class="overflow-hidden rounded-[10px] border border-border bg-surface-subtle aspect-[4/5] shadow-xs">
+              <div class="w-full max-w-[220px] sm:max-w-[240px] md:max-w-[280px] mx-auto md:mx-0 overflow-hidden rounded-[10px] border border-border bg-surface shadow-xs">
+                <div class="aspect-[4/5] w-full overflow-hidden bg-surface-subtle">
                   <img
                     src={principalPhoto}
                     alt={principalName}
@@ -1451,11 +1466,11 @@ if (isPpdbAnnouncement) {
                     loading="lazy"
                   />
                 </div>
-                <div class="absolute bottom-3 left-0 right-0 p-2 mx-auto bg-white text-center">
-                  <h3 class="font-display text-primary font-bold text-sm sm:text-lg">
+                <div class="px-3 py-2.5 text-center">
+                  <p class="font-display text-sm sm:text-base font-bold text-heading leading-snug">
                     {principalName}
-                  </h3>
-                  <p class="font-body text-xs text-muted">{principalTitle}</p>
+                  </p>
+                  <p class="mt-0.5 font-body text-xs text-muted">{principalTitle}</p>
                 </div>
               </div>
             </div>
@@ -1541,39 +1556,41 @@ if (isPpdbAnnouncement) {
                 data-reveal-delay="100"
               >
                 <div class="grid grid-cols-1 lg:grid-cols-12">
-                  <a
-                    href={`/berita/${featuredArticle.slug}`}
-                    aria-label={featuredArticle.title}
-                    class="lg:col-span-7 aspect-video w-full overflow-hidden bg-surface-subtle block min-h-[240px] sm:min-h-[300px] lg:min-h-[340px]"
-                  >
-                    <img
-                      src={
-                        featuredArticle.coverImage ||
-                        "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=1200&q=80"
-                      }
-                      alt={featuredArticle.title}
-                      width="800"
-                      height="450"
-                      class="h-full w-full object-cover card-image-zoom"
-                      loading="lazy"
-                    />
-                  </a>
+                  <div class="relative lg:col-span-7 aspect-video w-full overflow-hidden bg-surface-subtle min-h-[240px] sm:min-h-[300px] lg:min-h-[340px]">
+                    <a
+                      href={`/berita/${featuredArticle.slug}`}
+                      aria-label={featuredArticle.title}
+                      class="block h-full w-full"
+                    >
+                      <img
+                        src={
+                          featuredArticle.coverImage ||
+                          "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=1200&q=80"
+                        }
+                        alt={featuredArticle.title}
+                        width="800"
+                        height="450"
+                        class="h-full w-full object-cover card-image-zoom"
+                        loading="lazy"
+                      />
+                    </a>
+                    {featuredArticle.categorySlug ? (
+                      <a
+                        href={`/berita?kategori=${featuredArticle.categorySlug}`}
+                        class="absolute top-0 right-0 z-10 rounded-bl-lg bg-primary px-2.5 py-1 text-[10px] font-semibold text-white uppercase tracking-wider transition-colors hover:bg-primary-hover shadow-xs"
+                        title={`Lihat kategori ${featuredArticle.categoryName}`}
+                      >
+                        {featuredArticle.categoryName}
+                      </a>
+                    ) : (
+                      <span class="absolute top-0 right-0 z-10 rounded-bl-lg bg-primary px-2.5 py-1 text-[10px] font-semibold text-white uppercase tracking-wider shadow-xs">
+                        {featuredArticle.categoryName || "Umum"}
+                      </span>
+                    )}
+                  </div>
                   <div class="lg:col-span-5 p-5 sm:p-7 lg:p-8 flex flex-col justify-between space-y-4">
                     <div class="space-y-3">
                       <div class="flex items-center gap-2">
-                        {featuredArticle.categorySlug ? (
-                          <a
-                            href={`/berita?kategori=${featuredArticle.categorySlug}`}
-                            class="rounded-[4px] border border-primary/20 bg-primary px-2.5 py-0.5 text-[10px] font-semibold text-white uppercase tracking-wider transition-colors hover:bg-primary-hover shadow-xs"
-                            title={`Lihat kategori ${featuredArticle.categoryName}`}
-                          >
-                            {featuredArticle.categoryName}
-                          </a>
-                        ) : (
-                          <span class="rounded-[4px] border border-primary/20 bg-primary px-2.5 py-0.5 text-[10px] font-semibold text-white uppercase tracking-wider shadow-xs">
-                            {featuredArticle.categoryName || "Umum"}
-                          </span>
-                        )}
                         <span class="text-xs text-muted">
                           {featuredArticle.publishedAt
                             ? new Date(
@@ -1651,13 +1668,13 @@ if (isPpdbAnnouncement) {
                     {article.categorySlug ? (
                       <a
                         href={`/berita?kategori=${article.categorySlug}`}
-                        class="absolute top-2.5 left-2.5 z-10 rounded-[4px] border border-primary/20 bg-primary px-2 py-1 text-[10px] font-semibold text-white uppercase tracking-wider shadow-xs transition-colors hover:bg-primary-hover"
+                        class="absolute top-0 right-0 z-10 rounded-bl-lg bg-primary px-2.5 py-1 text-[10px] font-semibold text-white uppercase tracking-wider shadow-xs transition-colors hover:bg-primary-hover"
                         title={`Lihat kategori ${article.categoryName}`}
                       >
                         {article.categoryName}
                       </a>
                     ) : (
-                      <span class="absolute top-2.5 left-2.5 z-10 rounded-[4px] border border-primary/20 bg-primary px-2 py-1 text-[10px] font-semibold text-white uppercase tracking-wider shadow-xs">
+                      <span class="absolute top-0 right-0 z-10 rounded-bl-lg bg-primary px-2.5 py-1 text-[10px] font-semibold text-white uppercase tracking-wider shadow-xs">
                         {article.categoryName || "Umum"}
                       </span>
                     )}
@@ -2003,13 +2020,12 @@ if (isPpdbAnnouncement) {
           <!-- Carousel Slider Track (Scroll-Snap horizontal, touch-friendly, smooth) -->
           <div
             id="teacher-slider-track"
-            class="flex gap-4 sm:gap-5 lg:gap-6 overflow-x-auto scroll-smooth snap-x snap-mandatory py-3 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            class="flex gap-4 sm:gap-5 lg:gap-6 overflow-x-auto scroll-smooth snap-x snap-mandatory py-3 cursor-grab active:cursor-grabbing select-none touch-pan-x [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
-            {displayTeachers.map((teacher, tIdx) => (
+            {displayTeachers.map((teacher) => (
               <a
                 href="/direktori"
-                class="group relative flex-none w-[calc(50%-8px)] sm:w-[calc(33.333%-14px)] lg:w-[calc(25%-18px)] aspect-[3/4] overflow-hidden rounded-[10px] border border-border bg-surface-subtle snap-start transition-all duration-200 hover:-translate-y-0.5 hover:border-border-hover hover:shadow-(--shadow-hover) block reveal-on-scroll"
-                data-reveal-delay={String(120 + Math.min(tIdx, 4) * 130)}
+                class="group relative flex-none w-[calc(50%-8px)] sm:w-[calc(33.333%-14px)] lg:w-[calc(25%-18px)] aspect-[3/4] overflow-hidden rounded-[10px] border border-border bg-surface-subtle snap-start transition-all duration-200 hover:-translate-y-0.5 hover:border-border-hover hover:shadow-(--shadow-hover) block"
                 aria-label={`Profil ${teacher.name}`}
               >
                 <img
@@ -2314,7 +2330,9 @@ if (isPpdbAnnouncement) {
                 Jejaring Perguruan Tinggi & Rekanan Industri
               </h2>
               <p class="mt-1 text-xs sm:text-sm text-muted max-w-2xl">
-                Kerja sama institusi {schoolName} bersama perguruan tinggi terkemuka, BUMN, industri nasional, dan lembaga mitra dalam beasiswa, riset, serta penyaluran lulusan.
+                Kerja sama institusi {schoolName} bersama perguruan tinggi
+                terkemuka, BUMN, industri nasional, dan lembaga mitra dalam
+                beasiswa, riset, serta penyaluran lulusan.
               </p>
             </div>
 
@@ -2344,15 +2362,20 @@ if (isPpdbAnnouncement) {
           <!-- Carousel Slider Track (Scroll-Snap horizontal, touch-friendly, smooth) -->
           <div
             id="home-partner-slider-track"
-            class="flex gap-4 sm:gap-5 overflow-x-auto scroll-smooth snap-x snap-mandatory py-2 cursor-grab active:cursor-grabbing select-none [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            class="flex gap-4 sm:gap-5 overflow-x-auto scroll-smooth snap-x snap-mandatory py-2 cursor-grab active:cursor-grabbing select-none touch-pan-x [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
-            {displayPartners.map((partner, pIdx) => (
+            {displayPartners.map((partner) => (
               <a
                 href={partner.websiteUrl || "#"}
-                target={partner.websiteUrl?.startsWith("http") ? "_blank" : undefined}
-                rel={partner.websiteUrl?.startsWith("http") ? "noopener noreferrer" : undefined}
-                class="flex-none w-[190px] sm:w-[220px] rounded-[10px] border border-border bg-surface p-4 snap-start shadow-xs hover:-translate-y-0.5 hover:shadow-(--shadow-hover) hover:border-primary transition-all duration-200 flex flex-col items-center justify-between text-center space-y-3 group reveal-on-scroll"
-                data-reveal-delay={String(100 + Math.min(pIdx % 6, 5) * 100)}
+                target={
+                  partner.websiteUrl?.startsWith("http") ? "_blank" : undefined
+                }
+                rel={
+                  partner.websiteUrl?.startsWith("http")
+                    ? "noopener noreferrer"
+                    : undefined
+                }
+                class="flex-none w-[190px] sm:w-[220px] rounded-[10px] border border-border bg-surface p-4 snap-start shadow-xs hover:-translate-y-0.5 hover:shadow-(--shadow-hover) hover:border-primary transition-all duration-200 flex flex-col items-center justify-between text-center space-y-3 group"
                 aria-label={`Kemitraan ${partner.name}`}
               >
                 <div class="h-16 w-full rounded-[6px] bg-surface flex items-center justify-center p-1.5">
@@ -2374,7 +2397,10 @@ if (isPpdbAnnouncement) {
                   <h3 class="font-display text-xs font-bold text-heading line-clamp-1 group-hover:text-primary transition-colors">
                     {partner.name}
                   </h3>
-                  <p class="font-body text-[11px] text-muted line-clamp-1" title={partner.description}>
+                  <p
+                    class="font-body text-[11px] text-muted line-clamp-1"
+                    title={partner.description}
+                  >
                     {partner.description}
                   </p>
                 </div>
@@ -2636,7 +2662,7 @@ if (isPpdbAnnouncement) {
                 <!-- Track Kartu -->
                 <div
                   id="alumni-slider-track"
-                  class="flex gap-4 sm:gap-5 overflow-x-auto scroll-smooth snap-x snap-mandatory pb-2 pt-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                  class="flex gap-4 sm:gap-5 overflow-x-auto scroll-smooth snap-x snap-mandatory pb-2 pt-1 cursor-grab active:cursor-grabbing select-none touch-pan-x [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 >
                   {displayAlumni.map((alumni) => (
                     <article class="snap-start shrink-0 w-[84%] sm:w-[calc(50%-10px)] lg:w-[calc(33.333%-14px)] rounded-[12px] bg-surface text-heading overflow-hidden border border-border shadow-md flex flex-col justify-between transition-all duration-200 hover:-translate-y-0.5 hover:shadow-(--shadow-hover)">
@@ -2715,7 +2741,8 @@ if (isPpdbAnnouncement) {
   <script>
     function initHeroSlider() {
       const slider = document.getElementById("hero-slider");
-      if (!slider) return;
+      if (!slider || slider.dataset.sliderInit === "1") return;
+      slider.dataset.sliderInit = "1";
 
       const slides = slider.querySelectorAll(".hero-slide");
       const dots = slider.querySelectorAll(".hero-dot");
@@ -2726,6 +2753,8 @@ if (isPpdbAnnouncement) {
 
       let currentIndex = 0;
       let timer: any = null;
+      let touchStartX = 0;
+      let touchStartY = 0;
 
       function loadDeferredImages() {
         const deferredImages = slider.querySelectorAll("img[data-src]");
@@ -2758,11 +2787,11 @@ if (isPpdbAnnouncement) {
 
         dots.forEach((dot, i) => {
           if (i === currentIndex) {
-            dot.classList.remove("w-2", "bg-surface/40");
-            dot.classList.add("w-8", "bg-surface");
+            dot.classList.remove("w-2", "bg-white/40");
+            dot.classList.add("w-8", "bg-white");
           } else {
-            dot.classList.remove("w-8", "bg-surface");
-            dot.classList.add("w-2", "bg-surface/40");
+            dot.classList.remove("w-8", "bg-white");
+            dot.classList.add("w-2", "bg-white/40");
           }
         });
       }
@@ -2805,6 +2834,36 @@ if (isPpdbAnnouncement) {
       slider.addEventListener("mouseenter", stopTimer);
       slider.addEventListener("mouseleave", startTimer);
 
+      // Touch swipe gesture for mobile horizontal slide navigation
+      slider.addEventListener(
+        "touchstart",
+        (e: TouchEvent) => {
+          if (e.touches.length !== 1) return;
+          touchStartX = e.touches[0].clientX;
+          touchStartY = e.touches[0].clientY;
+          stopTimer();
+        },
+        { passive: true },
+      );
+
+      slider.addEventListener(
+        "touchend",
+        (e: TouchEvent) => {
+          if (e.changedTouches.length === 0) return;
+          const deltaX = e.changedTouches[0].clientX - touchStartX;
+          const deltaY = e.changedTouches[0].clientY - touchStartY;
+          if (Math.abs(deltaX) > 40 && Math.abs(deltaX) > Math.abs(deltaY)) {
+            if (deltaX < 0) {
+              nextSlide();
+            } else {
+              prevSlide();
+            }
+          }
+          startTimer();
+        },
+        { passive: true },
+      );
+
       document.addEventListener("keydown", (e) => {
         if (e.key === "ArrowLeft") prevSlide();
         if (e.key === "ArrowRight") nextSlide();
@@ -2826,7 +2885,8 @@ if (isPpdbAnnouncement) {
       const track = document.getElementById("teacher-slider-track");
       const prevBtn = document.getElementById("teacher-slider-prev");
       const nextBtn = document.getElementById("teacher-slider-next");
-      if (!track) return;
+      if (!track || track.dataset.sliderInit === "1") return;
+      track.dataset.sliderInit = "1";
 
       const totalItems = track.children.length;
       if (totalItems <= 4) return;
@@ -2844,16 +2904,22 @@ if (isPpdbAnnouncement) {
         return middleCard.offsetLeft - firstCard.offsetLeft;
       }
 
+      function jumpInstant(left: number) {
+        if (!track) return;
+        track.classList.remove("scroll-smooth");
+        track.style.scrollSnapType = "none";
+        track.scrollLeft = left;
+        requestAnimationFrame(() => {
+          track.classList.add("scroll-smooth");
+          track.style.scrollSnapType = "";
+        });
+      }
+
       function setInitialPosition() {
         if (!track) return;
         const singleSetWidth = getSingleSetWidth();
         if (singleSetWidth > 0 && track.scrollLeft < singleSetWidth * 0.5) {
-          track.classList.remove("scroll-smooth");
-          track.style.scrollSnapType = "none";
-          track.scrollLeft = singleSetWidth;
-          void track.offsetWidth;
-          track.classList.add("scroll-smooth");
-          track.style.scrollSnapType = "";
+          jumpInstant(singleSetWidth);
         }
       }
 
@@ -2865,12 +2931,7 @@ if (isPpdbAnnouncement) {
         // If scrolled into third set, jump back to second set seamlessly
         if (track.scrollLeft >= 2 * singleSetWidth - 8) {
           isNormalizing = true;
-          track.classList.remove("scroll-smooth");
-          track.style.scrollSnapType = "none";
-          track.scrollLeft -= singleSetWidth;
-          void track.offsetWidth;
-          track.classList.add("scroll-smooth");
-          track.style.scrollSnapType = "";
+          jumpInstant(track.scrollLeft - singleSetWidth);
           setTimeout(() => {
             isNormalizing = false;
           }, 60);
@@ -2878,12 +2939,7 @@ if (isPpdbAnnouncement) {
         // If scrolled back into first set, jump forward to second set seamlessly
         else if (track.scrollLeft <= singleSetWidth * 0.4) {
           isNormalizing = true;
-          track.classList.remove("scroll-smooth");
-          track.style.scrollSnapType = "none";
-          track.scrollLeft += singleSetWidth;
-          void track.offsetWidth;
-          track.classList.add("scroll-smooth");
-          track.style.scrollSnapType = "";
+          jumpInstant(track.scrollLeft + singleSetWidth);
           setTimeout(() => {
             isNormalizing = false;
           }, 60);
@@ -2924,11 +2980,59 @@ if (isPpdbAnnouncement) {
         startAutoPlay();
       });
 
+      // Mouse drag & touch drag support for teacher slider
+      let isDragging = false;
+      let hasDragged = false;
+      let startX = 0;
+      let startScrollLeft = 0;
+
+      track.addEventListener("mousedown", (e) => {
+        isDragging = true;
+        hasDragged = false;
+        stopAutoPlay();
+        track.classList.remove("scroll-smooth");
+        startX = e.pageX - track.offsetLeft;
+        startScrollLeft = track.scrollLeft;
+      });
+
+      window.addEventListener("mouseup", () => {
+        if (!isDragging) return;
+        isDragging = false;
+        track.classList.add("scroll-smooth");
+        normalizePosition();
+        startAutoPlay();
+      });
+
+      track.addEventListener("mousemove", (e) => {
+        if (!isDragging) return;
+        e.preventDefault();
+        const x = e.pageX - track.offsetLeft;
+        if (Math.abs(x - startX) > 6) hasDragged = true;
+        const walk = (x - startX) * 1.2;
+        track.scrollLeft = startScrollLeft - walk;
+      });
+
+      track.addEventListener("click", (e) => {
+        if (hasDragged) {
+          e.preventDefault();
+          hasDragged = false;
+        }
+      });
+
       // Pause autoplay on mouse hover or touch interaction
       track.addEventListener("mouseenter", stopAutoPlay);
-      track.addEventListener("mouseleave", startAutoPlay);
+      track.addEventListener("mouseleave", () => {
+        if (!isDragging) startAutoPlay();
+      });
       track.addEventListener("touchstart", stopAutoPlay, { passive: true });
-      track.addEventListener("touchend", startAutoPlay, { passive: true });
+      track.addEventListener(
+        "touchend",
+        () => {
+          normalizePosition();
+          startAutoPlay();
+        },
+        { passive: true },
+      );
 
       track.addEventListener(
         "scroll",
@@ -2956,7 +3060,8 @@ if (isPpdbAnnouncement) {
       const track = document.getElementById("alumni-slider-track");
       const prevBtn = document.getElementById("alumni-slider-prev");
       const nextBtn = document.getElementById("alumni-slider-next");
-      if (!track) return;
+      if (!track || track.dataset.sliderInit === "1") return;
+      track.dataset.sliderInit = "1";
 
       const totalItems = track.children.length;
       if (totalItems <= 3) return;
@@ -2974,16 +3079,22 @@ if (isPpdbAnnouncement) {
         return middleCard.offsetLeft - firstCard.offsetLeft;
       }
 
+      function jumpInstant(left: number) {
+        if (!track) return;
+        track.classList.remove("scroll-smooth");
+        track.style.scrollSnapType = "none";
+        track.scrollLeft = left;
+        requestAnimationFrame(() => {
+          track.classList.add("scroll-smooth");
+          track.style.scrollSnapType = "";
+        });
+      }
+
       function setInitialPosition() {
         if (!track) return;
         const singleSetWidth = getSingleSetWidth();
         if (singleSetWidth > 0 && track.scrollLeft < singleSetWidth * 0.5) {
-          track.classList.remove("scroll-smooth");
-          track.style.scrollSnapType = "none";
-          track.scrollLeft = singleSetWidth;
-          void track.offsetWidth;
-          track.classList.add("scroll-smooth");
-          track.style.scrollSnapType = "";
+          jumpInstant(singleSetWidth);
         }
       }
 
@@ -2994,23 +3105,13 @@ if (isPpdbAnnouncement) {
 
         if (track.scrollLeft >= 2 * singleSetWidth - 8) {
           isNormalizing = true;
-          track.classList.remove("scroll-smooth");
-          track.style.scrollSnapType = "none";
-          track.scrollLeft -= singleSetWidth;
-          void track.offsetWidth;
-          track.classList.add("scroll-smooth");
-          track.style.scrollSnapType = "";
+          jumpInstant(track.scrollLeft - singleSetWidth);
           setTimeout(() => {
             isNormalizing = false;
           }, 60);
         } else if (track.scrollLeft <= singleSetWidth * 0.4) {
           isNormalizing = true;
-          track.classList.remove("scroll-smooth");
-          track.style.scrollSnapType = "none";
-          track.scrollLeft += singleSetWidth;
-          void track.offsetWidth;
-          track.classList.add("scroll-smooth");
-          track.style.scrollSnapType = "";
+          jumpInstant(track.scrollLeft + singleSetWidth);
           setTimeout(() => {
             isNormalizing = false;
           }, 60);
@@ -3090,10 +3191,48 @@ if (isPpdbAnnouncement) {
         });
       });
 
+      // Mouse drag & touch support for alumni slider
+      let isDragging = false;
+      let startX = 0;
+      let startScrollLeft = 0;
+
+      track.addEventListener("mousedown", (e) => {
+        isDragging = true;
+        stopAutoPlay();
+        track.classList.remove("scroll-smooth");
+        startX = e.pageX - track.offsetLeft;
+        startScrollLeft = track.scrollLeft;
+      });
+
+      window.addEventListener("mouseup", () => {
+        if (!isDragging) return;
+        isDragging = false;
+        track.classList.add("scroll-smooth");
+        normalizePosition();
+        startAutoPlay();
+      });
+
+      track.addEventListener("mousemove", (e) => {
+        if (!isDragging) return;
+        e.preventDefault();
+        const x = e.pageX - track.offsetLeft;
+        const walk = (x - startX) * 1.2;
+        track.scrollLeft = startScrollLeft - walk;
+      });
+
       track.addEventListener("mouseenter", stopAutoPlay);
-      track.addEventListener("mouseleave", startAutoPlay);
+      track.addEventListener("mouseleave", () => {
+        if (!isDragging) startAutoPlay();
+      });
       track.addEventListener("touchstart", stopAutoPlay, { passive: true });
-      track.addEventListener("touchend", startAutoPlay, { passive: true });
+      track.addEventListener(
+        "touchend",
+        () => {
+          normalizePosition();
+          startAutoPlay();
+        },
+        { passive: true },
+      );
 
       track.addEventListener(
         "scroll",
@@ -3128,7 +3267,8 @@ if (isPpdbAnnouncement) {
       const track = document.getElementById("home-partner-slider-track");
       const prevBtn = document.getElementById("home-partner-slider-prev");
       const nextBtn = document.getElementById("home-partner-slider-next");
-      if (!track) return;
+      if (!track || track.dataset.sliderInit === "1") return;
+      track.dataset.sliderInit = "1";
 
       const totalItems = track.children.length;
       if (totalItems <= 3) return;
@@ -3146,16 +3286,22 @@ if (isPpdbAnnouncement) {
         return middleCard.offsetLeft - firstCard.offsetLeft;
       }
 
+      function jumpInstant(left: number) {
+        if (!track) return;
+        track.classList.remove("scroll-smooth");
+        track.style.scrollSnapType = "none";
+        track.scrollLeft = left;
+        requestAnimationFrame(() => {
+          track.classList.add("scroll-smooth");
+          track.style.scrollSnapType = "";
+        });
+      }
+
       function setInitialPosition() {
         if (!track) return;
         const singleSetWidth = getSingleSetWidth();
         if (singleSetWidth > 0 && track.scrollLeft < singleSetWidth * 0.5) {
-          track.classList.remove("scroll-smooth");
-          track.style.scrollSnapType = "none";
-          track.scrollLeft = singleSetWidth;
-          void track.offsetWidth;
-          track.classList.add("scroll-smooth");
-          track.style.scrollSnapType = "";
+          jumpInstant(singleSetWidth);
         }
       }
 
@@ -3167,12 +3313,7 @@ if (isPpdbAnnouncement) {
         // Scrolled into third set -> seamlessly jump back to second set without visual rewind
         if (track.scrollLeft >= 2 * singleSetWidth - 8) {
           isNormalizing = true;
-          track.classList.remove("scroll-smooth");
-          track.style.scrollSnapType = "none";
-          track.scrollLeft -= singleSetWidth;
-          void track.offsetWidth;
-          track.classList.add("scroll-smooth");
-          track.style.scrollSnapType = "";
+          jumpInstant(track.scrollLeft - singleSetWidth);
           setTimeout(() => {
             isNormalizing = false;
           }, 60);
@@ -3180,12 +3321,7 @@ if (isPpdbAnnouncement) {
         // Scrolled into first set -> seamlessly jump forward to second set
         else if (track.scrollLeft <= singleSetWidth * 0.4) {
           isNormalizing = true;
-          track.classList.remove("scroll-smooth");
-          track.style.scrollSnapType = "none";
-          track.scrollLeft += singleSetWidth;
-          void track.offsetWidth;
-          track.classList.add("scroll-smooth");
-          track.style.scrollSnapType = "";
+          jumpInstant(track.scrollLeft + singleSetWidth);
           setTimeout(() => {
             isNormalizing = false;
           }, 60);
@@ -3260,10 +3396,14 @@ if (isPpdbAnnouncement) {
         if (!isDragging) startAutoPlay();
       });
       track.addEventListener("touchstart", stopAutoPlay, { passive: true });
-      track.addEventListener("touchend", () => {
-        normalizePosition();
-        startAutoPlay();
-      }, { passive: true });
+      track.addEventListener(
+        "touchend",
+        () => {
+          normalizePosition();
+          startAutoPlay();
+        },
+        { passive: true },
+      );
 
       track.addEventListener(
         "scroll",
@@ -3294,10 +3434,6 @@ if (isPpdbAnnouncement) {
       initAlumniSlider();
     }
 
-    if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", initHomePage);
-    } else {
-      initHomePage();
-    }
+    document.addEventListener("astro:page-load", initHomePage);
   </script>
 </Layout>

@@ -332,16 +332,8 @@ const defaultSchoolSchema = {
   <script>
     import { initPublicAnimations } from "../scripts/animePublic";
 
-    function runPublicAnime() {
+    document.addEventListener("astro:page-load", () => {
       initPublicAnimations();
-    }
-
-    if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", runPublicAnime);
-    } else {
-      runPublicAnime();
-    }
-    document.addEventListener("astro:page-load", runPublicAnime);
-    document.addEventListener("astro:after-swap", runPublicAnime);
+    });
   </script>
 </html>

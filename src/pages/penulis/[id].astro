@@ -188,34 +188,34 @@ const defaultCover =
               <div class="space-y-4">
                 {paginatedArticles.map((article) => (
                   <article class="group rounded-[10px] border border-border bg-surface p-4 sm:p-5 flex flex-col sm:flex-row gap-4 sm:gap-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-(--shadow-hover)">
-                    <a
-                      href={`/berita/${article.slug}`}
-                      class="w-full sm:w-48 md:w-56 aspect-[16/10] overflow-hidden rounded-[8px] bg-surface-subtle shrink-0 block"
-                    >
-                      <img
-                        src={article.coverImage || defaultCover}
-                        alt={article.title}
-                        class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-                        loading="lazy"
-                      />
-                    </a>
+                    <div class="relative w-full sm:w-48 md:w-56 aspect-[16/10] overflow-hidden rounded-[8px] bg-surface-subtle shrink-0">
+                      <a
+                        href={`/berita/${article.slug}`}
+                        class="block h-full w-full"
+                      >
+                        <img
+                          src={article.coverImage || defaultCover}
+                          alt={article.title}
+                          class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                          loading="lazy"
+                        />
+                      </a>
+                      {article.categorySlug ? (
+                        <a
+                          href={`/berita?kategori=${article.categorySlug}`}
+                          class="absolute top-0 right-0 z-10 rounded-bl-lg bg-primary px-2.5 py-1 text-[10px] font-semibold text-white uppercase transition-colors hover:bg-primary-hover"
+                        >
+                          {article.categoryName}
+                        </a>
+                      ) : (
+                        <span class="absolute top-0 right-0 z-10 rounded-bl-lg bg-primary px-2.5 py-1 text-[10px] font-semibold text-white uppercase">
+                          {article.categoryName || "Umum"}
+                        </span>
+                      )}
+                    </div>
 
                     <div class="flex-1 flex flex-col justify-between py-0.5">
                       <div>
-                        <div class="mb-2">
-                          {article.categorySlug ? (
-                            <a
-                              href={`/berita?kategori=${article.categorySlug}`}
-                              class="inline-block rounded-[4px] bg-primary-light border border-primary/20 px-2 py-0.5 text-[10px] font-semibold text-primary uppercase transition-colors hover:bg-primary hover:text-white"
-                            >
-                              {article.categoryName}
-                            </a>
-                          ) : (
-                            <span class="inline-block rounded-[4px] bg-primary-light border border-primary/20 px-2 py-0.5 text-[10px] font-semibold text-primary uppercase">
-                              {article.categoryName || "Umum"}
-                            </span>
-                          )}
-                        </div>
 
                         <h3 class="font-display text-base sm:text-lg font-bold text-heading leading-snug group-hover:text-primary transition-colors">
                           <a href={`/berita/${article.slug}`}>

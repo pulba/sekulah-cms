@@ -210,6 +210,50 @@ html.dark [class*="text-surface/"] {
   color: var(--color-accent-foreground) !important;
 }
 
+/* Contrast safeguard for *-light surfaces when paired with low-contrast status or white text */
+.bg-success-light.text-success,
+.bg-success-light .text-success,
+.hover\:bg-success-light:hover.hover\:text-success:hover {
+  color: var(--color-success-text) !important;
+}
+
+.bg-warning-light.text-warning,
+.bg-warning-light .text-warning,
+.hover\:bg-warning-light:hover.hover\:text-warning:hover {
+  color: var(--color-warning-text) !important;
+}
+
+.bg-error-light.text-error,
+.bg-error-light .text-error,
+.hover\:bg-error-light:hover.hover\:text-error:hover {
+  color: var(--color-error-text) !important;
+}
+
+.bg-primary-light.text-white,
+.bg-primary-light.text-surface,
+.bg-primary-light .text-white,
+.bg-primary-light .text-surface {
+  color: var(--color-primary) !important;
+}
+
+.bg-secondary-light.text-white,
+.bg-secondary-light.text-surface,
+.bg-secondary-light .text-white,
+.bg-secondary-light .text-surface,
+.bg-accent-light.text-white,
+.bg-accent-light.text-surface,
+.bg-accent-light .text-white,
+.bg-accent-light .text-surface {
+  color: var(--color-secondary-foreground) !important;
+}
+
+.bg-tertiary-light.text-white,
+.bg-tertiary-light.text-surface,
+.bg-tertiary-light .text-white,
+.bg-tertiary-light .text-surface {
+  color: var(--color-tertiary-foreground) !important;
+}
+
 html.dark .border-surface {
   border-color: rgba(255, 255, 255, 0.3) !important;
 }

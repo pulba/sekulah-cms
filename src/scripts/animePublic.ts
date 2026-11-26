@@ -33,11 +33,12 @@ function autoDiscoverPublicElements() {
     'article, .grid > div:not(.col-span-full), .grid > a:not(.col-span-full), [data-card]'
   );
   gridCards.forEach((card) => {
-    // Hindari tombol pagination, filter tabs, modal, atau inline container non-card
+    // Hindari tombol pagination, filter tabs, modal, slider, atau inline container non-card
     if (
       card.closest('nav') ||
       card.closest('[role="tablist"]') ||
       card.closest('.fixed') ||
+      card.closest('[id$="-slider-track"], #hero-slider') ||
       card.classList.contains('pagination')
     ) {
       return;
@@ -76,9 +77,9 @@ export function initPublicAnimations() {
   };
   window.addEventListener('scroll', updateScrollDir, { passive: true });
 
-  // 1. HERO ENTRANCE ANIMATION (On Load / Page Swap)
+  // 1. HERO ENTRANCE ANIMATION (On Load / Page Swap - skip #hero-slider)
   const heroSection = document.querySelector('section[aria-label="Hero Utama"], .hero-section, main > section:first-of-type');
-  if (heroSection && !heroSection.hasAttribute('data-anime-hero-done')) {
+  if (heroSection && heroSection.id !== 'hero-slider' && !heroSection.hasAttribute('data-anime-hero-done')) {
     heroSection.setAttribute('data-anime-hero-done', 'true');
 
     const heroElements = heroSection.querySelectorAll('h1, p, .hero-badge, a.btn-cta, button, .hero-action');
@@ -155,14 +156,17 @@ export function initPublicAnimations() {
   const revealElements = document.querySelectorAll<HTMLElement>('.reveal-on-scroll, [data-reveal]');
   if (revealElements.length === 0) return;
 
-  // Initialize initial state for elements not currently inside viewport
-  revealElements.forEach((el) => {
-    const rect = el.getBoundingClientRect();
-    const isCurrentlyVisible = rect.top < window.innerHeight && rect.bottom > 0;
+  // Batch all layout reads before DOM style writes to prevent forced reflow
+  const vh = window.innerHeight;
+  const rects = Array.from(revealElements).map((el) => el.getBoundingClientRect());
+
+  revealElements.forEach((el, idx) => {
+    const rect = rects[idx];
+    const isCurrentlyVisible = rect.top < vh && rect.bottom > 0;
 
     if (!isCurrentlyVisible) {
       el.style.opacity = '0';
-      el.style.transform = rect.top >= window.innerHeight ? 'translateY(24px)' : 'translateY(-20px)';
+      el.style.transform = rect.top >= vh ? 'translateY(24px)' : 'translateY(-20px)';
       el.style.willChange = 'opacity, transform';
       delete el.dataset.animeRevealed;
     } else {

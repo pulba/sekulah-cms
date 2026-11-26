@@ -375,7 +375,8 @@ const displayPartnerList =
       const track = document.getElementById("partner-slider-track");
       const prevBtn = document.getElementById("partner-slider-prev");
       const nextBtn = document.getElementById("partner-slider-next");
-      if (!track) return;
+      if (!track || track.dataset.sliderInit === "1") return;
+      track.dataset.sliderInit = "1";
 
       const totalItems = track.children.length;
       if (totalItems <= 3) return;
@@ -393,16 +394,22 @@ const displayPartnerList =
         return middleCard.offsetLeft - firstCard.offsetLeft;
       }
 
+      function jumpInstant(left) {
+        if (!track) return;
+        track.classList.remove("scroll-smooth");
+        track.style.scrollSnapType = "none";
+        track.scrollLeft = left;
+        requestAnimationFrame(() => {
+          track.classList.add("scroll-smooth");
+          track.style.scrollSnapType = "";
+        });
+      }
+
       function setInitialPosition() {
         if (!track) return;
         const singleSetWidth = getSingleSetWidth();
         if (singleSetWidth > 0 && track.scrollLeft < singleSetWidth * 0.5) {
-          track.classList.remove("scroll-smooth");
-          track.style.scrollSnapType = "none";
-          track.scrollLeft = singleSetWidth;
-          void track.offsetWidth;
-          track.classList.add("scroll-smooth");
-          track.style.scrollSnapType = "";
+          jumpInstant(singleSetWidth);
         }
       }
 
@@ -414,12 +421,7 @@ const displayPartnerList =
         // Scrolled into third set -> seamlessly jump back to second set without visual jump
         if (track.scrollLeft >= 2 * singleSetWidth - 8) {
           isNormalizing = true;
-          track.classList.remove("scroll-smooth");
-          track.style.scrollSnapType = "none";
-          track.scrollLeft -= singleSetWidth;
-          void track.offsetWidth;
-          track.classList.add("scroll-smooth");
-          track.style.scrollSnapType = "";
+          jumpInstant(track.scrollLeft - singleSetWidth);
           setTimeout(() => {
             isNormalizing = false;
           }, 60);
@@ -427,12 +429,7 @@ const displayPartnerList =
         // Scrolled back into first set -> seamlessly jump forward to second set
         else if (track.scrollLeft <= singleSetWidth * 0.4) {
           isNormalizing = true;
-          track.classList.remove("scroll-smooth");
-          track.style.scrollSnapType = "none";
-          track.scrollLeft += singleSetWidth;
-          void track.offsetWidth;
-          track.classList.add("scroll-smooth");
-          track.style.scrollSnapType = "";
+          jumpInstant(track.scrollLeft + singleSetWidth);
           setTimeout(() => {
             isNormalizing = false;
           }, 60);
@@ -538,9 +535,8 @@ const displayPartnerList =
       startAutoPlay();
     }
 
-    if (document.readyState === "loading") {
-      document.addEventListener("DOMContentLoaded", initPartnerSlider);
-    } else {
+    document.addEventListener("astro:page-load", initPartnerSlider);
+    if (document.readyState !== "loading") {
       initPartnerSlider();
     }
   </script>

@@ -1,11 +1,19 @@
 ---
-import Layout from '../layouts/Layout.astro';
-import Header from '../components/Header.astro';
-import Footer from '../components/Footer.astro';
-import Breadcrumb from '../components/Breadcrumb.astro';
-import Icon from '../components/Icon.astro';
-import { db, articles, agendas, documents, teachers, categories, settings } from '../db';
-import { like, or, and, eq, isNull, sql, desc } from 'drizzle-orm';
+import Layout from "../layouts/Layout.astro";
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import Breadcrumb from "../components/Breadcrumb.astro";
+import Icon from "../components/Icon.astro";
+import {
+  db,
+  articles,
+  agendas,
+  documents,
+  teachers,
+  categories,
+  settings,
+} from "../db";
+import { like, or, and, eq, isNull, sql, desc } from "drizzle-orm";
 
 export const prerender = false;
 
@@ -19,16 +27,16 @@ const schoolSetting = await db
 const schoolName = schoolSetting?.value || "SMAN 1 UNGGULAN";
 
 // 1. Input preprocessing & sanitization
-const rawQuery = Astro.url.searchParams.get('q') || '';
+const rawQuery = Astro.url.searchParams.get("q") || "";
 const query = rawQuery
-  .replace(/[\x00-\x1F\x7F]/g, '')
-  .replace(/[^\w\s\u00C0-\u024F\u1E00-\u1EFF.,?!'"\-]/g, ' ')
+  .replace(/[\x00-\x1F\x7F]/g, "")
+  .replace(/[^\w\s\u00C0-\u024F\u1E00-\u1EFF.,?!'"\-]/g, " ")
   .trim()
   .slice(0, 100);
 
-const rawFilter = (Astro.url.searchParams.get('type') || 'all').toLowerCase();
-const validFilters = ['all', 'berita', 'agenda', 'dokumen', 'guru'];
-const filter = validFilters.includes(rawFilter) ? rawFilter : 'all';
+const rawFilter = (Astro.url.searchParams.get("type") || "all").toLowerCase();
+const validFilters = ["all", "berita", "agenda", "dokumen", "guru"];
+const filter = validFilters.includes(rawFilter) ? rawFilter : "all";
 
 // Tokenize query for multi-word matching & highlighting
 const tokens = Array.from(
@@ -36,29 +44,31 @@ const tokens = Array.from(
     query
       .split(/\s+/)
       .map((t) => t.trim())
-      .filter((t) => t.length >= 2)
-  )
+      .filter((t) => t.length >= 2),
+  ),
 );
 
 // Highlighting helper with XSS sanitization
 function highlightText(text: string | null | undefined): string {
-  if (!text) return '';
+  if (!text) return "";
   const escaped = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 
   if (!query || tokens.length === 0) return escaped;
 
   const terms = Array.from(new Set([query, ...tokens]));
-  const pattern = terms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
-  const regex = new RegExp(`(${pattern})`, 'gi');
+  const pattern = terms
+    .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("|");
+  const regex = new RegExp(`(${pattern})`, "gi");
 
   return escaped.replace(
     regex,
-    '<mark class="bg-warning-light text-warning-text px-1 py-0.5 rounded-[3px] font-medium">$1</mark>'
+    '<mark class="bg-warning-light text-warning-text px-1 py-0.5 rounded-[3px] font-medium">$1</mark>',
   );
 }
 
@@ -70,10 +80,10 @@ let teacherResults: any[] = [];
 if (query.length >= 2) {
   const searchTerm = `%${query}%`;
   const nowIso = new Date().toISOString();
-  const limitCount = filter === 'all' ? 8 : 20;
+  const limitCount = filter === "all" ? 8 : 20;
 
   // 1. Cari Berita Terbit
-  if (filter === 'all' || filter === 'berita') {
+  if (filter === "all" || filter === "berita") {
     articleResults = await db
       .select({
         id: articles.id,
@@ -87,22 +97,22 @@ if (query.length >= 2) {
       .leftJoin(categories, eq(articles.categoryId, categories.id))
       .where(
         and(
-          eq(articles.status, 'published'),
+          eq(articles.status, "published"),
           isNull(articles.deletedAt),
           sql`${articles.publishedAt} <= ${nowIso}`,
           or(
             like(articles.title, searchTerm),
             like(articles.summary, searchTerm),
-            like(articles.content, searchTerm)
-          )
-        )
+            like(articles.content, searchTerm),
+          ),
+        ),
       )
       .orderBy(desc(articles.publishedAt))
       .limit(limitCount);
   }
 
   // 2. Cari Agenda Kegiatan
-  if (filter === 'all' || filter === 'agenda') {
+  if (filter === "all" || filter === "agenda") {
     agendaResults = await db
       .select()
       .from(agendas)
@@ -110,30 +120,30 @@ if (query.length >= 2) {
         or(
           like(agendas.title, searchTerm),
           like(agendas.description, searchTerm),
-          like(agendas.location, searchTerm)
-        )
+          like(agendas.location, searchTerm),
+        ),
       )
       .orderBy(desc(agendas.eventDate))
       .limit(limitCount);
   }
 
   // 3. Cari Dokumen Resmi
-  if (filter === 'all' || filter === 'dokumen') {
+  if (filter === "all" || filter === "dokumen") {
     docResults = await db
       .select()
       .from(documents)
       .where(
         or(
           like(documents.title, searchTerm),
-          like(documents.category, searchTerm)
-        )
+          like(documents.category, searchTerm),
+        ),
       )
       .orderBy(desc(documents.createdAt))
       .limit(limitCount);
   }
 
   // 4. Cari Tenaga Pendidik (Guru & Staf)
-  if (filter === 'all' || filter === 'guru') {
+  if (filter === "all" || filter === "guru") {
     teacherResults = await db
       .select()
       .from(teachers)
@@ -144,126 +154,49 @@ if (query.length >= 2) {
             like(teachers.name, searchTerm),
             like(teachers.subject, searchTerm),
             like(teachers.position, searchTerm),
-            like(teachers.nip, searchTerm)
-          )
-        )
+            like(teachers.nip, searchTerm),
+          ),
+        ),
       )
       .orderBy(teachers.orderNumber)
       .limit(limitCount);
   }
 }
 
-const totalResults = articleResults.length + agendaResults.length + docResults.length + teacherResults.length;
+const totalResults =
+  articleResults.length +
+  agendaResults.length +
+  docResults.length +
+  teacherResults.length;
 
 const filterTabs = [
-  { key: 'all', label: 'Semua' },
-  { key: 'berita', label: 'Berita', count: articleResults.length },
-  { key: 'agenda', label: 'Agenda', count: agendaResults.length },
-  { key: 'dokumen', label: 'Dokumen', count: docResults.length },
-  { key: 'guru', label: 'Guru & Staf', count: teacherResults.length },
+  { key: "all", label: "Semua" },
+  { key: "berita", label: "Berita", count: articleResults.length },
+  { key: "agenda", label: "Agenda", count: agendaResults.length },
+  { key: "dokumen", label: "Dokumen", count: docResults.length },
+  { key: "guru", label: "Guru & Staf", count: teacherResults.length },
 ];
 ---
 
 <Layout
-  title={query ? `Hasil Pencarian "${query}" — ${schoolName}` : `Pencarian Informasi Terpadu — ${schoolName}`}
+  title={
+    query
+      ? `Hasil Pencarian "${query}" — ${schoolName}`
+      : `Pencarian Informasi Terpadu — ${schoolName}`
+  }
   description={`Pencarian terpadu berita, dokumen kurikulum, jadwal kegiatan, dan direktori guru ${schoolName}.`}
 >
   <Header currentPath="/cari" />
 
   <main class="flex-1 py-12 bg-background min-h-[calc(100vh-14rem)]">
     <div class="mx-auto max-w-4xl px-4 sm:px-6">
-      <!-- Breadcrumb -->
-      <Breadcrumb
-        items={[
-          { label: 'Beranda', href: '/' },
-          { label: 'Pencarian Terpadu' },
-        ]}
-      />
-
-      <!-- Search Header & Bar -->
-      <div class="text-center max-w-2xl mx-auto space-y-4 mb-8">
-        <h1 class="font-display text-3xl sm:text-4xl font-bold tracking-tight text-heading">
-          Pencarian Informasi Terpadu
-        </h1>
-        <p class="font-body text-sm text-muted">
-          Temukan rilis berita resmi, kalender kegiatan, berkas formulir, silabus, dan data tenaga pendidik.
-        </p>
-
-        <form action="/cari" method="GET" class="mt-6 flex items-center gap-2">
-          <input type="hidden" name="type" value={filter} />
-          <div class="relative flex-1">
-            <input
-              id="search-input"
-              type="text"
-              name="q"
-              value={query}
-              aria-label="Ketik kata kunci pencarian"
-              required
-              minlength="2"
-              maxlength="100"
-              placeholder="Ketik kata kunci (misal: Pendaftaran, Kalender, Kimia, Olimpiade)..."
-              class="h-[42px] sm:h-[44px] w-full rounded-[6px] border border-border bg-surface px-4 pl-11 font-body text-sm text-heading placeholder:text-muted/60 transition-colors"
-            />
-            <Icon name="search" class="absolute left-3.5 top-3 sm:top-3.5 h-4 w-4 text-muted pointer-events-none" />
-            {query && (
-              <a
-                href="/cari"
-                title="Hapus pencarian"
-                class="absolute right-3 top-2.5 sm:top-3 rounded-[4px] p-1 text-muted hover:text-heading hover:bg-surface-subtle transition-colors cursor-pointer"
-              >
-                <Icon name="close" class="h-4 w-4" />
-              </a>
-            )}
-          </div>
-          <button
-            type="submit"
-            class="inline-flex h-[42px] sm:h-[44px] items-center justify-center gap-2 rounded-[6px] bg-primary px-5 font-body text-sm font-medium text-white transition-all duration-200 hover:-translate-y-[1px] hover:bg-primary-hover hover:shadow-(--shadow-button-glow) shrink-0"
-          >
-            Cari
-          </button>
-        </form>
-
-        <!-- Rekomendasi Kata Kunci Populer -->
-        <div class="flex flex-wrap items-center justify-center gap-2 pt-2 font-body text-xs text-muted">
-          <span class="font-medium text-heading">Pencarian populer:</span>
-          <div class="inline-flex flex-wrap items-center gap-2 *:rounded-[4px] *:border *:border-border *:bg-surface *:px-2.5 *:py-1 *:text-xs *:text-muted *:transition-colors">
-            <a href="/cari?q=Pendaftaran" class="hover:border-border-hover hover:text-heading">Pendaftaran</a>
-            <a href="/cari?q=Kalender" class="hover:border-border-hover hover:text-heading">Kalender Akademik</a>
-            <a href="/cari?q=Olimpiade" class="hover:border-border-hover hover:text-heading">Olimpiade</a>
-            <a href="/cari?q=Matematika" class="hover:border-border-hover hover:text-heading">Guru Matematika</a>
-          </div>
-        </div>
-      </div>
-
       <!-- Hasil Pencarian -->
       {query ? (
         <div class="space-y-6">
           <!-- Filter Tabs & Result Stats -->
           <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2">
-            <div class="flex flex-wrap items-center gap-1.5 *:inline-flex *:items-center *:gap-1.5 *:rounded-[6px] *:px-3 *:py-1.5 *:font-body *:text-xs *:font-medium *:transition-colors">
-              {filterTabs.map((tab) => {
-                const isActive = filter === tab.key;
-                return (
-                  <a
-                    href={`/cari?q=${encodeURIComponent(query)}&type=${tab.key}`}
-                    class={
-                      isActive
-                        ? 'bg-primary text-white shadow-xs'
-                        : 'border border-border bg-surface text-muted hover:bg-surface-subtle hover:text-heading'
-                    }
-                  >
-                    <span>{tab.label}</span>
-                    {tab.count !== undefined && query && (
-                      <span class={`text-[10px] ${isActive ? 'text-white/80' : 'text-muted'}`}>
-                        ({tab.count})
-                      </span>
-                    )}
-                  </a>
-                );
-              })}
-            </div>
             <p class="font-body text-xs text-muted shrink-0">
-              Total <strong class="text-heading font-medium">{totalResults} hasil</strong> untuk <span class="font-mono text-heading">"{query}"</span>
+              Search for: <span class="font-mono text-heading">{query}</span>
             </p>
           </div>
 
@@ -272,9 +205,12 @@ const filterTabs = [
               <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-surface-subtle text-muted">
                 <Icon name="search" class="h-6 w-6 text-muted" />
               </div>
-              <h3 class="font-display text-base font-semibold text-heading">Tidak Ada Hasil Ditemukan</h3>
+              <h3 class="font-display text-sm font-semibold text-heading">
+                Tidak Ada Hasil Ditemukan
+              </h3>
               <p class="font-body text-sm text-muted max-w-sm mx-auto">
-                Coba gunakan kata kunci yang lebih umum, kurangi filter kategori, atau periksa kembali ejaan pencarian Anda.
+                Coba gunakan kata kunci yang lebih umum, kurangi filter
+                kategori, atau periksa kembali ejaan pencarian Anda.
               </p>
             </div>
           ) : (
@@ -283,11 +219,14 @@ const filterTabs = [
               {articleResults.length > 0 && (
                 <div class="space-y-3">
                   <div class="flex items-center justify-between">
-                    <span class="rounded-[4px] border border-primary/20 bg-primary-light px-2 py-0.5 text-[11px] font-semibold text-primary uppercase">
+                    <span class="rounded-full border border-primary/20 bg-primary-light px-2 py-0.5 text-[11px] font-semibold text-primary uppercase">
                       Berita ({articleResults.length})
                     </span>
-                    {filter === 'all' && articleResults.length >= 8 && (
-                      <a href={`/cari?q=${encodeURIComponent(query)}&type=berita`} class="inline-flex items-center gap-1 font-body text-xs font-medium text-primary hover:underline">
+                    {filter === "all" && articleResults.length >= 8 && (
+                      <a
+                        href={`/cari?q=${encodeURIComponent(query)}&type=berita`}
+                        class="inline-flex items-center gap-1 font-body text-xs font-medium text-primary hover:underline"
+                      >
                         <span>Lihat semua berita</span>
                         <Icon name="chevron-right" class="h-3 w-3" />
                       </a>
@@ -295,14 +234,25 @@ const filterTabs = [
                   </div>
                   <div class="space-y-3">
                     {articleResults.map((item) => (
-                      <a href={`/berita/${item.slug}`} class="block rounded-[10px] border border-border bg-surface p-4 sm:p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-border-hover hover:shadow-(--shadow-hover) group">
+                      <a
+                        href={`/berita/${item.slug}`}
+                        class="block rounded-[10px] border border-border bg-surface p-4 sm:p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-border-hover hover:shadow-(--shadow-hover) group"
+                      >
                         <div class="flex items-center gap-2 text-[11px] font-mono text-muted mb-1.5">
-                          <span class="text-primary font-medium">{item.categoryName || 'Berita'}</span>
+                          <span class="text-primary font-medium">
+                            {item.categoryName || "Berita"}
+                          </span>
                           <span>&bull;</span>
                           <span>{item.publishedAt?.slice(0, 10)}</span>
                         </div>
-                        <h4 class="font-display text-base font-semibold text-heading group-hover:text-primary transition-colors" set:html={highlightText(item.title)} />
-                        <p class="mt-1.5 font-body text-sm text-muted line-clamp-2 leading-relaxed" set:html={highlightText(item.summary)} />
+                        <h4
+                          class="font-display text-sm font-semibold text-heading group-hover:text-primary transition-colors"
+                          set:html={highlightText(item.title)}
+                        />
+                        <p
+                          class="mt-1.5 font-body text-sm text-muted line-clamp-2 leading-relaxed"
+                          set:html={highlightText(item.summary)}
+                        />
                       </a>
                     ))}
                   </div>
@@ -313,11 +263,14 @@ const filterTabs = [
               {agendaResults.length > 0 && (
                 <div class="space-y-3">
                   <div class="flex items-center justify-between">
-                    <span class="rounded-[4px] border border-warning/30 bg-warning-light px-2 py-0.5 text-[11px] font-semibold text-warning-text uppercase">
+                    <span class="rounded-full border border-warning/30 bg-warning-light px-2 py-0.5 text-[11px] font-semibold text-warning-text uppercase">
                       Agenda Kegiatan ({agendaResults.length})
                     </span>
-                    {filter === 'all' && agendaResults.length >= 8 && (
-                      <a href={`/cari?q=${encodeURIComponent(query)}&type=agenda`} class="inline-flex items-center gap-1 font-body text-xs font-medium text-primary hover:underline">
+                    {filter === "all" && agendaResults.length >= 8 && (
+                      <a
+                        href={`/cari?q=${encodeURIComponent(query)}&type=agenda`}
+                        class="inline-flex items-center gap-1 font-body text-xs font-medium text-primary hover:underline"
+                      >
                         <span>Lihat semua agenda</span>
                         <Icon name="chevron-right" class="h-3 w-3" />
                       </a>
@@ -328,13 +281,23 @@ const filterTabs = [
                       <div class="rounded-[10px] border border-border bg-surface p-4 sm:p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-border-hover hover:shadow-(--shadow-hover) flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                         <div class="space-y-1">
                           <span class="text-xs font-mono font-medium text-warning-text">
-                            {item.eventDate} {item.endDate ? `s.d. ${item.endDate}` : ''}
+                            {item.eventDate}{" "}
+                            {item.endDate ? `s.d. ${item.endDate}` : ""}
                           </span>
-                          <h4 class="font-display text-base font-semibold text-heading" set:html={highlightText(item.title)} />
+                          <h4
+                            class="font-display text-sm font-semibold text-heading"
+                            set:html={highlightText(item.title)}
+                          />
                           {item.description && (
-                            <p class="font-body text-xs text-muted line-clamp-2" set:html={highlightText(item.description)} />
+                            <p
+                              class="font-body text-xs text-muted line-clamp-2"
+                              set:html={highlightText(item.description)}
+                            />
                           )}
-                          <p class="text-xs text-muted font-mono" set:html={'Lokasi: ' + highlightText(item.location)} />
+                          <p
+                            class="text-xs text-muted font-mono"
+                            set:html={"Lokasi: " + highlightText(item.location)}
+                          />
                         </div>
                         <a
                           href="/agenda"
@@ -352,11 +315,14 @@ const filterTabs = [
               {docResults.length > 0 && (
                 <div class="space-y-3">
                   <div class="flex items-center justify-between">
-                    <span class="rounded-[4px] border border-primary/20 bg-primary-light px-2 py-0.5 text-[11px] font-semibold text-primary uppercase">
+                    <span class="rounded-full border border-primary/20 bg-primary-light px-2 py-0.5 text-[11px] font-semibold text-primary uppercase">
                       Dokumen Resmi ({docResults.length})
                     </span>
-                    {filter === 'all' && docResults.length >= 8 && (
-                      <a href={`/cari?q=${encodeURIComponent(query)}&type=dokumen`} class="inline-flex items-center gap-1 font-body text-xs font-medium text-primary hover:underline">
+                    {filter === "all" && docResults.length >= 8 && (
+                      <a
+                        href={`/cari?q=${encodeURIComponent(query)}&type=dokumen`}
+                        class="inline-flex items-center gap-1 font-body text-xs font-medium text-primary hover:underline"
+                      >
                         <span>Lihat semua dokumen</span>
                         <Icon name="chevron-right" class="h-3 w-3" />
                       </a>
@@ -368,12 +334,20 @@ const filterTabs = [
                         <div class="space-y-1">
                           <div class="flex items-center gap-2">
                             <span class="rounded-[4px] bg-surface-subtle px-1.5 py-0.5 text-[10px] font-mono font-medium text-heading">
-                              {item.fileType || 'PDF'}
+                              {item.fileType || "PDF"}
                             </span>
-                            <span class="text-xs text-muted font-body" set:html={highlightText(item.category)} />
+                            <span
+                              class="text-xs text-muted font-body"
+                              set:html={highlightText(item.category)}
+                            />
                           </div>
-                          <h4 class="font-display text-base font-semibold text-heading" set:html={highlightText(item.title)} />
-                          <p class="font-mono text-xs text-muted">{item.fileSize || 'Berkas Unduhan'}</p>
+                          <h4
+                            class="font-display text-sm font-semibold text-heading"
+                            set:html={highlightText(item.title)}
+                          />
+                          <p class="font-mono text-xs text-muted">
+                            {item.fileSize || "Berkas Unduhan"}
+                          </p>
                         </div>
                         <a
                           href={item.fileUrl}
@@ -394,11 +368,14 @@ const filterTabs = [
               {teacherResults.length > 0 && (
                 <div class="space-y-3">
                   <div class="flex items-center justify-between">
-                    <span class="rounded-[4px] border border-primary/20 bg-primary-light px-2 py-0.5 text-[11px] font-semibold text-primary uppercase">
+                    <span class="rounded-full border border-primary/20 bg-primary-light px-2 py-0.5 text-[11px] font-semibold text-primary uppercase">
                       Tenaga Pendidik ({teacherResults.length})
                     </span>
-                    {filter === 'all' && teacherResults.length >= 8 && (
-                      <a href={`/cari?q=${encodeURIComponent(query)}&type=guru`} class="inline-flex items-center gap-1 font-body text-xs font-medium text-primary hover:underline">
+                    {filter === "all" && teacherResults.length >= 8 && (
+                      <a
+                        href={`/cari?q=${encodeURIComponent(query)}&type=guru`}
+                        class="inline-flex items-center gap-1 font-body text-xs font-medium text-primary hover:underline"
+                      >
                         <span>Lihat semua guru</span>
                         <Icon name="chevron-right" class="h-3 w-3" />
                       </a>
@@ -420,11 +397,23 @@ const filterTabs = [
                           </div>
                         )}
                         <div class="min-w-0 flex-1">
-                          <h4 class="font-display text-sm font-semibold text-heading truncate" set:html={highlightText(item.name)} />
-                          <p class="text-xs text-muted truncate font-body" set:html={highlightText(item.position)} />
-                          <p class="text-[11px] font-mono text-primary font-medium truncate" set:html={highlightText(item.subject || '-')} />
+                          <h4
+                            class="font-display text-sm font-semibold text-heading truncate"
+                            set:html={highlightText(item.name)}
+                          />
+                          <p
+                            class="text-xs text-muted truncate font-body"
+                            set:html={highlightText(item.position)}
+                          />
+                          <p
+                            class="text-[11px] font-mono text-primary font-medium truncate"
+                            set:html={highlightText(item.subject || "-")}
+                          />
                           {item.nip && (
-                            <p class="text-[10px] font-mono text-muted truncate" set:html={'NIP: ' + highlightText(item.nip)} />
+                            <p
+                              class="text-[10px] font-mono text-muted truncate"
+                              set:html={"NIP: " + highlightText(item.nip)}
+                            />
                           )}
                         </div>
                       </div>
@@ -444,16 +433,21 @@ const filterTabs = [
 
 <script>
   // Progressive enhancement: slash shortcut to focus search input
-  const searchInput = document.getElementById('search-input') as HTMLInputElement | null;
+  const searchInput = document.getElementById(
+    "search-input",
+  ) as HTMLInputElement | null;
   if (searchInput && !searchInput.value) {
     searchInput.focus();
   }
 
-  window.addEventListener('keydown', (e) => {
+  window.addEventListener("keydown", (e) => {
     if (
-      e.key === '/' &&
+      e.key === "/" &&
       document.activeElement !== searchInput &&
-      !(document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement)
+      !(
+        document.activeElement instanceof HTMLInputElement ||
+        document.activeElement instanceof HTMLTextAreaElement
+      )
     ) {
       e.preventDefault();
       searchInput?.focus();

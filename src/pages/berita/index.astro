@@ -287,22 +287,20 @@ const popularTags = [
                         fetchpriority={sIdx === 0 ? "high" : "low"}
                       />
                       <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/10" />
+                      {slide.categorySlug ? (
+                        <a
+                          href={`/berita?kategori=${slide.categorySlug}`}
+                          class="absolute top-0 right-0 z-10 rounded-bl-lg bg-primary px-3 py-1.5 text-[11px] font-semibold text-white uppercase tracking-wider hover:bg-primary-hover transition-colors"
+                        >
+                          {slide.categoryName || "Umum"}
+                        </a>
+                      ) : (
+                        <span class="absolute top-0 right-0 z-10 rounded-bl-lg bg-primary px-3 py-1.5 text-[11px] font-semibold text-white uppercase tracking-wider">
+                          {slide.categoryName || "Umum"}
+                        </span>
+                      )}
 
                       <div class="absolute inset-x-0 bottom-0 p-5 sm:p-7 flex flex-col justify-end">
-                        <div class="mb-2.5">
-                          {slide.categorySlug ? (
-                            <a
-                              href={`/berita?kategori=${slide.categorySlug}`}
-                              class="inline-block rounded-[4px] bg-primary px-2.5 py-1 text-[11px] font-semibold text-white uppercase tracking-wider hover:bg-primary-hover transition-colors"
-                            >
-                              {slide.categoryName || "Umum"}
-                            </a>
-                          ) : (
-                            <span class="inline-block rounded-[4px] bg-primary px-2.5 py-1 text-[11px] font-semibold text-white uppercase tracking-wider">
-                              {slide.categoryName || "Umum"}
-                            </span>
-                          )}
-                        </div>
 
                         <h2 class="font-display text-xl sm:text-2xl lg:text-3xl font-bold text-white leading-tight hover:text-primary-light transition-colors max-w-xl">
                           <a href={`/berita/${slide.slug || ""}`}>
@@ -380,22 +378,20 @@ const popularTags = [
                         loading="lazy"
                       />
                       <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/10" />
+                      {sub.categorySlug ? (
+                        <a
+                          href={`/berita?kategori=${sub.categorySlug}`}
+                          class="absolute top-0 right-0 z-10 rounded-bl-lg bg-primary px-2.5 py-1 text-[10px] font-semibold text-white uppercase tracking-wider hover:bg-primary-hover transition-colors"
+                        >
+                          {sub.categoryName || "Umum"}
+                        </a>
+                      ) : (
+                        <span class="absolute top-0 right-0 z-10 rounded-bl-lg bg-primary px-2.5 py-1 text-[10px] font-semibold text-white uppercase tracking-wider">
+                          {sub.categoryName || "Umum"}
+                        </span>
+                      )}
 
                       <div class="absolute inset-x-0 bottom-0 p-3.5 sm:p-4 flex flex-col justify-end">
-                        <div class="mb-1.5">
-                          {sub.categorySlug ? (
-                            <a
-                              href={`/berita?kategori=${sub.categorySlug}`}
-                              class="inline-block rounded-[4px] bg-primary-light border border-primary/20 px-2 py-0.5 text-[10px] font-semibold text-primary uppercase tracking-wider hover:bg-primary hover:text-white transition-colors"
-                            >
-                              {sub.categoryName || "Umum"}
-                            </a>
-                          ) : (
-                            <span class="inline-block rounded-[4px] bg-primary-light border border-primary/20 px-2 py-0.5 text-[10px] font-semibold text-primary uppercase tracking-wider">
-                              {sub.categoryName || "Umum"}
-                            </span>
-                          )}
-                        </div>
 
                         <h3 class="font-display text-xs sm:text-sm font-bold text-white leading-snug line-clamp-2 group-hover:text-primary-light transition-colors">
                           <a href={`/berita/${sub.slug || ""}`}>{sub.title}</a>
@@ -474,27 +470,27 @@ const popularTags = [
               <div class="lg:col-span-8 flex flex-col justify-between gap-5">
                 <!-- 1 Horizontal Card -->
                 <article class="group overflow-hidden rounded-[10px] border border-border bg-surface p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-(--shadow-hover) flex flex-col sm:flex-row gap-4">
-                  <a
-                    href={`/berita/${editorFeatured.slug || ""}`}
-                    class="sm:w-5/12 aspect-[16/10] overflow-hidden rounded-[8px] bg-surface-subtle block shrink-0"
-                  >
-                    <img
-                      src={editorFeatured.coverImage || "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80"}
-                      alt={editorFeatured.title}
-                      class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                      loading="lazy"
-                    />
-                  </a>
+                  <div class="relative sm:w-5/12 aspect-[16/10] overflow-hidden rounded-[8px] bg-surface-subtle shrink-0">
+                    <a
+                      href={`/berita/${editorFeatured.slug || ""}`}
+                      class="block h-full w-full"
+                    >
+                      <img
+                        src={editorFeatured.coverImage || "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80"}
+                        alt={editorFeatured.title}
+                        class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                        loading="lazy"
+                      />
+                    </a>
+                    <a
+                      href={`/berita?kategori=${editorFeatured.categorySlug}`}
+                      class="absolute top-0 right-0 z-10 rounded-bl-lg bg-primary px-2.5 py-1 text-[10px] font-semibold text-white uppercase hover:bg-primary-hover transition-colors"
+                    >
+                      {editorFeatured.categoryName || "Umum"}
+                    </a>
+                  </div>
                   <div class="sm:w-7/12 flex flex-col justify-between py-0.5">
                     <div>
-                      <div class="mb-1.5">
-                        <a
-                          href={`/berita?kategori=${editorFeatured.categorySlug}`}
-                          class="inline-block rounded-[4px] bg-primary-light border border-primary/20 px-2 py-0.5 text-[10px] font-semibold text-primary uppercase hover:bg-primary hover:text-white transition-colors"
-                        >
-                          {editorFeatured.categoryName || "Umum"}
-                        </a>
-                      </div>
                       <h3 class="font-display text-base font-bold text-heading leading-snug group-hover:text-primary transition-colors">
                         <a href={`/berita/${editorFeatured.slug || ""}`}>{editorFeatured.title}</a>
                       </h3>
@@ -559,26 +555,28 @@ const popularTags = [
               <div class="lg:col-span-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 lg:grid-rows-2 gap-4 h-full *:flex *:flex-col *:h-full *:overflow-hidden *:rounded-[10px] *:border *:border-border *:bg-surface *:p-3 *:transition-all *:duration-200">
                 {editorSides.map((side) => (
                   <article class="group hover:-translate-y-0.5 hover:shadow-(--shadow-hover)">
-                    <a
-                      href={`/berita/${side.slug || ""}`}
-                      class="h-32 sm:h-28 lg:h-24 xl:h-28 w-full overflow-hidden rounded-[6px] bg-surface-subtle block shrink-0"
-                    >
-                      <img
-                        src={side.coverImage || "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=600&q=80"}
-                        alt={side.title}
-                        class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                        loading="lazy"
-                      />
-                    </a>
+                    <div class="relative h-32 sm:h-28 lg:h-24 xl:h-28 w-full overflow-hidden rounded-[6px] bg-surface-subtle shrink-0">
+                      <a
+                        href={`/berita/${side.slug || ""}`}
+                        class="block h-full w-full"
+                      >
+                        <img
+                          src={side.coverImage || "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=600&q=80"}
+                          alt={side.title}
+                          class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                          loading="lazy"
+                        />
+                      </a>
+                      <a
+                        href={`/berita?kategori=${side.categorySlug}`}
+                        class="absolute top-0 right-0 z-10 rounded-bl-lg bg-primary px-2 py-0.5 text-[9px] font-semibold text-white uppercase hover:bg-primary-hover transition-colors"
+                      >
+                        {side.categoryName || "Umum"}
+                      </a>
+                    </div>
                     <div class="pt-2.5 flex-1 flex flex-col justify-between">
                       <div>
-                        <a
-                          href={`/berita?kategori=${side.categorySlug}`}
-                          class="inline-block rounded-[4px] bg-primary-light border border-primary/20 px-2 py-0.5 text-[9px] font-semibold text-primary uppercase hover:bg-primary hover:text-white transition-colors"
-                        >
-                          {side.categoryName || "Umum"}
-                        </a>
-                        <h4 class="mt-1 font-display text-xs font-bold text-heading leading-snug group-hover:text-primary transition-colors line-clamp-2">
+                        <h4 class="font-display text-xs font-bold text-heading leading-snug group-hover:text-primary transition-colors line-clamp-2">
                           <a href={`/berita/${side.slug || ""}`}>{side.title}</a>
                         </h4>
                       </div>
@@ -659,37 +657,37 @@ const popularTags = [
                 <!-- Featured Horizontal Card (Hanya di mode Semua Berita) -->
                 {feedFeatured && (
                   <article class="group overflow-hidden rounded-[12px] border border-border bg-surface p-4 sm:p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-(--shadow-hover) flex flex-col md:flex-row gap-5">
-                    <a
-                      href={`/berita/${feedFeatured.slug || ""}`}
-                      class="md:w-1/2 aspect-[16/10] overflow-hidden rounded-[8px] bg-surface-subtle block shrink-0"
-                    >
-                      <img
-                        src={
-                          feedFeatured.coverImage ||
-                          "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80"
-                        }
-                        alt={feedFeatured.title}
-                        class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-                        loading="lazy"
-                      />
-                    </a>
+                    <div class="relative md:w-1/2 aspect-[16/10] overflow-hidden rounded-[8px] bg-surface-subtle shrink-0">
+                      <a
+                        href={`/berita/${feedFeatured.slug || ""}`}
+                        class="block h-full w-full"
+                      >
+                        <img
+                          src={
+                            feedFeatured.coverImage ||
+                            "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80"
+                          }
+                          alt={feedFeatured.title}
+                          class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                          loading="lazy"
+                        />
+                      </a>
+                      {feedFeatured.categorySlug ? (
+                        <a
+                          href={`/berita?kategori=${feedFeatured.categorySlug}`}
+                          class="absolute top-0 right-0 z-10 rounded-bl-lg bg-primary px-2.5 py-1 text-[10px] font-semibold text-white uppercase transition-colors hover:bg-primary-hover"
+                        >
+                          {feedFeatured.categoryName || "Umum"}
+                        </a>
+                      ) : (
+                        <span class="absolute top-0 right-0 z-10 rounded-bl-lg bg-primary px-2.5 py-1 text-[10px] font-semibold text-white uppercase">
+                          {feedFeatured.categoryName || "Umum"}
+                        </span>
+                      )}
+                    </div>
 
                     <div class="md:w-1/2 flex flex-col justify-between py-1">
                       <div>
-                        <div class="mb-2">
-                          {feedFeatured.categorySlug ? (
-                            <a
-                              href={`/berita?kategori=${feedFeatured.categorySlug}`}
-                              class="inline-block rounded-[4px] bg-primary-light px-2 py-0.5 text-[10px] font-semibold text-primary uppercase transition-colors hover:bg-primary hover:text-white"
-                            >
-                              {feedFeatured.categoryName || "Umum"}
-                            </a>
-                          ) : (
-                            <span class="inline-block rounded-[4px] bg-primary-light px-2 py-0.5 text-[10px] font-semibold text-primary uppercase">
-                              {feedFeatured.categoryName || "Umum"}
-                            </span>
-                          )}
-                        </div>
 
                         <h3 class="font-display text-lg sm:text-xl font-bold text-heading leading-snug group-hover:text-primary transition-colors">
                           <a href={`/berita/${feedFeatured.slug || ""}`}>
@@ -739,38 +737,38 @@ const popularTags = [
                 <div class="space-y-4" id="stream-list">
                   {feedList.map((article) => (
                     <article class="stream-article group rounded-[10px] border border-border bg-surface p-4 sm:p-5 flex flex-col sm:flex-row gap-4 sm:gap-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-(--shadow-hover)">
-                      <a
-                        href={`/berita/${article.slug || ""}`}
-                        class="w-full sm:w-48 md:w-56 aspect-[16/10] overflow-hidden rounded-[8px] bg-surface-subtle shrink-0 block"
-                      >
-                        <img
-                          src={
-                            article.coverImage ||
-                            "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80"
-                          }
-                          alt={article.title}
-                          class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-                          loading="lazy"
-                        />
-                      </a>
+                      <div class="relative w-full sm:w-48 md:w-56 aspect-[16/10] overflow-hidden rounded-[8px] bg-surface-subtle shrink-0">
+                        <a
+                          href={`/berita/${article.slug || ""}`}
+                          class="block h-full w-full"
+                        >
+                          <img
+                            src={
+                              article.coverImage ||
+                              "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80"
+                            }
+                            alt={article.title}
+                            class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                            loading="lazy"
+                          />
+                        </a>
+                        {article.categorySlug ? (
+                          <a
+                            href={`/berita?kategori=${article.categorySlug}`}
+                            class="absolute top-0 right-0 z-10 rounded-bl-lg bg-primary px-2.5 py-1 text-[10px] font-semibold text-white uppercase transition-colors hover:bg-primary-hover"
+                            title={`Halaman kategori ${article.categoryName}`}
+                          >
+                            {article.categoryName}
+                          </a>
+                        ) : (
+                          <span class="absolute top-0 right-0 z-10 rounded-bl-lg bg-primary px-2.5 py-1 text-[10px] font-semibold text-white uppercase">
+                            {article.categoryName || "Umum"}
+                          </span>
+                        )}
+                      </div>
 
                       <div class="flex-1 flex flex-col justify-between py-0.5">
                         <div>
-                          <div class="mb-2">
-                            {article.categorySlug ? (
-                              <a
-                                href={`/berita?kategori=${article.categorySlug}`}
-                                class="inline-block rounded-[4px] bg-primary-light border border-primary/20 px-2 py-0.5 text-[10px] font-semibold text-primary uppercase transition-colors hover:bg-primary hover:text-white"
-                                title={`Halaman kategori ${article.categoryName}`}
-                              >
-                                {article.categoryName}
-                              </a>
-                            ) : (
-                              <span class="inline-block rounded-[4px] bg-primary-light border border-primary/20 px-2 py-0.5 text-[10px] font-semibold text-primary uppercase">
-                                {article.categoryName || "Umum"}
-                              </span>
-                            )}
-                          </div>
 
                           <h3 class="font-display text-base sm:text-lg font-bold text-heading leading-snug group-hover:text-primary transition-colors">
                             <a href={`/berita/${article.slug || ""}`}>

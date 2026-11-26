@@ -21,7 +21,7 @@
    Seluruh kartu statistik (KPI), panel data, kartu artikel, dan widget UI WAJIB 100% menggunakan permukaan solid dengan batas presisi 1px `border`.
    - **Pola A (Neutral Solid)**: Menggunakan `bg-surface border-border` dengan aksen status pada teks angka metrik (`text-success`, `text-warning`, `text-error`).
    - **Pola B (Multi-Color Solid KPI)**: Jika kartu KPI/statistik memerlukan diferensiasi warna latar yang kontras (seperti di Dashboard Utama dan Panel Kelulusan), gunakan warna solid penuh berbasis token tema semantik (`bg-primary border-primary text-primary-foreground`, `bg-success border-success text-white`, `bg-secondary border-secondary text-secondary-foreground`, `bg-warning border-warning text-white`, `bg-error border-error text-white`).
-   - **DILARANG KERAS**: Menggunakan latar belakang transparansi rendah (`bg-white/10`, `bg-white/50`, `bg-surface/50`, `bg-surface/60`, `backdrop-blur-*`) maupun mewarnai badan kartu dengan utility tint status (`bg-success-light`, `bg-warning-light`, `bg-error-light`, `bg-primary-light`). Pada mode gelap (*dark mode*), latar transparan dan tint tipis menghasilkan visual kusam/berlumpur (*muddy*) serta merusak kontras tipografi. Selalu gunakan warna solid penuh yang terdefinisi pada token tema semantik.
+   - **DILARANG KERAS**: Menggunakan latar belakang transparansi rendah (`bg-white/10`, `bg-white/50`, `bg-surface/50`, `bg-surface/60`, `backdrop-blur-*`) maupun memakai utility `*-light` (`bg-primary-light`, `bg-secondary-light`, `bg-tertiary-light`, `bg-accent-light`, `bg-success-light`, `bg-warning-light`, `bg-error-light`) pada komponen atau halaman baru. Gunakan warna solid penuh berbasis token tema semantik (`bg-surface border-border`, `bg-primary text-primary-foreground`, `bg-success text-white`, `bg-warning text-white`, `bg-error text-white`) agar tidak ada warna berkontras rendah di mode terang maupun gelap. Token `*-light` hanya dipertahankan di `global.css` untuk kompatibilitas kode lama dengan *contrast safeguard*.
 10. **SENTRALISASI KOMPONEN PAGINATION (ZERO DUPLICATE PAGINATION TOLERANCE)**:
    Seluruh tabel data, direktori, berita, dan modul CMS/publik yang memiliki daftar data berhalaman WAJIB 100% menggunakan komponen terpusat `<Pagination />` (`src/components/Pagination.astro`) serta helper pendukung `src/utils/pagination.ts`. DILARANG KERAS menulis manual puluhan baris HTML markup tombol pagination dan duplikasi fungsi kalkulasi halaman berulang-ulang di setiap file halaman. Komponen mendukung dua mode resmi: Mode Link Server (`getPageUrl`) dan Mode Client-Side Zero-Load (`id` container + event delegation).
 11. **STANDARISASI SWITCH TOGGLE STATUS (ZERO TEXT STATUS TOGGLE TOLERANCE)**:
@@ -209,14 +209,19 @@ Pengguna/admin tidak perlu merancang Dark Mode secara manual. Cukup pilih Preset
 2. **Dark**: Selalu mode gelap.
 3. **System**: Mengikuti preferensi OS/peramban (`prefers-color-scheme`).
 
-### 5. Kompatibilitas Teks Putih (CSS Safeguard)
-Untuk mencegah teks putih tidak terbaca saat warna latar sekunder atau tersier bernuansa terang, CSS global menyediakan *contrast safeguard rule*:
+### 5. Kompatibilitas Teks & Larangan `*-light` Baru (CSS Contrast Safeguard)
+Untuk mencegah teks tidak terbaca saat warna latar bernuansa terang atau saat kode lama memakai `bg-*-light` berpasangan dengan warna teks berkontras rendah, CSS global (`src/styles/global.css`) menyediakan *contrast safeguard rule*:
 ```css
 .bg-primary.text-white, .bg-primary .text-white { color: var(--color-primary-foreground); }
 .bg-secondary.text-white, .bg-secondary .text-white { color: var(--color-secondary-foreground); }
 .bg-tertiary.text-white, .bg-tertiary .text-white { color: var(--color-tertiary-foreground); }
+.bg-success-light.text-success, .hover\:bg-success-light:hover.hover\:text-success:hover { color: var(--color-success-text) !important; }
+.bg-warning-light.text-warning, .hover\:bg-warning-light:hover.hover\:text-warning:hover { color: var(--color-warning-text) !important; }
+.bg-error-light.text-error, .hover\:bg-error-light:hover.hover\:text-error:hover { color: var(--color-error-text) !important; }
 ```
-Hal ini menjamin 700+ utilitas `bg-primary`/`text-white` yang ada tetap terbaca sempurna di seluruh tema tanpa perlu refactoring manual ratusan file.
+**Aturan Wajib ke Depan**:
+- **Dilarang menambahkan utility `*-light` baru** (`bg-*-light`, `text-*-light`, `border-*-light`) di halaman atau komponen baru. Selalu gunakan token solid (`bg-surface border-border`, `bg-primary text-primary-foreground`, `bg-success text-white`, `bg-warning text-white`, `bg-error text-white`).
+- Jika menyentuh kode lama yang masih memakai `bg-success-light` / `bg-warning-light` / `bg-error-light`, wajib berpasangan dengan `text-*-text` (atau migrasi sekalian ke solid) — safeguard di `global.css` menjamin pemakaian lama tetap memenuhi kontras di seluruh tema tanpa refactoring massal.
 
   /* Elevation & Shadows */
   --shadow-hairline: 0 1px 2px 0 rgba(0, 0, 0, 0.05);

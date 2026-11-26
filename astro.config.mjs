@@ -10,6 +10,9 @@ const isBuild = process.argv.includes('build') || process.argv.includes('preview
 // https://astro.build/config
 export default defineConfig({
   site: 'https://sman1unggulan.sch.id',
+  build: {
+    inlineStylesheets: 'always',
+  },
   integrations: [icon()],
   devToolbar: {
     enabled: false,

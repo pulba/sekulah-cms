@@ -18,7 +18,7 @@ const {
 
 const badgeLabel = isUrgent ? "Penting" : "Pengumuman";
 const badgeClass = isUrgent
-  ? "bg-warning text-white"
+  ? "bg-warning text-tertiary-foreground"
   : "bg-secondary text-secondary-foreground";
 ---
 
@@ -30,7 +30,7 @@ const badgeClass = isUrgent
   <div class="mx-auto flex max-w-7xl items-center justify-between gap-2 sm:gap-3 text-xs">
     <span
       class:list={[
-        "inline-flex items-center gap-1.5 shrink-0 p-2 text-[10px] font-bold uppercase tracking-wider shadow-2xs z-10 bg-primary",
+        "inline-flex items-center gap-1.5 shrink-0 p-2 text-[10px] font-bold uppercase tracking-wider shadow-2xs z-10",
         badgeClass,
       ]}
     >
